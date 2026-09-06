@@ -30,6 +30,7 @@ class WebProviderRegistry {
   final Map<String, WebServiceProvider> _providers = {};
   final StreamController<void> _changes = StreamController.broadcast();
   String? _authTomlPath;
+  Future<void>? _initialization;
 
   /// Optional override for the directory holding `auth.toml`.
   /// `null` (the default) means "use `resolveUserDataDirectory()`"
@@ -89,9 +90,10 @@ class WebProviderRegistry {
 
   /// Initialize: load persisted keys from `auth.toml`, push
   /// them to each provider, and pick up env-var fallbacks. Safe
-  /// to call more than once; only the first call touches disk.
-  Future<void> initialize() async {
-    if (_authTomlPath != null) return;
+  /// to call more than once; concurrent callers await the same disk read.
+  Future<void> initialize() => _initialization ??= _initialize();
+
+  Future<void> _initialize() async {
     final baseDir = userDataDirOverride ?? resolveUserDataDirectory();
     _authTomlPath = p.join(baseDir, 'auth.toml');
     await _loadFromAuthToml();

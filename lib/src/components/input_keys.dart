@@ -64,6 +64,21 @@ bool isUnresolvedSlashToken(String text) {
   return true;
 }
 
+/// Whether [event] is the platform paste shortcut that should also probe the
+/// native clipboard for an image.
+///
+/// Ctrl+V is used on Windows/Linux and is also OpenCode's default binding.
+/// Kitty-capable macOS terminals can report Cmd+V as Meta+V, so accept that
+/// form too. Shift is allowed because Ctrl+Shift+V is the terminal paste
+/// shortcut on Linux and Windows; depending on the terminal/version it may be
+/// forwarded as a key event instead of a bracketed-paste event.
+bool isClipboardPasteShortcut(KeyboardEvent event) {
+  if (event.logicalKey != LogicalKey.keyV || event.isAltPressed) {
+    return false;
+  }
+  return event.isControlPressed != event.isMetaPressed;
+}
+
 /// Handles all keyboard events for the chat input.
 ///
 /// Extracted from `ChatInputState` so the 620-line `_handleKeyEvent` method
@@ -192,11 +207,8 @@ class InputKeyHandler {
 
     if (overlayController.showSessionManager) return true;
 
-    // --- Ctrl+V: try clipboard image if current model supports it ---
-    if (event.logicalKey == LogicalKey.keyV &&
-        event.isControlPressed &&
-        !event.isShiftPressed &&
-        !event.isAltPressed) {
+    // --- Ctrl/Cmd+V: try an image before the TextField pastes text ---
+    if (isClipboardPasteShortcut(event)) {
       if (!NoctermBinding.instance.hasPendingPasteText) {
         final sessionId = sessionController.currentSessionId;
         // The actual image-attach logic lives in InputPaste; this just
@@ -534,7 +546,9 @@ class InputKeyHandler {
         return true;
       }
       if (event.logicalKey == LogicalKey.arrowUp && event.isControlPressed) {
-        scrollController?.scrollUp((scrollController?.viewportDimension ?? 0) / 2);
+        scrollController?.scrollUp(
+          (scrollController?.viewportDimension ?? 0) / 2,
+        );
         return true;
       }
       if (event.logicalKey == LogicalKey.arrowDown && event.isControlPressed) {

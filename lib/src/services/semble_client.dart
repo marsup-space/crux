@@ -7,6 +7,7 @@ import 'package:semble_dart/semble_dart.dart';
 
 import '../utils/bundled_executable.dart' show currentRuntimeTarget;
 import '../utils/bundled_directory.dart';
+import '../utils/user_data_directory.dart';
 
 class SembleClient {
   SembleClient._();
@@ -17,6 +18,13 @@ class SembleClient {
   Future<void> prewarm(String path) async {
     final client = await _ensureClient();
     await client.prewarm(path);
+  }
+
+  /// Whether a complete model/tokenizer pair is already available from a
+  /// bundled release, the Crux-managed cache, or HuggingFace's cache.
+  Future<bool> hasModelAssets() async {
+    final thirdParty = await resolveBundledDirectory('third_party');
+    return await _resolveModelPair(thirdParty) != null;
   }
 
   Future<List<SearchResult>> search(
@@ -149,6 +157,7 @@ class SembleClient {
     final candidates = [
       p.join(thirdParty.path, 'semblemodel'),
       p.join(thirdParty.path, 'semble', 'model'),
+      p.join(resolveUserDataDirectory(), 'semblemodel'),
       _huggingFaceSnapshotPath(),
     ].whereType<String>();
 

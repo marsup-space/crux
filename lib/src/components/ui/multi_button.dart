@@ -3,6 +3,7 @@
 // ignore_for_file: implementation_imports
 
 import 'dart:async';
+import 'dart:math';
 
 import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart';
@@ -286,124 +287,127 @@ class _MultiButtonState extends State<MultiButton> {
     // SizedBox of the SAME width so hovering never grows or shrinks
     // the button and neighbouring layout does not jitter as the mouse
     // enters and leaves.
-    final Component visible;
-    if (!_hovered) {
-      // Idle state: render the single label. We pick the same color
-      // triplet as [Button] so a MultiButton sitting next to a regular
-      // Button reads as the same family.
-      final fg = btn.focused ? focusColor : color;
-      final bg = btn.focused ? focusBgColor : bgColor;
-      final style = TextStyle(
-        color: fg,
-        fontWeight: btn.focused ? FontWeight.bold : null,
-      ).merge(btn.style);
+    Component buildVisible(double width) {
+      if (!_hovered) {
+        // Idle state: render the single label. We pick the same color
+        // triplet as [Button] so a MultiButton sitting next to a regular
+        // Button reads as the same family.
+        final fg = btn.focused ? focusColor : color;
+        final bg = btn.focused ? focusBgColor : bgColor;
+        final style = TextStyle(
+          color: fg,
+          fontWeight: btn.focused ? FontWeight.bold : null,
+        ).merge(btn.style);
 
-      visible = Container(
-        width: fixedWidth,
-        decoration: BoxDecoration(color: bg),
-        padding: btn.padding,
-        child: Text(btn.label, style: style),
-      );
-    } else {
-      // Hovered state: build a row of `[seg0, sep, seg1, sep, …]`
-      // and wrap each segment in its own MouseRegion so we can tell
-      // which half the cursor is over. Separators are NOT in their
-      // own region, so the outer region keeps ownership of the
-      // hovered state while the cursor glides over them.
-      final children = <Component>[];
-      for (var i = 0; i < btn.segments.length; i++) {
-        if (i > 0) {
+        return Container(
+          width: width,
+          decoration: BoxDecoration(color: bg),
+          padding: btn.padding,
+          child: Text(btn.label, style: style),
+        );
+      } else {
+        // Hovered state: build a row of `[seg0, sep, seg1, sep, …]`
+        // and wrap each segment in its own MouseRegion so we can tell
+        // which half the cursor is over. Separators are NOT in their
+        // own region, so the outer region keeps ownership of the
+        // hovered state while the cursor glides over them.
+        final children = <Component>[];
+        for (var i = 0; i < btn.segments.length; i++) {
+          if (i > 0) {
+            children.add(
+              Text(
+                ' │ ',
+                style: TextStyle(color: separatorColor).merge(btn.style),
+              ),
+            );
+          }
+          final segment = btn.segments[i];
+          final isActive = _activeSegment == i;
+          final hasAction = segment.onPressed != null;
+          final Color fg;
+          final FontWeight? weight;
+          if (!hasAction) {
+            fg = disabledColor;
+            weight = null;
+          } else if (isActive) {
+            fg = hoverColor;
+            weight = FontWeight.bold;
+          } else {
+            fg = dimHoverColor;
+            weight = null;
+          }
+          // The active segment gets its own background "pill" so the
+          // user can see which sub-button they are about to press.
+          // The pill covers the segment's whole equal share of the
+          // button, so the hover target reads as a proper half-button
+          // rather than a highlight hugging the label text.
+          final segmentBg = (isActive && hasAction)
+              ? hoverSegmentBgColor
+              : null;
+
           children.add(
-            Text(
-              ' │ ',
-              style: TextStyle(color: separatorColor).merge(btn.style),
-            ),
-          );
-        }
-        final segment = btn.segments[i];
-        final isActive = _activeSegment == i;
-        final hasAction = segment.onPressed != null;
-        final Color fg;
-        final FontWeight? weight;
-        if (!hasAction) {
-          fg = disabledColor;
-          weight = null;
-        } else if (isActive) {
-          fg = hoverColor;
-          weight = FontWeight.bold;
-        } else {
-          fg = dimHoverColor;
-          weight = null;
-        }
-        // The active segment gets its own background "pill" so the
-        // user can see which sub-button they are about to press.
-        // The pill covers the segment's whole equal share of the
-        // button, so the hover target reads as a proper half-button
-        // rather than a highlight hugging the label text.
-        final segmentBg = (isActive && hasAction) ? hoverSegmentBgColor : null;
-
-        children.add(
-          // Each segment is wrapped in an Expanded so the button's
-          // fixed width is distributed evenly across the options.
-          // The segment's own MouseRegion + GestureDetector span the
-          // full share, giving every option a generous, equal-sized
-          // click target.
-          Expanded(
-            child: MouseRegion(
-              opaque: false,
-              onEnter: (_) => _setActiveSegment(i),
-              onExit: (_) => _setActiveSegment(null),
-              child: GestureDetector(
-                // Disabled segments have no callback, so swallow the tap
-                // by passing an empty handler — we still want the
-                // hit-test to land on the segment rather than the
-                // separator next to it.
-                onTap: hasAction ? segment.onPressed : () {},
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  decoration: segmentBg == null
-                      ? null
-                      : BoxDecoration(color: segmentBg),
-                  padding: btn.padding,
-                  child: Text(
-                    // Truncate against the segment's equal share of
-                    // the button (separators take the rest) so a long
-                    // label can never push the row past the fixed
-                    // width. Expanded would cap the overflow anyway,
-                    // but truncating first keeps the text measurable
-                    // and shows the '~' affordance instead of silent
-                    // clipping.
-                    _truncateToWidth(
-                      segment.label,
-                      fixedWidth / btn.segments.length -
-                          (btn.padding.left + btn.padding.right),
+            // Each segment is wrapped in an Expanded so the button's
+            // fixed width is distributed evenly across the options.
+            // The segment's own MouseRegion + GestureDetector span the
+            // full share, giving every option a generous, equal-sized
+            // click target.
+            Expanded(
+              child: MouseRegion(
+                opaque: false,
+                onEnter: (_) => _setActiveSegment(i),
+                onExit: (_) => _setActiveSegment(null),
+                child: GestureDetector(
+                  // Disabled segments have no callback, so swallow the tap
+                  // by passing an empty handler — we still want the
+                  // hit-test to land on the segment rather than the
+                  // separator next to it.
+                  onTap: hasAction ? segment.onPressed : () {},
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    decoration: segmentBg == null
+                        ? null
+                        : BoxDecoration(color: segmentBg),
+                    padding: btn.padding,
+                    child: Text(
+                      // Truncate against the segment's equal share of
+                      // the button (separators take the rest) so a long
+                      // label can never push the row past the fixed
+                      // width. Expanded would cap the overflow anyway,
+                      // but truncating first keeps the text measurable
+                      // and shows the '~' affordance instead of silent
+                      // clipping.
+                      _truncateToWidth(
+                        segment.label,
+                        width / btn.segments.length -
+                            (btn.padding.left + btn.padding.right),
+                      ),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: fg,
+                        fontWeight: weight,
+                      ).merge(btn.style),
                     ),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: fg,
-                      fontWeight: weight,
-                    ).merge(btn.style),
                   ),
                 ),
               ),
             ),
-          ),
+          );
+        }
+
+        // The hover background covers exactly the same footprint as the
+        // idle state — same width AND same height. The idle label may
+        // have soft-wrapped to multiple rows; without pinning the height
+        // the single-row [Row] would collapse the button to one line.
+        // The [Row] is centred vertically within the preserved height so
+        // the segments read as a middle band rather than jumping to the
+        // top of a taller box.
+        return Container(
+          width: width,
+          height: _idleHeightForWidth(width),
+          decoration: BoxDecoration(color: hoverBgColor),
+          child: Center(child: Row(children: children)),
         );
       }
-
-      // The hover background covers exactly the same footprint as the
-      // idle state — same width AND same height. The idle label may
-      // have soft-wrapped to multiple rows; without pinning the height
-      // the single-row [Row] would collapse the button to one line.
-      // The [Row] is centred vertically within the preserved height so
-      // the segments read as a middle band rather than jumping to the
-      // top of a taller box.
-      visible = Container(
-        width: fixedWidth,
-        height: _idleHeightForWidth(fixedWidth),
-        decoration: BoxDecoration(color: hoverBgColor),
-        child: Center(child: Row(children: children)),
-      );
     }
 
     // Capture the width the non-hovered layout would occupy and pin
@@ -426,13 +430,21 @@ class _MultiButtonState extends State<MultiButton> {
     // is scheduled post-frame rather than synchronously).
     return LayoutBuilder(
       builder: (context, constraints) {
+        // A child may be constrained narrower than its intrinsic label
+        // width. Use that real width for both the text layout and its
+        // reserved height; otherwise a wrapped idle label paints below the
+        // one-row footprint calculated from the unconstrained label width.
+        final width = constraints.maxWidth.isFinite
+            ? min(fixedWidth, constraints.maxWidth)
+            : fixedWidth;
+        final visible = buildVisible(width);
         // Only re-measure in the idle state. While hovered the child
         // is pinned to [_fixedWidth], which can feed back into the
         // constraints on the next layout pass, so sampling then would
         // oscillate between the parent's width and the pinned width.
         // The hover morph never changes the outer layout, so the idle
         // measurement stays valid for the whole hover session.
-        if (_hovered) return _wrapWithMouseRegion(visible, fixedWidth);
+        if (_hovered) return _wrapWithMouseRegion(visible, width);
         final measured = constraints.maxWidth.isFinite
             ? constraints.maxWidth
             : _labelWidth;
@@ -450,7 +462,7 @@ class _MultiButtonState extends State<MultiButton> {
             setState(() => _fixedWidth = measured);
           });
         }
-        return _wrapWithMouseRegion(visible, fixedWidth);
+        return _wrapWithMouseRegion(visible, width);
       },
     );
   }

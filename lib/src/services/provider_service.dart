@@ -517,6 +517,10 @@ class ProviderService {
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }
+    // `auth.toml` is shared with non-LLM credentials such as TinyFish.
+    // Re-read it immediately before every write so a key saved by another
+    // service after this ProviderService was initialized is not discarded.
+    final passthroughRootStrings = await _readPassthroughRootStrings();
     final buf = StringBuffer();
     buf.writeln('# Crux persisted auth — managed by /auth');
     // Top-level settings come FIRST, before any [section] header, so they
@@ -531,6 +535,11 @@ class ProviderService {
       buf.writeln('auxiliaryModel = ${_tomlEscapeString(_auxiliaryModel!)}');
     }
     buf.writeln('tldrThreshold = $_tldrThreshold');
+    for (final entry in passthroughRootStrings.entries) {
+      buf.writeln(
+        '${_tomlEscapeKey(entry.key)} = ${_tomlEscapeString(entry.value)}',
+      );
+    }
     buf.writeln();
     if (_envKeys.isNotEmpty) {
       buf.writeln('[apiKeys]');
@@ -547,6 +556,33 @@ class ProviderService {
       await Process.run('chmod', ['600', authTomlPath]);
     } catch (_) {
       // chmod may not be available on all platforms
+    }
+  }
+
+  /// Returns top-level string settings owned by other services.
+  ///
+  /// ProviderService owns the model settings and `[apiKeys]`; web-provider
+  /// credentials deliberately live at the TOML root (for example
+  /// `TINYFISH_API_KEY`). Keeping all other root strings makes independent
+  /// credential writers safe to use in either order.
+  Future<Map<String, String>> _readPassthroughRootStrings() async {
+    final file = File(authTomlPath);
+    if (!await file.exists()) return const {};
+    try {
+      final root = TomlDocument.parse(await file.readAsString()).toMap();
+      const owned = {
+        'apiKeys',
+        'lastUsedModel',
+        'auxiliaryModel',
+        'tldrThreshold',
+      };
+      return {
+        for (final entry in root.entries)
+          if (!owned.contains(entry.key) && entry.value is String)
+            entry.key: entry.value as String,
+      };
+    } catch (_) {
+      return const {};
     }
   }
 

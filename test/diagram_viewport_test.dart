@@ -16,6 +16,52 @@ void main() {
       // '│ 中文 │' = 1 + 1 + 4 + 1 + 1 = 8 columns.
       expect(data.naturalWidth, 8);
     });
+
+    test('keeps an LR branch trunk in edge color beside node borders', () {
+      // Mirrors the reported failure: a third vertical stroke shares a node
+      // content row, but it is the branch trunk rather than a border.
+      final data = DiagramViewportData.inferBorders([
+        '┌─────┐  ',
+        '│ node│  │',
+        '└─────┘  │',
+        '         │',
+      ]);
+      expect(data.isBorderGlyph(0, 0), isTrue);
+      expect(data.isBorderGlyph(1, 0), isTrue);
+      expect(data.isBorderGlyph(1, 6), isTrue);
+      expect(data.isBorderGlyph(1, 9), isFalse);
+      expect(data.isBorderGlyph(2, 9), isFalse);
+    });
+
+    test(
+      'preserves borders and bright shafts in a vertical Mermaid flowchart',
+      () {
+        // An end-to-end TD case ensures the fix cannot regress vertical
+        // Mermaid output while correcting the LR branch-trunk false positive.
+        final data = tryBuildDiagramViewportData(
+          '''flowchart TD
+Start[收到工具调用] --> Check{命令包含 git?}
+Check -->|否| Keep[保持原逻辑]
+Check -->|是| Done[本工具轮完成]
+Done --> Refresh[刷新当前 workspace Git 状态]
+Refresh --> Sidebar[侧栏立即更新]''',
+          'mermaid',
+        )!;
+        final startRow = data.lines.indexWhere((line) => line.contains('收到工具调用'));
+        final startLine = data.lines[startRow];
+        final leftBorder = startLine.indexOf('│');
+        final shaftRow = data.lines.indexWhere((line) => line.trim() == '│');
+        final shaftLine = data.lines[shaftRow];
+
+        expect(data.isBorderGlyph(startRow, leftBorder), isTrue);
+        expect(data.isBorderGlyph(shaftRow, shaftLine.indexOf('│')), isFalse);
+      },
+    );
+
+    test('keeps rounded edge elbows out of the border color', () {
+      final data = DiagramViewportData.inferBorders(['╭─────╮', '   │']);
+      expect(data.isBorderGlyph(0, 0), isFalse);
+    });
   });
 
   group('sliceDiagramBlocks', () {
@@ -53,6 +99,36 @@ void main() {
   });
 
   group('markdown integration', () {
+    test('node outlines and edge strokes use different colors', () async {
+      await testNocterm('diagram semantic colors', (tester) async {
+        await tester.pumpComponent(
+          Container(
+            width: 40,
+            height: 12,
+            child: DiagramViewport(
+              data: DiagramViewportData.inferBorders([
+                '┌─────┐',
+                '│ box │',
+                '└─────┘',
+                '   ▼',
+              ]),
+            ),
+          ),
+        );
+
+        final border = tester.terminalState.findText('┌').first;
+        final arrow = tester.terminalState.findText('▼').first;
+        expect(
+          tester.terminalState.getCellAt(border.x, border.y)!.style.color,
+          isNot(
+            equals(
+              tester.terminalState.getCellAt(arrow.x, arrow.y)!.style.color,
+            ),
+          ),
+        );
+      }, size: const Size(40, 12));
+    });
+
     test('diagram fence becomes a viewport component (sync path)', () async {
       await testNocterm('fence lifts to viewport', (tester) async {
         await tester.pumpComponent(
@@ -172,6 +248,48 @@ ask://Continue{continue}''';
   });
 
   group('pan interaction', () {
+    test(
+      'content keeps its scroll offset when its canvas is clipped',
+      () async {
+        await testNocterm('diagram follows parent scroll', (tester) async {
+          final scroll = ScrollController();
+          await tester.pumpComponent(
+            Container(
+              width: 40,
+              height: 5,
+              child: SingleChildScrollView(
+                controller: scroll,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 3),
+                    DiagramViewport(
+                      language: 'mermaid',
+                      data: const DiagramViewportData([
+                        'LINE 0',
+                        'LINE 1',
+                        'LINE 2',
+                        'LINE 3',
+                        'LINE 4',
+                      ]),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+
+          // Diagram header is now two rows above the terminal. Its first art
+          // row is also clipped, so LINE 1 must be the first visible row.
+          scroll.jumpTo(5);
+          await tester.pump();
+
+          expect(tester.terminalState, containsText('LINE 1'));
+          expect(tester.terminalState, isNot(containsText('LINE 0')));
+          expect(tester.terminalState.findText('LINE 1').first.y, 0);
+        }, size: const Size(40, 5));
+      },
+    );
+
     test('DiagramPanController clamps and tracks edges', () {
       final ctrl = DiagramPanController();
       expect(ctrl.canPan, isFalse);
@@ -196,48 +314,45 @@ ask://Continue{continue}''';
       expect(ctrl.canPanV, isFalse);
     });
 
-    test(
-      'wheel over the viewport never pans horizontally (scroll chains)',
-      () async {
-        await testNocterm('wheel chains to vertical scroll', (tester) async {
-          const src =
-              '```mermaid\nflowchart LR\nA[AAAAAAAAAA] --> B[BBBBBBBBBB] --> C[CCCCCCCCCC] --> D[DDDDDDDDDD]\n```';
-          await tester.pumpComponent(HighlightedMarkdownText(src));
-          final viewport = tester.findComponent<DiagramViewport>();
-          expect(viewport, isNotNull);
-          expect(viewport!.data.naturalWidth, greaterThan(56));
+    test('wheel over the viewport never pans horizontally (scroll chains)', () async {
+      await testNocterm('wheel chains to vertical scroll', (tester) async {
+        const src =
+            '```mermaid\nflowchart LR\nA[AAAAAAAAAA] --> B[BBBBBBBBBB] --> C[CCCCCCCCCC] --> D[DDDDDDDDDD]\n```';
+        await tester.pumpComponent(HighlightedMarkdownText(src));
+        final viewport = tester.findComponent<DiagramViewport>();
+        expect(viewport, isNotNull);
+        expect(viewport!.data.naturalWidth, greaterThan(56));
 
-          // Leftmost node label's painted column, before any wheel.
-          final before = tester.terminalState.findText('AAAAAAAAAA').first;
+        // Leftmost node label's painted column, before any wheel.
+        final before = tester.terminalState.findText('AAAAAAAAAA').first;
 
-          // Wheel down + up on the canvas: the render object consumes
-          // neither (no ScrollableRenderObjectMixin) — the pan offset
-          // stays 0 and the events chain to the enclosing vertical
-          // scroll. If the wheel hijack came back, even one wheelDown
-          // (+3 cols) would visibly shift this label left.
-          await tester.sendMouseEvent(
-            const MouseEvent(
-              button: MouseButton.wheelDown,
-              x: 30,
-              y: 2,
-              pressed: false,
-            ),
-          );
-          await tester.sendMouseEvent(
-            const MouseEvent(
-              button: MouseButton.wheelUp,
-              x: 30,
-              y: 2,
-              pressed: false,
-            ),
-          );
+        // Wheel down + up on the canvas: the render object consumes
+        // neither (no ScrollableRenderObjectMixin) — the pan offset
+        // stays 0 and the events chain to the enclosing vertical
+        // scroll. If the wheel hijack came back, even one wheelDown
+        // (+3 cols) would visibly shift this label left.
+        await tester.sendMouseEvent(
+          const MouseEvent(
+            button: MouseButton.wheelDown,
+            x: 30,
+            y: 2,
+            pressed: false,
+          ),
+        );
+        await tester.sendMouseEvent(
+          const MouseEvent(
+            button: MouseButton.wheelUp,
+            x: 30,
+            y: 2,
+            pressed: false,
+          ),
+        );
 
-          final after = tester.terminalState.findText('AAAAAAAAAA').first;
-          expect(after.x, before.x);
-          expect(after.y, before.y);
-        });
-      },
-    );
+        final after = tester.terminalState.findText('AAAAAAAAAA').first;
+        expect(after.x, before.x);
+        expect(after.y, before.y);
+      });
+    });
 
     test('drag over the viewport pans the canvas', () async {
       await testNocterm('drag pans', (tester) async {

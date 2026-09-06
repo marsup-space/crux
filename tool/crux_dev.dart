@@ -8,16 +8,11 @@
 // Usage (in a spare terminal next to the agent's):
 //
 //   dart --enable-vm-service tool/crux_dev.dart home [--size WxH] [--stubs]
-//   dart --enable-vm-service tool/crux_dev.dart setup
 //
 // Targets:
 //   home    The home screen, live: real git service (pushed refresh),
 //           Directory.current as the workspace, the five built-in boxes.
 //           esc exits the harness (there is no chat behind it).
-//   setup   The setup checklist box in all four states (all pending,
-//           partially done, all set) side by side, driven by fixed
-//           items via the widget's itemsOverride — so it renders the
-//           same no matter how the real app is configured.
 //
 // Flags:
 //   --size WxH   Start with a fake terminal size (e.g. --size 100x30)
@@ -45,12 +40,12 @@ import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
 
-import 'package:crux/src/components/chat_panel.dart' show loadChatPanelBootState;
+import 'package:crux/src/components/chat_panel.dart'
+    show loadChatPanelBootState;
 import 'package:crux/src/components/home/home_screen.dart';
 import 'package:crux/src/components/home/home_widgets.dart';
 import 'package:crux/src/services/skills/skill.dart';
 import 'package:crux/src/components/home/widgets/stub_widget.dart';
-import 'package:crux/src/components/home/widgets/setup_widget.dart';
 import 'package:crux/src/services/auxiliary_service.dart';
 import 'package:crux/src/models/daily_usage_stats.dart';
 import 'package:crux/src/models/session.dart';
@@ -86,10 +81,8 @@ Future<void> main(List<String> args) async {
   }
   if (rest.isNotEmpty) target = rest.first;
 
-  if (target != 'home' && target != 'setup') {
-    stderr.writeln(
-      'Unknown target "$target" — known targets: home, setup.',
-    );
+  if (target != 'home') {
+    stderr.writeln('Unknown target "$target" — known target: home.');
     exit(64);
   }
 
@@ -100,9 +93,7 @@ Future<void> main(List<String> args) async {
   // without a hot reload too.
   git.start();
 
-  final base = HomeContext.minimal(
-    close: () => shutdownApp(),
-  );
+  final base = HomeContext.minimal(close: () => shutdownApp());
 
   // Control server must be reachable from HomeScreen's exit callbacks
   // (esc, Ctrl+C) — `late final` so the callbacks can close over it
@@ -114,27 +105,20 @@ Future<void> main(List<String> args) async {
     shutdownApp();
   }
 
-  // The screen this target renders. `setup` gets its own debug screen
-  // (all box states side by side); everything else is the home grid.
-  final Component screen = target == 'setup'
-      ? _SetupDebugScreen(onExit: exitHarness, quitApp: exitHarness)
-      : HomeScreen(
-          onExit: exitHarness,
-          // Ctrl+C on home: same exit path as esc — delete the state
-          // file FIRST. shutdownApp → StdioBackend.requestExit → bare
-          // exit(0) kills the process before `main`'s post-runApp
-          // cleanup can run, so the file must go before the exit.
-          quitApp: exitHarness,
-          context_: await _homeContext(base, git, live: live),
-          widgets: stubs ? _stubWidgets() : null,
-        );
+  final Component screen = HomeScreen(
+    onExit: exitHarness,
+    // Ctrl+C on home: same exit path as esc — delete the state
+    // file FIRST. shutdownApp → StdioBackend.requestExit → bare
+    // exit(0) kills the process before `main`'s post-runApp
+    // cleanup can run, so the file must go before the exit.
+    quitApp: exitHarness,
+    context_: await _homeContext(base, git, live: live),
+    widgets: stubs ? _stubWidgets() : null,
+  );
 
   final root = _DevApp(
     fakeSize: fakeSize,
-    child: CruxTheme(
-      data: CruxThemeData.draculaFallback,
-      child: screen,
-    ),
+    child: CruxTheme(data: CruxThemeData.draculaFallback, child: screen),
   );
 
   control = _DevControlServer(
@@ -223,256 +207,21 @@ Future<HomeContext> _homeContext(
     // scoped to the same project path the real panel uses.
     dailyTokenTotals: ({required sinceDays}) =>
         boot.store.messageStore.dailyTokenTotals(
-      sinceDaysAgo: sinceDays,
-      projectPath: Directory.current.path,
-    ),
+          sinceDaysAgo: sinceDays,
+          projectPath: Directory.current.path,
+        ),
     dailyUsageStats: ({required sinceDays}) =>
         boot.store.messageStore.dailyUsageStats(
-      sinceDaysAgo: sinceDays,
-      projectPath: Directory.current.path,
-    ),
+          sinceDaysAgo: sinceDays,
+          projectPath: Directory.current.path,
+        ),
   );
-}
-
-/// The `setup` target's screen: the setup checklist box rendered in
-/// every state it can take, side by side, each driven by fixed items
-/// through [SetupHomeWidget.itemsOverride]. Because the items are
-/// fixed, the screen looks the same no matter how the real app is
-/// configured — that's the point: you can see the pending/partial/done
-/// rendering without unsetting your own config.
-///
-/// esc / Ctrl+C exit the harness (same path as home).
-///
-/// Interactive: click a box to focus it (its selection highlight turns
-/// on; the others dim), ↑↓ moves the selection inside the focused box,
-/// and Enter/click on a pending row "activates" it — the debug screen
-/// intercepts the seed/close and reports the would-be command in the
-/// status line instead of exiting, so activation is testable without
-/// leaving the screen.
-class _SetupDebugScreen extends StatefulComponent {
-  final VoidCallback onExit;
-  final VoidCallback quitApp;
-
-  const _SetupDebugScreen({required this.onExit, required this.quitApp});
-
-  @override
-  State<_SetupDebugScreen> createState() => _SetupDebugScreenState();
-}
-
-class _SetupDebugScreenState extends State<_SetupDebugScreen> {
-  static const _pending = [
-    SetupItem(label: 'provider key', done: false, seedText: '/provider '),
-    SetupItem(label: 'aux model', done: false, seedText: '/auxiliary '),
-    SetupItem(label: 'web provider', done: false, seedText: '/web-provider '),
-    SetupItem(label: 'workspace', done: false, detail: 'open crux in a project directory'),
-  ];
-
-  static const _partial = [
-    SetupItem(label: 'provider key', done: true, detail: 'connected'),
-    SetupItem(label: 'aux model', done: true, detail: 'glm-5.3-flash'),
-    SetupItem(label: 'web provider', done: false, seedText: '/web-provider '),
-    SetupItem(label: 'workspace', done: true, detail: 'crux'),
-  ];
-
-  /// The live widgets behind the two *rendered* fixed variants, so ↑↓
-  /// can drive their selection. The all-done variant isn't in this list:
-  /// it demonstrates the hidden state (visibleWhen → false), so there's
-  /// no box to focus. (The live-context variant is likewise display-only.)
-  late final List<SetupHomeWidget> _widgets = [
-    SetupHomeWidget(itemsOverride: (_) => _pending),
-    SetupHomeWidget(itemsOverride: (_) => _partial),
-  ];
-
-  /// Which rendered variant currently holds the highlight (0-1), or -1
-  /// for none.
-  int _focusedBox = -1;
-
-  /// The last activation report (`would seed "/provider "`), or the idle
-  /// help line when nothing has been activated yet.
-  String _status =
-      'click a box to focus it · ↑↓ select · enter/click a pending row to activate · esc quit';
-
-  @override
-  Component build(BuildContext context) {
-    final theme = CruxTheme.of(context);
-    return Focusable(
-      focused: true,
-      onKeyEvent: _handleKey,
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _section('setup — all pending (fresh install)'),
-            _box(0),
-            _section('setup — partially done (2 of 4 set)'),
-            _box(1),
-            _section('setup — all set (box hides itself — nothing renders below)'),
-            _allSetNote(theme),
-            _section('setup — live context (driven by this terminal\'s config)'),
-            _liveBox(),
-            Padding(
-              padding: const EdgeInsets.only(top: 1),
-              child: Text(_status, style: TextStyle(color: theme.onSurfaceDim)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  bool _handleKey(KeyboardEvent event) {
-    switch (event.logicalKey) {
-      case LogicalKey.escape:
-        component.onExit();
-        return true;
-      case LogicalKey.arrowUp:
-        _move(-1);
-        return true;
-      case LogicalKey.arrowDown:
-        _move(1);
-        return true;
-      case LogicalKey.enter:
-        _activate();
-        return true;
-      default:
-        return false;
-    }
-  }
-
-  /// ↑↓ inside the focused box. With no focus, focuses the first box.
-  /// The all-set variant has no selectable rows (every row is done), so
-  /// selection moves stay within boxes that have pending items — but we
-  /// let the widget wrap anyway; the highlight just sits on an inert row.
-  void _move(int delta) {
-    setState(() {
-      if (_focusedBox < 0) {
-        _focusedBox = 0;
-        return;
-      }
-      _widgets[_focusedBox].moveSelection(delta);
-    });
-  }
-
-  /// Enter on the focused box's selected row. The report (instead of the
-  /// real seed+close) is produced by the per-box context's seedInput —
-  /// see [_ctxFor].
-  void _activate() {
-    if (_focusedBox < 0) return;
-    final widget = _widgets[_focusedBox];
-    final action = widget.activateItem(_ctxFor(_focusedBox), widget.selectedIndex);
-    if (action == null) {
-      setState(() => _status = 'row ${widget.selectedIndex + 1}: nothing to do (done or no command)');
-      return;
-    }
-    action(); // → the intercepted seedInput updates _status
-  }
-
-  Component _section(String label) => Padding(
-        padding: const EdgeInsets.only(top: 1, bottom: 0),
-        child: Text(label),
-      );
-
-  /// The all-set state renders nothing on home (visibleWhen hides the
-  /// box), so the debug screen shows this note in place of the box —
-  /// the point of the section is to demonstrate that absence.
-  Component _allSetNote(CruxThemeData theme) => Container(
-        width: 40,
-        decoration: BoxDecoration(border: BoxBorder.all()),
-        padding: const EdgeInsets.symmetric(horizontal: 1),
-        child: Text(
-          '(hidden — visibleWhen is false,\nso home skips this cell entirely)',
-          style: TextStyle(color: theme.onSurfaceDim),
-        ),
-      );
-
-  /// The context for one fixed variant: identical to the minimal one
-  /// (the override feeds the items), except seedInput/close are
-  /// intercepted so activation is safe — it reports the would-be
-  /// command in the status line instead of seeding a dead input and
-  /// shutting the harness down.
-  HomeContext _ctxFor(int box) => HomeContext.minimal(
-        close: () {},
-      )._withSeed((text) {
-        setState(() {
-          _status = 'box ${box + 1} row ${_widgets[box].selectedIndex + 1}: '
-              'would seed "$text" and close home';
-        });
-      });
-
-  /// Renders one fixed variant with its border chrome. Focused (click or
-  /// first ↑↓) = the selection highlight shows; unfocused boxes render
-  /// without it, matching home's one-highlight-at-a-time rule.
-  Component _box(int index) {
-    final focused = _focusedBox == index;
-    final widget = _widgets[index];
-    final ctx = _ctxFor(index);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        // Focus follows the click; the row's own tap (if it hit a row)
-        // already activated via the widget's GestureDetector — here we
-        // just make sure the highlight lands on this box.
-        setState(() => _focusedBox = index);
-      },
-      child: Container(
-        width: 40,
-        decoration: BoxDecoration(border: BoxBorder.all()),
-        padding: const EdgeInsets.symmetric(horizontal: 1),
-        child: Builder(
-          builder: (context) => widget.build(context, ctx, 1, focused: focused),
-        ),
-      ),
-    );
-  }
-
-  /// The live-context variant: display-only (no override → the harness's
-  /// minimal context reports everything pending). Passive — clicking it
-  /// does nothing, and it never takes the keyboard highlight.
-  Component _liveBox() {
-    final ctx = HomeContext.minimal(close: () {});
-    return Container(
-      width: 40,
-      decoration: BoxDecoration(border: BoxBorder.all()),
-      padding: const EdgeInsets.symmetric(horizontal: 1),
-      child: Builder(
-        builder: (context) =>
-            SetupHomeWidget().build(context, ctx, 1, focused: false),
-      ),
-    );
-  }
-}
-
-extension on HomeContext {
-  /// A copy of this context whose [seedInput] is [onSeed]; everything
-  /// else (including `close`, kept as-is) is unchanged. Used by the
-  /// debug screen to intercept activations.
-  HomeContext _withSeed(void Function(String) onSeed) => HomeContext(
-        runCommand: runCommand,
-        close: close,
-        seedInput: onSeed,
-        gitStatusService: gitStatusService,
-        sessions: sessions,
-        currentSessionId: currentSessionId,
-        switchSession: switchSession,
-        projectPath: projectPath,
-        activeModel: activeModel,
-        summarizeYesterday: summarizeYesterday,
-        showSkill: showSkill,
-        dailyTokenTotals: dailyTokenTotals,
-        dailyUsageStats: dailyUsageStats,
-        hasProviderKey: hasProviderKey,
-        auxModelName: auxModelName,
-        hasWebProvider: hasWebProvider,
-      );
 }
 
 Size? _parseSize(String s) {
   final m = RegExp(r'^(\d+)x(\d+)$').firstMatch(s);
   if (m == null) return null;
-  return Size(
-    double.parse(m.group(1)!),
-    double.parse(m.group(2)!),
-  );
+  return Size(double.parse(m.group(1)!), double.parse(m.group(2)!));
 }
 
 /// The user's home directory (for locating `~/.config/crux/providers`).
@@ -491,9 +240,9 @@ extension on HomeContext {
     Future<YesterdaySummary?> Function(List<Session>)? summarizeYesterday,
     void Function(SkillInfo)? showSkill,
     Future<Map<String, int>> Function({required int sinceDays})?
-        dailyTokenTotals,
+    dailyTokenTotals,
     Future<Map<String, DailyUsageStats>> Function({required int sinceDays})?
-        dailyUsageStats,
+    dailyUsageStats,
     bool Function()? hasProviderKey,
     String? Function()? auxModelName,
     bool Function()? hasWebProvider,
@@ -638,12 +387,12 @@ class _DevControlServer {
   }
 
   Map<String, dynamic> _stateJson() => {
-        'pid': pid,
-        'startedAt': _startedAt.toUtc().toIso8601String(),
-        'heartbeatAt': DateTime.now().toUtc().toIso8601String(),
-        'controlPort': port,
-        'lastReload': _lastReload,
-      };
+    'pid': pid,
+    'startedAt': _startedAt.toUtc().toIso8601String(),
+    'heartbeatAt': DateTime.now().toUtc().toIso8601String(),
+    'controlPort': port,
+    'lastReload': _lastReload,
+  };
 
   void _writeState() {
     try {
@@ -780,12 +529,14 @@ class _DevControlServer {
         final myId = '${++id}';
         final c = Completer<Map<String, dynamic>>();
         pending[myId] = c;
-        ws.add(jsonEncode({
-          'jsonrpc': '2.0',
-          'id': myId,
-          'method': method,
-          'params': params ?? {},
-        }));
+        ws.add(
+          jsonEncode({
+            'jsonrpc': '2.0',
+            'id': myId,
+            'method': method,
+            'params': params ?? {},
+          }),
+        );
         return c.future.timeout(const Duration(seconds: 10));
       }
 

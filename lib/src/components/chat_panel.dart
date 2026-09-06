@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm_bloc/nocterm_bloc.dart';
+import 'package:path/path.dart' as p;
+
 import '../commands/cmd_help.dart';
 import '../commands/command_executor.dart';
 import '../commands/registry.dart';
@@ -16,6 +19,7 @@ import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
 import '../services/git_status_service.dart';
+import '../services/git_review_service.dart';
 import '../services/notes_service.dart';
 import '../services/plugin.dart';
 import '../services/plugin_registry.dart';
@@ -26,6 +30,7 @@ import '../services/openrouter_stealth_sync.dart';
 import '../services/provider_service.dart';
 import '../services/recent_projects_store.dart';
 import '../services/skills/skill.dart';
+import '../services/tool_execution_event.dart';
 import '../services/tool_executor.dart';
 import '../services/web_provider_registry.dart';
 import '../services/providers/tinyfish_web_provider.dart';
@@ -45,6 +50,7 @@ import '../tools/ask_tool.dart';
 import '../tools/shell_monitor.dart' show ShellMonitorNotice, mkMonitorTail;
 import '../tools/tool_def.dart';
 import '../tools/file_read_tracker.dart';
+import '../tools/git_prepare_commit_tool.dart';
 import '../utils/frame_profiler.dart';
 import '../utils/url_launcher.dart';
 import 'ask_form.dart';
@@ -61,6 +67,7 @@ import 'streaming_cubit.dart';
 import 'context_bar.dart';
 import 'chat_turn_orchestrator.dart';
 import 'extra_info_panel.dart';
+import 'git_review_fullpane.dart';
 import 'home/home_layout_store.dart';
 import 'home/home_screen.dart';
 import 'home/home_widgets.dart';
@@ -72,9 +79,11 @@ import 'quit_handler.dart';
 import 'session_controller.dart';
 import 'session_cycle.dart';
 import 'session_management_panel.dart';
+import 'setup_guide.dart';
 import 'shell_live_fullpane.dart';
 import 'streaming_controller.dart';
 import 'tool_detail_pane.dart';
+import 'version_badge.dart' show cruxVersionLabel;
 import 'vibe_box_data.dart';
 import 'vibe_diff_fullpane.dart';
 import 'ui/toast.dart';
@@ -249,6 +258,13 @@ class ChatPanel extends StatefulComponent {
   /// *do* pass a bootState, so provenance-sniffing was wrong.
   final bool showHomeOnLaunch;
 
+  /// Force the first-run setup screen. This takes precedence over Home.
+  final bool showSetupOnLaunch;
+
+  /// Test seams for the setup screen's automatic runtime preparation.
+  final PrerequisiteCheck? setupEnsureSemble;
+  final PrerequisiteCheck? setupEnsureRipgrep;
+
   /// The `[home]` config.toml store. When non-null, edit-mode layout
   /// changes persist; when null (tests), edit mode works but isn't saved.
   final HomeLayoutStore? homeLayoutStore;
@@ -269,6 +285,9 @@ class ChatPanel extends StatefulComponent {
     required this.recentProjectsStore,
     this.startupWarnings = const [],
     this.showHomeOnLaunch = false,
+    this.showSetupOnLaunch = false,
+    this.setupEnsureSemble,
+    this.setupEnsureRipgrep,
     this.homeLayoutStore,
     this.initialHomeLayout,
   });
@@ -331,6 +350,10 @@ class _ChatPanelState extends State<ChatPanel> {
   /// note is loaded from the DB by the pane itself via [_notesService].
   bool _notesFullpaneOpen = false;
 
+  /// Whether the live working-tree Git review surface is open.
+  bool _gitReviewFullpaneOpen = false;
+  GitCommitReviewRequest? _gitCommitReviewRequest;
+
   /// Backs the "my notes" feature: the per-project note plus the
   /// status-file projection the sidebar widget reads. Bound to this
   /// session's project, sharing the session store's DB connection.
@@ -342,6 +365,7 @@ class _ChatPanelState extends State<ChatPanel> {
   late final PlanModeController _planModeController;
 
   bool _providerServiceReady = false;
+  late bool _showSetup;
 
   final _toastKey = GlobalKey<ToastHubState>();
   final _chatInputKey = GlobalKey<ChatInputState>();
@@ -369,6 +393,7 @@ class _ChatPanelState extends State<ChatPanel> {
   @override
   void initState() {
     super.initState();
+    _showSetup = component.showSetupOnLaunch;
     final bootState = component.bootState;
     _providerService =
         bootState?.providerService ??
@@ -449,6 +474,7 @@ class _ChatPanelState extends State<ChatPanel> {
       lsp: _lspManager,
       pendingAskCubit: _pendingAskCubit,
       planModeController: _planModeController,
+      gitCommitReviewOpener: _openPreparedCommitReview,
     );
     final toolExecutor = ToolExecutor(registry);
     _toolRegistry = registry;
@@ -494,8 +520,9 @@ class _ChatPanelState extends State<ChatPanel> {
         sessionId: sessionId,
       );
     };
-    // Human-in-the-loop shell-monitor toasts: every aux evaluation of
-    // a long-running shell command surfaces as a standing killable
+    _chatService.onToolExecutionCompleted = _onToolExecutionCompleted;
+    // Human-in-the-loop shell-monitor toasts: every aux evaluation of a
+    // long-running shell command surfaces as a standing killable
     // toast, and a manual kill notifies the main session.
     _chatService.onShellMonitorNotice = (sessionId, notice) {
       _onShellMonitorNotice(sessionId, notice);
@@ -1059,6 +1086,15 @@ class _ChatPanelState extends State<ChatPanel> {
     unawaited(_gitStatusService.refresh());
   }
 
+  void _onToolExecutionCompleted(ToolExecutionCompleted event) {
+    if (!event.isWorkspaceGitCommand) return;
+    // The execution context supplies the session workspace. Git's own status
+    // service resolves its path from the active workspace, so refresh only
+    // when that workspace is still the one this panel displays.
+    if (!p.equals(event.workspacePath, Directory.current.path)) return;
+    unawaited(_gitStatusService.refresh());
+  }
+
   @override
   void dispose() {
     CommandRegistry.instance.removeListener(_refresh);
@@ -1070,6 +1106,7 @@ class _ChatPanelState extends State<ChatPanel> {
     _recentProjectsStore.removeListener(_refresh);
     _recentProjectsStore.removeListener(_refreshGitStatus);
     component.pluginRegistry?.removeListener(_refresh);
+    _chatService.onToolExecutionCompleted = null;
     _chatService.dispose();
     _sessionController.dispose();
     _streamingController.dispose();
@@ -1214,6 +1251,7 @@ class _ChatPanelState extends State<ChatPanel> {
       showFullpane: _openFullpane,
       showCodexLoginPane: _showCodexLoginPane,
       showHome: _openHome,
+      showSetup: _openSetup,
       recentProjectsStore: _recentProjectsStore,
       shellMonitorLogStore: _chatService.shellMonitorLogStore,
       planModeController: _planModeController,
@@ -1398,6 +1436,22 @@ class _ChatPanelState extends State<ChatPanel> {
         strings: _strings,
       );
     }
+    if (_gitReviewFullpaneOpen) {
+      return GitReviewFullpane(
+        backend: GitReviewService(projectPath: Directory.current.path),
+        initialDraft: _gitCommitReviewRequest?.draft,
+        onClose: _closeFullpane,
+        onIndexChanged: () => unawaited(_gitStatusService.refresh()),
+        onCommitted: () => unawaited(_gitStatusService.refresh()),
+        generateCommitMessage: (stagedDiff, recentSubjects) =>
+            _chatService.generateCommitMessage(
+              stagedDiff: stagedDiff,
+              recentSubjects: recentSubjects,
+              userRequest: _latestUserRequest(),
+            ),
+        strings: _strings,
+      );
+    }
     final vibeDiff = _vibeDiffRequest;
     if (vibeDiff != null) {
       return VibeDiffFullpane(
@@ -1505,6 +1559,44 @@ class _ChatPanelState extends State<ChatPanel> {
       _overlayController.showFullpane = false;
     });
   }
+
+  void _openSetup() {
+    setState(() {
+      _showSetup = true;
+      // Keep Home mounted underneath when setup is opened from its button.
+      // Both screens own a focused Focusable; replacing Home synchronously
+      // inside the mouse callback leaves FocusManager pointing at an inactive
+      // element while Setup mounts. A full-screen overlay preserves the old
+      // element until setup closes and avoids nocterm's lifecycle assertion.
+      _overlayController.showSessionManager = false;
+      _overlayController.showFullpane = false;
+    });
+  }
+
+  Future<void> _finishSetup(String defaultModel) async {
+    final sessionId = _sessionController.currentSessionId;
+    if (sessionId != null) {
+      await _store.update(sessionId, model: defaultModel);
+      _sessionController.currentSession.model = defaultModel;
+    }
+    _sessionController.resolveAuxiliaryModel();
+    setState(() {
+      _showSetup = false;
+      _overlayController.showHome = false;
+    });
+  }
+
+  Component _buildSetup() => SetupGuide(
+    providerService: _providerService,
+    webProviderRegistry: _webProviderRegistry,
+    themeController: component.themeController,
+    localeController: component.localeController!,
+    projectPath: Directory.current.path,
+    ensureSemble: component.setupEnsureSemble,
+    ensureRipgrep: component.setupEnsureRipgrep,
+    onQuit: _quitHandler.quitAndPrintSummary,
+    onFinish: _finishSetup,
+  );
 
   void _closeHome() {
     setState(() {
@@ -1623,6 +1715,9 @@ class _ChatPanelState extends State<ChatPanel> {
       ),
       // Skills box: tapping a skill opens its SKILL.md in a fullpane.
       showSkill: _openSkillFullpane,
+      // Setup is navigation and remains available while a background turn is
+      // running; unlike runCommand, it must not be rejected by the busy guard.
+      showSetup: _openSetup,
       // Activity box: token-per-day heatmap over this workspace's
       // sessions. The store query is one SQL aggregate; the widget
       // re-invokes it per open (no caching) because the data is cheap
@@ -1709,7 +1804,40 @@ class _ChatPanelState extends State<ChatPanel> {
       _shellLiveFullpane = null;
       _skillFullpane = null;
       _notesFullpaneOpen = false;
+      _gitReviewFullpaneOpen = false;
+      _gitCommitReviewRequest = null;
     });
+  }
+
+  void _openGitReviewFullpane() {
+    setState(() {
+      _gitCommitReviewRequest = null;
+      _gitReviewFullpaneOpen = true;
+      _overlayController.showFullpane = true;
+    });
+  }
+
+  void _openPreparedCommitReview(GitCommitReviewRequest request) {
+    if (!mounted || !p.equals(request.projectPath, Directory.current.path)) {
+      return;
+    }
+    setState(() {
+      _gitCommitReviewRequest = request;
+      _gitReviewFullpaneOpen = true;
+      _overlayController.showFullpane = true;
+    });
+    unawaited(_gitStatusService.refresh());
+  }
+
+  String? _latestUserRequest() {
+    final messages = _sessionController.currentMessages;
+    for (var index = messages.length - 1; index >= 0; index--) {
+      final message = messages[index];
+      if (message.role == 'user' && message.content.trim().isNotEmpty) {
+        return message.content;
+      }
+    }
+    return null;
   }
 
   /// Open the "my notes" editor fullpane (the `notes` screen target of
@@ -1915,6 +2043,18 @@ class _ChatPanelState extends State<ChatPanel> {
         ],
         child: LayoutBuilder(
           builder: (context, constraints) {
+            if (_showSetup && component.localeController != null) {
+              if (_overlayController.showHome) {
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned.fill(child: _buildHome()),
+                    Positioned.fill(child: _buildSetup()),
+                  ],
+                );
+              }
+              return _buildSetup();
+            }
             // Home is an independent full screen, not an overlay: when
             // it's open, the chat interface (history, toolbar, input,
             // sidebar) is not built at all. Nothing else to lay out, no
@@ -1945,6 +2085,16 @@ class _ChatPanelState extends State<ChatPanel> {
             }
 
             final showInfoPanel = constraints.maxWidth >= kSidebarShowThreshold;
+
+            // The input keeps its original one visible text row at minimum.
+            // Its outer padding consumes two more rows, so reserve that before
+            // capping the entire input region at half the terminal height.
+            final maxInputVisibleLines = constraints.maxHeight.isFinite
+                ? ((constraints.maxHeight / 2).floor() -
+                          (kInputPadding * 2).round())
+                      .clamp(kChatInputMinVisibleLines, 10000)
+                      .toInt()
+                : kChatInputMinVisibleLines;
 
             // Plan-mode horizontal split (§9.6 collapse order): with the
             // plan pane up, the info sidebar drops first when the three
@@ -2013,19 +2163,31 @@ class _ChatPanelState extends State<ChatPanel> {
                         Positioned(
                           top: 0,
                           right: kScrollbarClearance,
-                          child: Button(
-                            label: rt.chatDisplayMode == ChatDisplayMode.vibe
-                                ? _strings.t('chat.vibe.vibe')
-                                : _strings.t('chat.vibe.verbose'),
-                            onPressed: () {
-                              final newMode =
-                                  rt.chatDisplayMode == ChatDisplayMode.vibe
-                                  ? ChatDisplayMode.verbose
-                                  : ChatDisplayMode.vibe;
-                              rt.chatDisplayMode = newMode;
-                              _sessionController.persistChatDisplayMode(rt);
-                              setState(() {});
-                            },
+                          child: Row(
+                            children: [
+                              Text(
+                                cruxVersionLabel,
+                                style: TextStyle(
+                                  color: CruxTheme.of(context).textMuted,
+                                ),
+                              ),
+                              const SizedBox(width: 1),
+                              Button(
+                                label:
+                                    rt.chatDisplayMode == ChatDisplayMode.vibe
+                                    ? _strings.t('chat.vibe.vibe')
+                                    : _strings.t('chat.vibe.verbose'),
+                                onPressed: () {
+                                  final newMode =
+                                      rt.chatDisplayMode == ChatDisplayMode.vibe
+                                      ? ChatDisplayMode.verbose
+                                      : ChatDisplayMode.vibe;
+                                  rt.chatDisplayMode = newMode;
+                                  _sessionController.persistChatDisplayMode(rt);
+                                  setState(() {});
+                                },
+                              ),
+                            ],
                           ),
                         ),
                       ...overlays,
@@ -2095,6 +2257,7 @@ class _ChatPanelState extends State<ChatPanel> {
                         refresh: _refresh,
                         projectPath: Directory.current.path,
                         strings: _strings,
+                        maxVisibleLines: maxInputVisibleLines,
                         recentProjectsStore: _recentProjectsStore,
                         activePlanName: () {
                           final path = _planModeController.planDocPath;
@@ -2270,6 +2433,7 @@ class _ChatPanelState extends State<ChatPanel> {
                       onCreateChat: _sessionController.createChatSession,
                       onCreateSession: _createNewSession,
                       gitStatusService: _gitStatusService,
+                      onGitPressed: _openGitReviewFullpane,
                       plugins: component.pluginRegistry?.sidebarPlugins,
                       strings: _strings,
                       onSessionTitleTap: () {

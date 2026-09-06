@@ -55,6 +55,10 @@ CLAUDE.md
 !/.crux/widgets/
 !/.crux/widgets/**
 
+# Local-only plugin spec: the dev-harness control panel is per-machine
+# dev tooling, not source — keep it out of the repo (it stays on disk).
+/.crux/plugins/dev-harness.toml
+
 # Per-machine plan-doc version history (`.crux/plans/<sessionId>/…`,
 # written by PlanDocStore). Not source; also anchors the autocomplete
 # heuristic — see `listKnownPlanNames`.

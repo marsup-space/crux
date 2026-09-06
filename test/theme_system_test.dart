@@ -79,7 +79,13 @@ void main() {
         ]) {
           expect(registry[id]!.brightness, Brightness.dark, reason: id);
         }
-        for (final id in const ['cobalt2', 'flexoki', 'rosepine', 'github']) {
+        for (final id in const [
+          'flexoki',
+          'rosepine',
+          'electric-orchid',
+          'cobalt-bloom',
+          'ember-clay',
+        ]) {
           expect(registry[id]!.brightness, Brightness.light, reason: id);
         }
       },
@@ -383,9 +389,9 @@ default = "openai"
 compact = true
 ''');
       final store = ThemeConfigStore(configFile);
-      await store.writeThemeId('github');
+      await store.writeThemeId('cobalt-bloom');
 
-      expect(await store.readThemeId(), 'github');
+      expect(await store.readThemeId(), 'cobalt-bloom');
       final map = TomlDocument.parse(await configFile.readAsString()).toMap();
       expect((map['provider'] as Map)['default'], 'openai');
       expect((map['ui'] as Map)['compact'], isTrue);
@@ -429,15 +435,15 @@ compact = true
           configStore: store,
         );
 
-        final result = await controller.switchTheme('github');
+        final result = await controller.switchTheme('cobalt-bloom');
         expect(result.persisted, isTrue);
-        expect(controller.activeId, 'github');
+        expect(controller.activeId, 'cobalt-bloom');
 
         final restarted = await ThemeController.create(
           registry: registry,
           configStore: store,
         );
-        expect(restarted.activeId, 'github');
+        expect(restarted.activeId, 'cobalt-bloom');
       },
     );
 
@@ -453,10 +459,10 @@ compact = true
         configStore: ThemeConfigStore(File(impossibleTarget.path)),
       );
 
-      final result = await controller.switchTheme('github');
+      final result = await controller.switchTheme('cobalt-bloom');
       expect(result.found, isTrue);
       expect(result.persisted, isFalse);
-      expect(controller.activeId, 'github');
+      expect(controller.activeId, 'cobalt-bloom');
     });
   });
 }

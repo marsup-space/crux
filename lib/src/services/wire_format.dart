@@ -373,6 +373,8 @@ class ResolvedChatTarget {
 
     String? systemPrompt = session.systemPrompt;
     final staleChat = session.isChat && isStaleChatSystemPrompt(systemPrompt);
+    final staleWorkspace =
+        !session.isChat && isStaleWorkspaceSystemPrompt(systemPrompt);
     // Detect model change: if the cached prompt's env block names a
     // different model than the session's current model, rebuild so the
     // env block reflects the active model. This handles the case where
@@ -381,7 +383,11 @@ class ResolvedChatTarget {
     // with whichever model is current at send time.
     final cachedModelId = extractModelIdFromPrompt(systemPrompt);
     final modelChanged = cachedModelId != null && cachedModelId != modelId;
-    if (systemPrompt == null || systemPrompt.isEmpty || staleChat || modelChanged) {
+    if (systemPrompt == null ||
+        systemPrompt.isEmpty ||
+        staleChat ||
+        staleWorkspace ||
+        modelChanged) {
       systemPrompt = session.isChat
           ? buildChatSystemPrompt(
               provider: provider,

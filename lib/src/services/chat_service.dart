@@ -21,6 +21,7 @@ import 'llm_error.dart';
 import 'prompts/system_prompt.dart';
 import 'provider_service.dart';
 import 'session_lease_manager.dart';
+import 'tool_execution_event.dart';
 import 'tool_executor.dart';
 import 'wire_format.dart' as wire_format;
 import 'wire_format.dart';
@@ -66,38 +67,37 @@ class ChatService {
     LlmClient llmClient,
     ToolExecutor toolExecutor, {
     ReplyLanguageProvider? replyLanguage,
-  })  : _store = store,
-        _providerService = providerService,
-        _replyLanguage =
-            replyLanguage ?? (() => ReplyLanguageSettings.fallback),
-        _compaction = CompactionService(
-          store,
-          providerService,
-          replyLanguage: replyLanguage,
-        ),
-        _turnExecutor = ChatTurnExecutor(
-          store,
-          providerService,
-          llmClient,
-          toolExecutor,
-          SessionLeaseManager(),
-          replyLanguage: replyLanguage,
-        ),
-        _auxiliaryService = AuxiliaryService(
-          providerService,
-          store.messageStore,
-          replyLanguage: replyLanguage,
-        );
+  }) : _store = store,
+       _providerService = providerService,
+       _replyLanguage = replyLanguage ?? (() => ReplyLanguageSettings.fallback),
+       _compaction = CompactionService(
+         store,
+         providerService,
+         replyLanguage: replyLanguage,
+       ),
+       _turnExecutor = ChatTurnExecutor(
+         store,
+         providerService,
+         llmClient,
+         toolExecutor,
+         SessionLeaseManager(),
+         replyLanguage: replyLanguage,
+       ),
+       _auxiliaryService = AuxiliaryService(
+         providerService,
+         store.messageStore,
+         replyLanguage: replyLanguage,
+       );
 
   /// Called when a write/edit tool call mutated the plan-mode document
   /// (§5 P4). Forwarded to the turn executor; wired by the chat panel
   /// to `PlanModeController.onAgentEdit`. `sessionId` identifies which
   /// session's turn made the edit.
   void Function(String oldContent, String newContent, int sessionId)?
-      get onPlanDocMutated => _turnExecutor.onPlanDocMutated;
+  get onPlanDocMutated => _turnExecutor.onPlanDocMutated;
   set onPlanDocMutated(
-      void Function(String oldContent, String newContent, int sessionId)?
-          value) => _turnExecutor.onPlanDocMutated = value;
+    void Function(String oldContent, String newContent, int sessionId)? value,
+  ) => _turnExecutor.onPlanDocMutated = value;
 
   /// Toast channel for the shell progress monitor. Forwarded to the
   /// turn executor; wired by the chat panel to `showMonitorToast` so
@@ -106,10 +106,19 @@ class ChatService {
   /// background session's monitor targets the right session. See
   /// `ShellMonitorNotice` and `ToastHubState.showMonitorToast`.
   void Function(int sessionId, ShellMonitorNotice notice)?
-      get onShellMonitorNotice => _turnExecutor.onShellMonitorNotice;
+  get onShellMonitorNotice => _turnExecutor.onShellMonitorNotice;
   set onShellMonitorNotice(
-          void Function(int sessionId, ShellMonitorNotice notice)? value) =>
-      _turnExecutor.onShellMonitorNotice = value;
+    void Function(int sessionId, ShellMonitorNotice notice)? value,
+  ) => _turnExecutor.onShellMonitorNotice = value;
+
+  /// Emitted as soon as an individual tool invocation completes. The event is
+  /// forwarded by [ChatTurnExecutor] so UI services can react without being
+  /// coupled to its dispatch loop.
+  FutureOr<void> Function(ToolExecutionCompleted event)?
+  get onToolExecutionCompleted => _turnExecutor.onToolExecutionCompleted;
+  set onToolExecutionCompleted(
+    FutureOr<void> Function(ToolExecutionCompleted event)? value,
+  ) => _turnExecutor.onToolExecutionCompleted = value;
 
   // ── Session lease ─────────────────────────────────────────────────
 
@@ -195,6 +204,16 @@ class ChatService {
 
   Future<String?> generateSessionTitle(int sessionId, {String? userContent}) =>
       _auxiliaryService.generateTitle(sessionId, userContent: userContent);
+
+  Future<String?> generateCommitMessage({
+    required String stagedDiff,
+    List<String> recentSubjects = const [],
+    String? userRequest,
+  }) => _auxiliaryService.generateCommitMessage(
+    stagedDiff: stagedDiff,
+    recentSubjects: recentSubjects,
+    userRequest: userRequest,
+  );
 
   Future<String?> generateTldr(
     String responseContent, {

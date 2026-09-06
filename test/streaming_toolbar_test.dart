@@ -90,38 +90,119 @@ void main() {
       }, size: const Size(40, 5));
     });
 
-    test('swaps the label to the hoverLabel on hover while animating', () async {
-      await testNocterm('glossy-btn-hover-swap', (tester) async {
+    test(
+      'swaps the label to the hoverLabel on hover while animating',
+      () async {
+        await testNocterm('glossy-btn-hover-swap', (tester) async {
+          await tester.pumpComponent(
+            GlossyModelButton(
+              label: 'test/model',
+              hoverLabel: 'Interrupt',
+              isAnimating: true,
+              onPressed: () {},
+            ),
+          );
+
+          // Before hover: the base label is on screen, hover label is not.
+          expect(
+            tester.renderToString().contains('test/model'),
+            isTrue,
+            reason: 'base label should render before hover',
+          );
+          expect(
+            tester.renderToString().contains('Interrupt'),
+            isFalse,
+            reason: 'hover label should be hidden before hover',
+          );
+
+          // Hover over the button → the label swaps to the hover label.
+          await tester.hover(2, 0);
+          await tester.pump();
+
+          expect(
+            tester.renderToString().contains('Interrupt'),
+            isTrue,
+            reason: 'hovering should swap the label to Interrupt',
+          );
+        }, size: const Size(40, 5));
+      },
+    );
+
+    test(
+      'centers a CJK hover label without changing the button width',
+      () async {
+        await testNocterm('glossy-btn-hover-cjk-width', (tester) async {
+          await tester.pumpComponent(
+            Row(
+              children: [
+                GlossyModelButton(
+                  label: 'model-name',
+                  hoverLabel: '中断',
+                  isAnimating: true,
+                  onPressed: () {},
+                ),
+                const Text('|'),
+              ],
+            ),
+          );
+
+          // 10-column base label + two outer padding cells.
+          final markerBefore = tester.terminalState.findText('|').single;
+          expect(markerBefore.x, 12);
+
+          await tester.hover(2, markerBefore.y);
+          await tester.pump();
+
+          // `中断` is four terminal columns. It is centered in the
+          // 10-column label area (three blank columns precede it), and the
+          // following widget stays at exactly the same column.
+          expect(tester.terminalState.getCellAt(4, markerBefore.y)?.char, '中');
+          expect(tester.terminalState.getCellAt(12, markerBefore.y)?.char, '|');
+        }, size: const Size(40, 5));
+      },
+    );
+
+    test('centers a busy min-width auxiliary label', () async {
+      await testNocterm('glossy-btn-min-width-centered', (tester) async {
         await tester.pumpComponent(
-          GlossyModelButton(
-            label: 'test/model',
-            hoverLabel: 'Interrupt',
-            isAnimating: true,
-            onPressed: () {},
+          Row(
+            children: [
+              GlossyModelButton(
+                label: 'titling…',
+                isAnimating: true,
+                centerLabel: true,
+                minWidth: 12,
+              ),
+              const Text('|'),
+            ],
           ),
         );
 
-        // Before hover: the base label is on screen, hover label is not.
-        expect(
-          tester.renderToString().contains('test/model'),
-          isTrue,
-          reason: 'base label should render before hover',
-        );
-        expect(
-          tester.renderToString().contains('Interrupt'),
-          isFalse,
-          reason: 'hover label should be hidden before hover',
+        final marker = tester.terminalState.findText('|').single;
+        // The 8-column busy label is centered in ten content columns.
+        expect(tester.terminalState.getCellAt(2, marker.y)?.char, 't');
+        expect(marker.x, 12);
+      }, size: const Size(40, 5));
+    });
+
+    test('keeps an idle min-width auxiliary label left-aligned', () async {
+      await testNocterm('glossy-btn-min-width-idle', (tester) async {
+        await tester.pumpComponent(
+          Row(
+            children: [
+              GlossyModelButton(
+                label: 'AUX: model',
+                isAnimating: false,
+                minWidth: 14,
+              ),
+              const Text('|'),
+            ],
+          ),
         );
 
-        // Hover over the button → the label swaps to the hover label.
-        await tester.hover(2, 0);
-        await tester.pump();
-
-        expect(
-          tester.renderToString().contains('Interrupt'),
-          isTrue,
-          reason: 'hovering should swap the label to Interrupt',
-        );
+        final marker = tester.terminalState.findText('|').single;
+        expect(tester.terminalState.getCellAt(1, marker.y)?.char, 'A');
+        expect(marker.x, 14);
       }, size: const Size(40, 5));
     });
 

@@ -56,6 +56,7 @@ import 'package:nocterm/src/utils/unicode_width.dart';
 import '../../diagram/diagram.dart';
 import '../../diagram/diagram_model.dart';
 import '../../i18n/strings.dart';
+import 'diagram_border_classifier.dart';
 import '../../theme/crux_theme.dart';
 
 /// The parsed + rendered diagram content a viewport breathes from.
@@ -64,7 +65,22 @@ class DiagramViewportData {
   /// them as extra lines so they pan together with the drawing).
   final List<String> lines;
 
-  const DiagramViewportData(this.lines);
+  /// Grapheme indexes that belong to a node outline. Edge strokes are left
+  /// unmarked and therefore use the brighter content/line color.
+  final List<Set<int>>? borderGlyphs;
+
+  const DiagramViewportData(this.lines, {this.borderGlyphs});
+
+  factory DiagramViewportData.inferBorders(List<String> lines) =>
+      DiagramViewportData(
+        lines,
+        borderGlyphs: DiagramBorderClassifier.infer(lines),
+      );
+
+  bool isBorderGlyph(int line, int glyph) =>
+      borderGlyphs != null &&
+      line < borderGlyphs!.length &&
+      borderGlyphs![line].contains(glyph);
 
   int get naturalWidth {
     var w = 0;
@@ -289,7 +305,7 @@ DiagramViewportData? tryBuildDiagramViewportData(
       '⚠ ${warning.message(cycleDetected: (nodes) => effectiveStrings.t('diagram.cycleWarning', {'nodes': nodes}))}',
     );
   }
-  return DiagramViewportData(lines);
+  return DiagramViewportData.inferBorders(lines);
 }
 
 class DiagramViewport extends StatefulComponent {
@@ -733,11 +749,28 @@ class RenderDiagramViewport extends RenderObject
         visibleRows.toDouble(),
       ),
     );
+    // TerminalCanvas.clip() changes the coordinate origin to its clipped
+    // area. If this viewport has scrolled partly above its parent, that area
+    // is intersected with the terminal and its origin is no longer the
+    // diagram's inner top-left. Keep the art in the render object's original
+    // coordinate system, expressed relative to the resulting clipped canvas.
+    final clippedOrigin = Offset(
+      clipped.area.left - canvas.area.left,
+      clipped.area.top - canvas.area.top,
+    );
+    final contentOrigin = offset + const Offset(2, 1) - clippedOrigin;
     final pan = -_controller.offset;
     for (var i = 0; i < visibleRows; i++) {
       final lineIdx = firstRow + i;
       if (lineIdx < 0 || lineIdx >= contentRows) continue;
-      _drawPannedLine(clipped, _data.lines[lineIdx], i, pan);
+      _drawPannedLine(
+        clipped,
+        _data.lines[lineIdx],
+        lineIdx,
+        i,
+        pan,
+        contentOrigin,
+      );
     }
 
     _drawFooter(canvas, offset, width, height);
@@ -808,11 +841,15 @@ class RenderDiagramViewport extends RenderObject
   void _drawPannedLine(
     TerminalCanvas clipCanvas,
     String line,
+    int lineIndex,
     int row,
     double pan,
+    Offset contentOrigin,
   ) {
     var x = pan; // may be negative (content shifted left)
+    var glyphIndex = 0;
     for (final grapheme in line.characters) {
+      final currentGlyphIndex = glyphIndex++;
       final gw = UnicodeWidth.graphemeWidth(grapheme).toDouble();
       if (gw <= 0) continue;
       final start = x;
@@ -824,9 +861,13 @@ class RenderDiagramViewport extends RenderObject
       // when ANY column is visible.
       if (start >= _effectiveViewportWidth) break; // right of viewport
       clipCanvas.drawText(
-        Offset(start, row.toDouble()),
+        contentOrigin + Offset(start, row.toDouble()),
         grapheme,
-        style: TextStyle(color: _contentColor),
+        style: TextStyle(
+          color: _data.isBorderGlyph(lineIndex, currentGlyphIndex)
+              ? _borderColor
+              : _contentColor,
+        ),
       );
       if (x >= _effectiveViewportWidth) break;
     }

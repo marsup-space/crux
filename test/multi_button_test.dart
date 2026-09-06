@@ -191,5 +191,41 @@ void main() {
         expect(hoverLines.length, idleLines.length);
       });
     });
+
+    test('constrained idle label reserves every wrapped row', () async {
+      await testNocterm('constrained idle height', (tester) async {
+        // The label is intrinsically wider than the parent. The button must
+        // calculate its footprint from the 20-cell constraint, not its
+        // unconstrained label width, so its second line cannot paint below
+        // the enclosing box.
+        await tester.pumpComponent(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 20,
+                child: MultiButton(
+                  label: 'averylongprojectnamethatwraps',
+                  segments: [MultiButtonSegment(label: 'open')],
+                ),
+              ),
+              const Text('after'),
+            ],
+          ),
+        );
+
+        final labelRows = tester.terminalState
+            .findText('averylongprojectna')
+            .map((hit) => hit.y)
+            .toSet();
+        expect(labelRows.length, 1);
+        // The rest of the label has wrapped, and the next sibling is placed
+        // after both content rows rather than overlapping the second one.
+        expect(tester.terminalState.findText('methatwraps'), isNotEmpty);
+        final wrappedText = tester.terminalState.findText('methatwraps');
+        final afterText = tester.terminalState.findText('after');
+        expect(afterText.first.y, greaterThan(wrappedText.first.y));
+      }, size: const Size(20, 10));
+    });
   });
 }

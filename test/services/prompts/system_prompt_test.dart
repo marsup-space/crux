@@ -94,6 +94,37 @@ void main() {
       expect(out, contains('no `pie`'));
     });
 
+    test('prefers prepare_commit so commit and push stay human-reviewed', () {
+      final out = buildSystemPrompt(
+        provider: _provider(),
+        model: _provider().models.first,
+        cwd: '/tmp/x',
+        worktree: '/tmp/x',
+        sessionStarted: DateTime.utc(2026, 1, 1),
+      );
+      expect(out, contains('## Human-reviewed commits'));
+      expect(out, contains('prefer the `prepare_commit` tool'));
+      expect(out, contains('only the files that belong to the task'));
+      expect(out, contains('commit title and description are user-visible'));
+      expect(out, contains('same language required for your reply'));
+      expect(out, contains('let the user choose **Commit**'));
+      expect(out, contains('never include unrelated or conflicted files'));
+    });
+
+    test('keeps shell output scoped to the next decision', () {
+      final out = buildSystemPrompt(
+        provider: _provider(),
+        model: _provider().models.first,
+        cwd: '/tmp/x',
+        worktree: '/tmp/x',
+        sessionStarted: DateTime.utc(2026, 1, 1),
+      );
+      expect(out, contains('## Shell output budget'));
+      expect(out, contains('cap results'));
+      expect(out, contains('Prefer a summary first'));
+      expect(out, contains('complete build output'));
+    });
+
     test('always ends with the env meta layer', () {
       final out = buildSystemPrompt(
         provider: _provider(),
@@ -266,9 +297,8 @@ void main() {
       () {
         final tempRoot = Directory.systemTemp.createTempSync('crux_proj_in_');
         try {
-          File(
-            p.join(tempRoot.path, 'AGENTS.md'),
-          ).writeAsStringSync('Project rules.');
+          File(p.join(tempRoot.path, 'AGENTS.md'))
+              .writeAsStringSync('Project rules.');
 
           final out = buildSystemPrompt(
             provider: _provider(systemPromptAddition: 'Tuning.'),
@@ -351,6 +381,7 @@ void main() {
       expect(out, isNot(contains('semantic_search')));
       expect(out, isNot(contains('Codebase exploration')));
       expect(out, isNot(contains('Tool tiers')));
+      expect(out, isNot(contains('prepare_commit')));
       expect(out, isNot(contains('available_skills')));
       expect(out, isNot(contains('AGENTS.md')));
     });
@@ -439,6 +470,28 @@ void main() {
     });
   });
 
+  test('isStaleWorkspaceSystemPrompt upgrades existing workspace sessions', () {
+    expect(
+      isStaleWorkspaceSystemPrompt(
+        'You are Crux, an interactive AI coding agent for the terminal.\n'
+        '## Human-reviewed commits\n'
+        'The commit title and description are user-visible\n'
+        '## Tool tiers',
+      ),
+      isTrue,
+    );
+    final fresh = buildSystemPrompt(
+      provider: _provider(),
+      model: _provider().models.first,
+      cwd: '/tmp/x',
+      worktree: '/tmp/x',
+      sessionStarted: DateTime.utc(2026, 1, 1),
+    );
+    expect(isStaleWorkspaceSystemPrompt(fresh), isFalse);
+    expect(isStaleWorkspaceSystemPrompt(null), isFalse);
+    expect(isStaleWorkspaceSystemPrompt(''), isFalse);
+  });
+
   group('reply-language section', () {
     test('auto mode keeps the match-user-language rule', () {
       final out = buildSystemPrompt(
@@ -468,6 +521,12 @@ void main() {
         ),
       );
       expect(out, contains('Always reply in Chinese'));
+      expect(
+        out,
+        contains(
+          'User-visible tool arguments, including commit titles and descriptions',
+        ),
+      );
       expect(out, isNot(contains("Match the user's language")));
     });
 

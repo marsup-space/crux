@@ -1166,6 +1166,7 @@ class _HighlightMarkdownVisitor {
   /// link text lands in the rendered output. Reset to 0 at the
   /// start of each `visitNodes` call.
   int _currentOffset = 0;
+  String? _lastRenderedCharacter;
 
   List<InlineSpan> visitNodes(List<md.Node> nodes) {
     // Reset the running offset at the start of every parse so
@@ -1175,6 +1176,7 @@ class _HighlightMarkdownVisitor {
     // constructed fresh per `parseMarkdownToInlineSpans` call,
     // so this is belt-and-suspenders, but cheap.
     _currentOffset = 0;
+    _lastRenderedCharacter = null;
     final spans = <InlineSpan>[];
     for (final node in nodes) {
       final span = visitNode(node);
@@ -1228,6 +1230,8 @@ class _HighlightMarkdownVisitor {
       // in the rendered text. The `<a>` case reads this counter
       // BEFORE this increment to compute the link's start offset.
       _currentOffset += _textLength(span);
+      _lastRenderedCharacter =
+          _lastTextCharacter(span) ?? _lastRenderedCharacter;
     }
     return span;
   }
@@ -1245,6 +1249,19 @@ class _HighlightMarkdownVisitor {
       }
     }
     return len;
+  }
+
+  static String? _lastTextCharacter(InlineSpan span) {
+    if (span is! TextSpan) return null;
+    final children = span.children;
+    if (children != null) {
+      for (final child in children.reversed) {
+        final last = _lastTextCharacter(child);
+        if (last != null) return last;
+      }
+    }
+    final text = span.text;
+    return text == null || text.isEmpty ? null : text[text.length - 1];
   }
 
   InlineSpan? visitElement(md.Element element) {
@@ -1302,6 +1319,12 @@ class _HighlightMarkdownVisitor {
       case 'code':
         return TextSpan(text: element.textContent, style: styleSheet.codeStyle);
       case 'pre':
+        // CommonMark accepts a fenced block directly after list-item prose
+        // without a blank source line. In that AST shape the <pre> follows
+        // inline text, so the visual frame must supply its own row boundary;
+        // otherwise `╭─ language` is painted at the end of the prose line.
+        final needsLeadingNewline =
+            _lastRenderedCharacter != null && _lastRenderedCharacter != '\n';
         final codeBlockSpan = _renderCodeBlock(element);
         // A parseable diagram fence (viewport mode) leaves a pending
         // sentinel — emit it BARE so it occupies one slot in the
@@ -1313,12 +1336,20 @@ class _HighlightMarkdownVisitor {
           _pendingDiagramSentinel = null;
           return TextSpan(
             children: [
+              if (needsLeadingNewline) const TextSpan(text: '\n'),
               sentinel,
               const TextSpan(text: '\n\n'),
             ],
           );
         }
-        return codeBlockSpan;
+        return needsLeadingNewline
+            ? TextSpan(
+                children: [
+                  const TextSpan(text: '\n'),
+                  codeBlockSpan,
+                ],
+              )
+            : codeBlockSpan;
       case 'blockquote':
         final children = visitChildren(element);
         return TextSpan(

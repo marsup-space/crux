@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
+
 import 'package:path/path.dart' as p;
 import 'package:nocterm/nocterm.dart';
 import 'package:crux/crux.dart';
@@ -198,9 +199,8 @@ void main(List<String> args) async {
   // plugin set changes; deregister on exit so the last instance out
   // lights the daemon off. Every step degrades silently — producers
   // are an optimization, never load-bearing for the TUI itself.
-  final pluginRegistry = PluginRegistry(
-    projectPath: Directory.current.path,
-  )..start();
+  final pluginRegistry = PluginRegistry(projectPath: Directory.current.path)
+    ..start();
   final daemonClient = DaemonClient(projectPath: Directory.current.path);
   {
     pluginRegistry.addListener(() {
@@ -225,8 +225,11 @@ void main(List<String> args) async {
       // `~/.crux/plugins/` roots), so any session that writes a spec
       // shows up in this session's sidebar/home within ~2 s. The
       // dev-harness plugin is just the seeded default spec.
-            pluginRegistry: pluginRegistry,
+      pluginRegistry: pluginRegistry,
       showHomeOnLaunch: showHomeOnLaunch,
+      showSetupOnLaunch: !_hasAnyApiKey(
+        results.chatPanelBootState.providerService,
+      ),
       homeLayoutStore: homeLayoutStore,
       initialHomeLayout: homeLayoutConfig.layout,
       startupWarnings: [
@@ -237,15 +240,6 @@ void main(List<String> args) async {
           results.themeController.startupWarning!,
         if (results.localeController.startupWarning != null)
           results.localeController.startupWarning!,
-        // First-run onboarding: without any usable API key the
-        // model can't respond at all, so say so once at startup
-        // instead of letting the first message fail. Goes through
-        // ProviderService.getApiKey, which covers auth.toml,
-        // CRUX_API_KEY_<PROVIDER>, and the global CRUX_API_KEY
-        // environment variable.
-        if (!_hasAnyApiKey(results.chatPanelBootState.providerService))
-          'No API key configured — run /provider <name> <key> to '
-              'connect a model.',
         // When launched under `--observe` / `--enable-vm-service`,
         // the Dart runtime prints the VM service URL to stderr
         // BEFORE our app enters alt-screen mode, so the user
@@ -289,9 +283,9 @@ void main(List<String> args) async {
   // the daemon group-kills its producers and lights off. Never let
   // a wedged daemon stall the exit — heartbeat GC covers us anyway.
   await daemonClient.shutdown().timeout(
-        const Duration(seconds: 2),
-        onTimeout: () {},
-      );
+    const Duration(seconds: 2),
+    onTimeout: () {},
+  );
   pluginRegistry.dispose();
 }
 
@@ -351,7 +345,7 @@ List<String> _vmServiceStartupWarnings() {
 /// supported source counts: keys persisted in `auth.toml`,
 /// per-provider `CRUX_API_KEY_<PROVIDER>` environment variables, and
 /// the global `CRUX_API_KEY` fallback (from either source). Used to
-/// emit the one-time "no API key configured" startup warning.
+/// route first-run users into the setup guide.
 bool _hasAnyApiKey(ProviderService providerService) {
   for (final name in providerService.providerNames()) {
     final key = providerService.getApiKey(name);
@@ -646,6 +640,7 @@ class _CruxApp extends StatefulComponent {
   final PluginRegistry pluginRegistry;
   final List<String> startupWarnings;
   final bool showHomeOnLaunch;
+  final bool showSetupOnLaunch;
 
   /// The `[home]` config.toml store, handed to [ChatPanel] so edit mode
   /// can persist layout changes. Null when home shouldn't persist
@@ -667,6 +662,7 @@ class _CruxApp extends StatefulComponent {
     required this.pluginRegistry,
     this.startupWarnings = const [],
     this.showHomeOnLaunch = false,
+    this.showSetupOnLaunch = false,
     this.homeLayoutStore,
     this.initialHomeLayout,
   });
@@ -722,27 +718,23 @@ class _CruxAppState extends State<_CruxApp> {
       // 500 ms delay.
       child: CruxTheme(
         data: theme,
-        // VersionBadge paints the faint top-right version label as a
-        // Stack sibling of everything below it, so neither the hint
-        // overlay nor the chat panel layout shifts by a single cell.
-        child: VersionBadge(
-          child: HintOverlay(
-            tooltipBackgroundColor: theme.overlayBackground,
-            tooltipBorderColor: theme.overlayBorder,
-            child: ChatPanel(
-              userProvidersDir: component.userProvidersDir,
-              builtInProvidersDir: component.builtInProvidersDir,
-              themeController: component.themeController,
-              localeController: component.localeController,
-              bootState: component.bootState,
-              gitStatusService: component.gitStatusService,
-              pluginRegistry: component.pluginRegistry,
-              recentProjectsStore: component.recentProjectsStore,
-              startupWarnings: component.startupWarnings,
-              showHomeOnLaunch: component.showHomeOnLaunch,
-              homeLayoutStore: component.homeLayoutStore,
-              initialHomeLayout: component.initialHomeLayout,
-            ),
+        child: HintOverlay(
+          tooltipBackgroundColor: theme.overlayBackground,
+          tooltipBorderColor: theme.overlayBorder,
+          child: ChatPanel(
+            userProvidersDir: component.userProvidersDir,
+            builtInProvidersDir: component.builtInProvidersDir,
+            themeController: component.themeController,
+            localeController: component.localeController,
+            bootState: component.bootState,
+            gitStatusService: component.gitStatusService,
+            pluginRegistry: component.pluginRegistry,
+            recentProjectsStore: component.recentProjectsStore,
+            startupWarnings: component.startupWarnings,
+            showHomeOnLaunch: component.showHomeOnLaunch,
+            showSetupOnLaunch: component.showSetupOnLaunch,
+            homeLayoutStore: component.homeLayoutStore,
+            initialHomeLayout: component.initialHomeLayout,
           ),
         ),
       ),

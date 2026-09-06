@@ -136,7 +136,7 @@ class PollingCoordinator {
     String? apiKey;
     if (providerName != null) {
       final llm = providerService.llmProviderByName(providerName);
-      if (llm is CreditBalanceProvider) {
+      if (llm is CreditBalanceProvider && llm.isCreditBalance) {
         provider = llm;
         apiKey = providerService.getApiKey(providerName);
         if (apiKey == null || apiKey.isEmpty) {
@@ -198,7 +198,7 @@ class PollingCoordinator {
       final llm = providerService.llmProviderByName(name);
       if (llm is CodingPlanProvider) {
         desired[name] = 'codingPlan';
-      } else if (llm is CreditBalanceProvider) {
+      } else if (llm is CreditBalanceProvider && llm.isCreditBalance) {
         desired[name] = 'creditBalance';
       }
     }

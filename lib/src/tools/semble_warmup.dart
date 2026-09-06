@@ -23,6 +23,7 @@ class SembleWarmup {
 
   Completer<void>? _ready;
   String? _path;
+  Object? _lastError;
 
   /// True if a warmup is in flight.
   bool get isWarming {
@@ -35,6 +36,9 @@ class SembleWarmup {
     final c = _ready;
     return c != null && c.isCompleted;
   }
+
+  Object? get lastError => _lastError;
+  bool get succeeded => isReady && _lastError == null;
 
   /// Fire-and-forget. Starts warmup if not already started. Safe to
   /// call multiple times; later calls return the existing future.
@@ -59,10 +63,20 @@ class SembleWarmup {
   /// own clean error when it actually tries to run).
   Future<void> awaitReady(String path) => start(path);
 
+  /// Retry after setup downloaded/repaired model assets.
+  Future<void> retry(String path) async {
+    final current = _ready;
+    if (current != null && !current.isCompleted) await current.future;
+    debugReset();
+    await start(path);
+    if (_lastError != null) throw _lastError!;
+  }
+
   /// Test seam: reset state. Not for production use.
   void debugReset() {
     _ready = null;
     _path = null;
+    _lastError = null;
     _refreshing = false;
     SembleClient.instance.debugReset();
   }
@@ -100,8 +114,10 @@ class SembleWarmup {
   Future<void> _doWarmup(Completer<void> completer) async {
     try {
       await SembleClient.instance.prewarm(_path!);
-    } on Object {
-      // Same policy as before: don't block the agent loop.
+      _lastError = null;
+    } on Object catch (error) {
+      // Still silent to the agent loop, but setup can now report and retry it.
+      _lastError = error;
     } finally {
       if (!completer.isCompleted) completer.complete();
     }

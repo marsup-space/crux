@@ -1,5 +1,7 @@
 import 'package:nocterm/nocterm.dart';
+
 import '../../theme/crux_theme.dart';
+import 'hoverable.dart';
 
 /// A reusable button component with hover and click support.
 ///
@@ -67,41 +69,34 @@ class Button extends StatefulComponent {
 }
 
 class _ButtonState extends State<Button> {
-  bool _hovered = false;
-
   @override
   Component build(BuildContext context) {
     final btn = component;
-    final theme = CruxTheme.of(context);
-    final activeColor = _hovered
-        ? btn.hoverColor ?? theme.buttonTextHover
-        : btn.focused
-        ? btn.focusColor ?? theme.buttonTextFocused
-        : btn.color ?? theme.buttonText;
-    final activeBgColor = _hovered
-        ? btn.hoverBgColor ?? theme.buttonBackgroundHover
-        : btn.focused
-        ? btn.focusBgColor ?? theme.buttonBackgroundFocused
-        : btn.bgColor ?? theme.buttonBackground;
-
-    final effectiveStyle = TextStyle(
-      color: activeColor,
-      fontWeight: _hovered || btn.focused ? FontWeight.bold : null,
-    ).merge(btn.style);
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      opaque: false,
-      child: GestureDetector(
-        onTap: btn.onPressed,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
+    return Hoverable(
+      enabled: btn.onPressed != null,
+      onTap: btn.onPressed,
+      builder: (context, hovered) {
+        final theme = CruxTheme.of(context);
+        final activeColor = hovered
+            ? btn.hoverColor ?? theme.buttonTextHover
+            : btn.focused
+            ? btn.focusColor ?? theme.buttonTextFocused
+            : btn.color ?? theme.buttonText;
+        final activeBgColor = hovered
+            ? btn.hoverBgColor ?? theme.buttonBackgroundHover
+            : btn.focused
+            ? btn.focusBgColor ?? theme.buttonBackgroundFocused
+            : btn.bgColor ?? theme.buttonBackground;
+        final effectiveStyle = TextStyle(
+          color: activeColor,
+          fontWeight: hovered || btn.focused ? FontWeight.bold : null,
+        ).merge(btn.style);
+        return Container(
           decoration: BoxDecoration(color: activeBgColor),
           padding: btn.padding,
           child: Text(btn.label, style: effectiveStyle),
-        ),
-      ),
+        );
+      },
     );
   }
 }

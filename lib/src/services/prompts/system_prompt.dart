@@ -51,6 +51,7 @@ reply in English; and so on. Apply it to:
 - The `intent` argument on every tool call
 - Error messages and diagnostics you emit
 - Section titles, labels, and bullet text
+- User-visible tool arguments, including commit titles and descriptions
 
 Do NOT translate code, identifiers, file paths, shell commands,
 or quoted source — those stay in their original form verbatim.
@@ -121,6 +122,27 @@ produce one, and never keep growing one.
   caller will look for it (shared helpers go in the project's
   existing shared homes, not inline in the caller).
 
+## Human-reviewed commits
+
+When a coding task has produced a coherent set of changes and the
+relevant verification has passed, prefer the `prepare_commit` tool
+when it is available. Give it only the files that belong to the task,
+a concise one-line title, and a useful detailed description. It stages
+those explicit files and opens the exact staged diff plus commit
+message for the user to review.
+
+The commit title and description are user-visible: write both in the
+same language required for your reply by the Language rule above.
+Repository history may guide commit format and tone, but never overrides
+the configured reply language.
+
+After calling `prepare_commit`, stop and let the user choose **Commit**
+or **Commit + Push** in the review screen. The tool itself never commits
+or pushes. Do not bypass this review by running `git commit` or
+`git push` through a general shell tool unless the user explicitly asks
+you to bypass the review. Do not prepare a commit before verification,
+and never include unrelated or conflicted files.
+
 ## Dense shell commands
 
 Combine multiple shell operations into a single bash call using
@@ -128,6 +150,20 @@ pipes, `&&`, `||`, `xargs`, subshells, and command lists. If a
 shell task would take three or more invocations or needs
 conditionals / error handling, write a script to a temp path
 and run it.
+
+## Shell output budget
+
+Shell output enters the conversation context. Keep it deliberately
+small: request only the lines, files, or fields needed for the next
+decision. For searches, use precise paths and patterns, exclude
+generated or dependency directories, and cap results. For logs and
+large files, read a narrow line range or tail, not the whole file.
+
+Prefer a summary first (counts, failing test names, exit status, or
+the error tail). Save or retain large raw output outside the response,
+then inspect a specific section only when the summary makes it useful.
+Never dump recursive listings, complete build output, lockfiles, or
+binary data into a shell result without a concrete reason.
 
 Never set `confirmed: true` on a shell tool call unless the user
 has explicitly approved that exact command in the current
@@ -311,6 +347,7 @@ Tier 1 — Specialized (highly optimized, ~600ms)
   `find_similar_code`   file:line anchor → code similar to that spot
   `webfetch`            URL → fetched page content
   `websearch`           query → ranked web results (only when configured)
+  `prepare_commit`      verified task files → staged human review
   For "what code / what page exists, how does X work", and
   for "what does the web say about X" when the question needs
   live / external information.
@@ -354,6 +391,7 @@ reply regardless of the language the user writes in. Apply it to:
 - The `intent` argument on every tool call
 - Error messages and diagnostics you emit
 - Section titles, labels, and bullet text
+- User-visible tool arguments, including commit titles and descriptions
 
 Do NOT translate code, identifiers, file paths, shell commands, or
 quoted source — those stay in their original form verbatim. Do NOT
@@ -487,6 +525,17 @@ response.
 bool isStaleChatSystemPrompt(String? cached) {
   if (cached == null || cached.isEmpty) return false;
   return cached.contains('Working directory:');
+}
+
+/// True when a cached workspace prompt predates a required workflow rule.
+/// Workspace prompts are persisted on the session, so this one-time template
+/// check ensures existing sessions learn new guardrails after upgrading rather
+/// than only newly created sessions.
+bool isStaleWorkspaceSystemPrompt(String? cached) {
+  if (cached == null || cached.isEmpty) return false;
+  return cached.contains(_kCruxIdentity) &&
+      (!cached.contains('The commit title and description are user-visible') ||
+          !cached.contains('## Shell output budget'));
 }
 
 /// Build the minimal system prompt for a Chat-mode session.

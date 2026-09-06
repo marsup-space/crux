@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:crux/src/tools/tool_def.dart';
@@ -248,18 +249,15 @@ void main() {
       },
     );
 
-    test(
-      'checkWriteGuard reads file for the agent and signals "you can write now"',
-      () async {
-        final file = File('${tempDir.path}/unread.txt');
-        await file.writeAsString('content here');
-        final guard = await tracker.checkWriteGuard(file.path);
-        expect(guard, isNotNull);
-        expect(guard!.header, contains('[GUARD]'));
-        expect(guard.header, contains('BLOCKED'));
-        expect(guard.content, 'content here');
-      },
-    );
+    test('checkWriteGuard reads file for the agent and signals "you can write now"', () async {
+      final file = File('${tempDir.path}/unread.txt');
+      await file.writeAsString('content here');
+      final guard = await tracker.checkWriteGuard(file.path);
+      expect(guard, isNotNull);
+      expect(guard!.header, contains('[GUARD]'));
+      expect(guard.header, contains('BLOCKED'));
+      expect(guard.content, 'content here');
+    });
 
     test('checkWriteGuard reads file for the agent when file is modified, '
         'with a clear "pattern must match this version" hint', () async {
@@ -826,7 +824,8 @@ void main() {
           reason: 'exit code should appear at the end, after truncation marker',
         );
         // And the truncation marker should mention the temp file path
-        expect(result.output, contains('output truncated to 2000 lines'));
+        expect(result.output, contains('output truncated from'));
+        expect(result.output, contains('2000 lines'));
         expect(result.output, contains('full output:'));
         // The truncation marker should come BEFORE the exit code marker
         final truncIdx = result.output.indexOf('output truncated');
@@ -835,6 +834,34 @@ void main() {
       },
       skip: Platform.isWindows,
     );
+
+    test('caps a long single-line result while preserving its tail', () async {
+      final tool = BashTool();
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: Directory.systemTemp.path,
+      );
+      final result = await tool.execute({
+        'command': "printf 'HEAD:'; head -c 20000 /dev/zero | tr '\\0' x; printf ':TAIL'",
+        'intent': 'Exercise the shell output character budget',
+      }, ctx);
+
+      expect(result.truncated, isTrue);
+      expect(result.output, contains('HEAD:'));
+      expect(result.output, contains(':TAIL'));
+      expect(result.output, contains('shell output omitted'));
+      expect(result.outputPath, isNotNull);
+      expect(result.metadata['originalOutputChars'], greaterThan(20000));
+      expect(
+        result.metadata['returnedOutputChars'],
+        lessThanOrEqualTo(16 * 1024),
+      );
+      final raw = await File(result.outputPath!).readAsString();
+      expect(raw, contains('HEAD:'));
+      expect(raw, contains(':TAIL'));
+    }, skip: Platform.isWindows);
   });
 
   group('CmdTool execute (Windows)', () {
@@ -848,7 +875,7 @@ void main() {
       );
       final result = await tool.execute({
         'command': 'echo hello_crux_test',
-        'description': 'Test echo command',
+        'intent': 'Test echo command',
       }, ctx);
       expect(result.output.toLowerCase(), contains('hello_crux_test'));
       expect(result.metadata['exitCode'], 0);
@@ -866,6 +893,7 @@ void main() {
         );
         final result = await tool.execute({
           'command': r'echo "fix /continue"',
+          'intent': 'Verify quoted slash handling',
         }, ctx);
         expect(
           result.output.contains("'/continue' is outside repository"),
@@ -888,8 +916,8 @@ void main() {
           workingDirectory: r'C:\Projects\crux',
         );
         final result = await tool.execute({
-          'command':
-              r'echo "fix(commands): reject /continue" & echo "second line with /flag"',
+          'command': r'echo "fix(commands): reject /continue" & echo "second line with /flag"',
+          'intent': 'Verify multiline quoted slash handling',
         }, ctx);
         expect(
           result.output.contains("'/continue' is outside repository"),
@@ -909,13 +937,26 @@ void main() {
         abort: AbortSignal(),
         workingDirectory: Directory.systemTemp.path,
       );
-      await tool.execute({'command': 'echo cleanup_test'}, ctx);
+      final existingTempBatches = Directory(Directory.systemTemp.path)
+          .listSync()
+          .where((e) => e.path.contains('crux_cmd_') && e.path.endsWith('.bat'))
+          .map((e) => e.path)
+          .toSet();
+      await tool.execute({
+        'command': 'echo cleanup_test',
+        'intent': 'Verify temporary batch cleanup',
+      }, ctx);
       await Future.delayed(const Duration(milliseconds: 100));
       final leaked = Directory(Directory.systemTemp.path)
           .listSync()
           .where((e) => e.path.contains('crux_cmd_') && e.path.endsWith('.bat'))
           .toList();
-      expect(leaked, isEmpty);
+      expect(
+        leaked
+            .map((e) => e.path)
+            .where((path) => !existingTempBatches.contains(path)),
+        isEmpty,
+      );
     }, skip: !Platform.isWindows);
 
     test('returns error for missing command', () async {
@@ -935,6 +976,31 @@ void main() {
       expect(tool.name, 'powershell');
       expect(tool.parametersSchema['required'], contains('command'));
     });
+
+    test('PowerShellTool caps a long single-line result', () async {
+      final tool = PowerShellTool();
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: Directory.systemTemp.path,
+      );
+      final result = await tool.execute({
+        'command': "Write-Output ('HEAD:' + ('中' * 20000) + ':TAIL')",
+        'intent': 'Exercise the shell output character budget',
+      }, ctx);
+
+      expect(result.truncated, isTrue);
+      expect(result.output, contains('HEAD:'));
+      expect(result.output, contains(':TAIL'));
+      expect(result.output, contains('shell output omitted'));
+      expect(result.metadata['originalOutputChars'], greaterThan(20000));
+      expect(
+        result.metadata['returnedOutputChars'],
+        lessThanOrEqualTo(16 * 1024),
+      );
+      expect(estimateTokens(result.output), lessThanOrEqualTo(4096));
+    }, skip: !Platform.isWindows);
 
     test('CmdTool has correct name and schema', () {
       final tool = CmdTool();
@@ -1097,79 +1163,76 @@ void main() {
       expect(updated, equals('baz bar baz bar baz'));
     });
 
-    test('replaceAll with longer replacement does not corrupt content', () async {
-      final file = File('${tempDir.path}/config.txt');
-      await file.writeAsString('url=http://old\nname=test\nurl=http://old');
-
-      final tool = EditTool();
-      final ctx = ToolContext(
-        sessionId: 1,
-        messageId: 1,
-        abort: AbortSignal(),
-        workingDirectory: tempDir.path,
-      );
-      final result = await tool.execute({
-        'filePath': 'config.txt',
-        'oldString': 'http://old',
-        'newString': 'https://new-server.example.com',
-        'replaceAll': true,
-      }, ctx);
-
-      expect(result.output, contains('Replaced 2 occurrence'));
-      final updated = await file.readAsString();
-      expect(
-        updated,
-        equals(
-          'url=https://new-server.example.com\nname=test\nurl=https://new-server.example.com',
-        ),
-      );
-    });
-  });
-
-  group('EditTool + WriteTool auto-detect encoding/line ending', () {
     test(
-      'EditTool preserves UTF-8 BOM when file has it (agent edit does not strip it)',
+      'replaceAll with longer replacement does not corrupt content',
       () async {
-        // Session 70/72 pain: agents edit, file loses BOM, downstream tools
-        // (or other Windows editors) complain. Now EditTool reads bytes,
-        // detects BOM, re-writes with BOM intact.
-        final tempDir = await Directory.systemTemp.createTemp('crux_bom_');
-        final filePath = p.join(tempDir.path, 'sample.dart');
-        final bom = <int>[0xEF, 0xBB, 0xBF];
-        final originalBytes = <int>[
-          ...bom,
-          ...utf8.encode('hello\r\nworld\r\n'),
-        ];
-        await File(filePath).writeAsBytes(originalBytes);
+        final file = File('${tempDir.path}/config.txt');
+        await file.writeAsString('url=http://old\nname=test\nurl=http://old');
+
+        final tool = EditTool();
         final ctx = ToolContext(
           sessionId: 1,
           messageId: 1,
           abort: AbortSignal(),
           workingDirectory: tempDir.path,
         );
-        await EditTool().execute({
-          'filePath': filePath,
-          'oldString': 'hello\nworld',
-          'newString': 'goodbye\nworld',
+        final result = await tool.execute({
+          'filePath': 'config.txt',
+          'oldString': 'http://old',
+          'newString': 'https://new-server.example.com',
+          'replaceAll': true,
         }, ctx);
-        final after = await File(filePath).readAsBytes();
-        expect(after[0], 0xEF, reason: 'BOM byte 1 must be preserved');
-        expect(after[1], 0xBB, reason: 'BOM byte 2 must be preserved');
-        expect(after[2], 0xBF, reason: 'BOM byte 3 must be preserved');
-        final content = utf8.decode(after.sublist(3));
+
+        expect(result.output, contains('Replaced 2 occurrence'));
+        final updated = await file.readAsString();
         expect(
-          content,
-          contains('goodbye\r\nworld'),
-          reason: 'CRLF must be preserved (file was CRLF)',
+          updated,
+          equals(
+            'url=https://new-server.example.com\nname=test\nurl=https://new-server.example.com',
+          ),
         );
-        expect(
-          content,
-          isNot(contains('goodbye\nworld')),
-          reason: 'should not have LF-only after the edit',
-        );
-        await tempDir.delete(recursive: true);
       },
     );
+  });
+
+  group('EditTool + WriteTool auto-detect encoding/line ending', () {
+    test('EditTool preserves UTF-8 BOM when file has it (agent edit does not strip it)', () async {
+      // Session 70/72 pain: agents edit, file loses BOM, downstream tools
+      // (or other Windows editors) complain. Now EditTool reads bytes,
+      // detects BOM, re-writes with BOM intact.
+      final tempDir = await Directory.systemTemp.createTemp('crux_bom_');
+      final filePath = p.join(tempDir.path, 'sample.dart');
+      final bom = <int>[0xEF, 0xBB, 0xBF];
+      final originalBytes = <int>[...bom, ...utf8.encode('hello\r\nworld\r\n')];
+      await File(filePath).writeAsBytes(originalBytes);
+      final ctx = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: tempDir.path,
+      );
+      await EditTool().execute({
+        'filePath': filePath,
+        'oldString': 'hello\nworld',
+        'newString': 'goodbye\nworld',
+      }, ctx);
+      final after = await File(filePath).readAsBytes();
+      expect(after[0], 0xEF, reason: 'BOM byte 1 must be preserved');
+      expect(after[1], 0xBB, reason: 'BOM byte 2 must be preserved');
+      expect(after[2], 0xBF, reason: 'BOM byte 3 must be preserved');
+      final content = utf8.decode(after.sublist(3));
+      expect(
+        content,
+        contains('goodbye\r\nworld'),
+        reason: 'CRLF must be preserved (file was CRLF)',
+      );
+      expect(
+        content,
+        isNot(contains('goodbye\nworld')),
+        reason: 'should not have LF-only after the edit',
+      );
+      await tempDir.delete(recursive: true);
+    });
 
     test(
       'EditTool does NOT introduce BOM when editing a non-BOM file',

@@ -154,7 +154,7 @@ dart run bin/crux.dart /path/to/your/project
 | Provider | 命令 | 模型 |
 |----------|------|------|
 | DeepSeek | `/provider deepseek` | V4 Flash / V4 Pro / V4 Flash Vision |
-| ChatGPT Codex | `/provider codex login` | GPT-5.5 Codex / GPT-5.6 Codex |
+| ChatGPT Codex | `/provider codex login` | GPT-6 Astra / GPT-5.6 系列 |
 | Kimi | `/provider kimi` | K3 (1M / 256K) / K2.7 Code / K2.7 Code Highspeed |
 | MiniMax | `/provider minimax` | M3 / M2.7 / M2.7 Highspeed |
 | Zhipu | `/provider zhipu` | GLM-5.3 / GLM-5.3-Flash |
@@ -251,7 +251,7 @@ GitHub Actions 配置见 [`docs/ci.md`](docs/ci.md)。当前自动 CI 采用私�
 
 ### 技术栈
 
-- **语言**: Dart 3.12+
+- **语言**: Dart 3.13+
 - **UI 框架**: [Nocterm](https://github.com/marsup-space/nocterm) — 自研纯 Dart TUI 框架（submodule）
 - **数据库**: SQLite (drift)
 - **语法高亮**: TextMate 语法
@@ -408,7 +408,7 @@ Connect LLM providers with the `/provider` command:
 | Provider | Command | Models |
 |----------|---------|--------|
 | DeepSeek | `/provider deepseek` | V4 Flash / V4 Pro / V4 Flash Vision |
-| ChatGPT Codex | `/provider codex login` | GPT-5.5 Codex / GPT-5.6 Codex |
+| ChatGPT Codex | `/provider codex login` | GPT-6 Astra / GPT-5.6 系列 |
 | Kimi | `/provider kimi` | K3 (1M / 256K) / K2.7 Code / K2.7 Code Highspeed |
 | MiniMax | `/provider minimax` | M3 / M2.7 / M2.7 Highspeed |
 | Zhipu | `/provider zhipu` | GLM-5.3 / GLM-5.3-Flash |
@@ -510,7 +510,7 @@ manual packaging is also available from the Actions page.
 
 ### Tech Stack
 
-- **Language**: Dart 3.12+
+- **Language**: Dart 3.13+
 - **UI**: [Nocterm](https://github.com/marsup-space/nocterm) — self-developed pure-Dart TUI framework (submodule)
 - **Database**: SQLite (drift)
 - **Syntax highlighting**: TextMate grammars

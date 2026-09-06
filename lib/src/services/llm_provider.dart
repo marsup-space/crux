@@ -64,8 +64,10 @@ abstract class LlmProvider {
   /// display include the `CreditBalanceProvider` mixin
   /// (declared in
   /// `services/providers/credit_balance_provider.dart`),
-  /// which overrides this getter to `true` and provides the
-  /// polling lifecycle.
+  /// which defaults this getter to `true` and provides the
+  /// polling lifecycle. A subclass that inherits that transport
+  /// implementation but has no matching balance endpoint must
+  /// override this getter to `false`.
   bool get isCreditBalance => false;
 
   /// `true` when this provider's wire family is susceptible to

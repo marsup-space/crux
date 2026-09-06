@@ -16,6 +16,9 @@ enum AuxiliaryTaskKind {
   /// `/tldr` summary of a long AI response.
   tldr('summarizing'),
 
+  /// Commit-message generation from the staged Git diff.
+  commitMessage('drafting commit'),
+
   /// Pre-execution risk review of a suspicious shell command
   /// (layer 2 of the shell guardrail).
   shellRisk('assessing'),

@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:nocterm/nocterm.dart';
+
 import '../i18n/strings.dart';
 import '../theme/theme_controller.dart';
 import '../utils/run_metrics.dart';
@@ -52,15 +54,31 @@ class QuitHandler {
     stdout.write('\x1B[?1000l'); // disable basic mouse tracking
     stdout.write('\x1B[>4;0m'); // reset modifyOtherKeys
     stdout.write('\x1B[<u'); // pop kitty keyboard mode
+    // Windows Terminal's win32-input mode is terminal-global and survives the
+    // Crux process. If it is left enabled, the next shell receives keypresses
+    // as literal `CSI Vk;Sc;Uc;Kd;Cs;Rc_` packets. This quit path calls
+    // dart:io's exit() directly, so it must mirror nocterm's normal teardown.
+    stdout.write('\x1B[?9001l'); // disable Windows win32 input mode
     stdout.write('\x1B[?2004l'); // disable bracketed paste mode
     stdout.write('\x1B[?25h'); // show cursor
     stdout.write('\x1B[?1049l'); // leave alt-screen (main buffer)
+    // Repeat after switching buffers in case the terminal restored modes that
+    // were active on the main screen.
+    stdout.write('\x1B[?9001l'); // keep the caller's shell in normal input mode
     stdout.write('\x1B[0m'); // reset attributes
 
     // Step 4: re-print the styled summary into the main buffer.
     stdout.writeln();
     stdout.writeln(RunMetrics.instance.formatStyledSummary());
     stdout.writeln();
+
+    // This path deliberately exits without returning through runApp, so make
+    // nocterm restore the complete native console-mode snapshot as well as the
+    // terminal escape protocols above. Otherwise VT input remains enabled in
+    // the PowerShell/cmd session that launched Crux.
+    try {
+      TerminalBinding.instance.terminal.backend.disableRawMode();
+    } catch (_) {}
 
     // Step 5: flush, then exit.
     stdout.flush().then((_) => exit(0));

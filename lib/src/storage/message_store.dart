@@ -204,6 +204,7 @@ class MessageStore {
     final sinceMs = DateTime.now()
         .subtract(Duration(days: sinceDaysAgo))
         .millisecondsSinceEpoch;
+    final offset = _sqliteUtcOffsetModifier(DateTime.now().timeZoneOffset);
     final variables = <Variable<Object>>[Variable.withInt(sinceMs)];
     var projectFilter = '';
     if (projectPath != null) {
@@ -212,7 +213,9 @@ class MessageStore {
     }
     final rows = await _db
         .customSelect(
-          "SELECT date(m.created_at / 1000, 'unixepoch', 'localtime') "
+          "SELECT COALESCE("
+          "date(m.created_at / 1000, 'unixepoch', 'localtime'), "
+          "date(m.created_at / 1000, 'unixepoch', '$offset')) "
           'AS day, '
           'SUM(m.tokens_in + m.tokens_out) AS total '
           'FROM messages m '
@@ -252,6 +255,7 @@ class MessageStore {
     final sinceMs = DateTime.now()
         .subtract(Duration(days: sinceDaysAgo))
         .millisecondsSinceEpoch;
+    final offset = _sqliteUtcOffsetModifier(DateTime.now().timeZoneOffset);
     final variables = <Variable<Object>>[Variable.withInt(sinceMs)];
     var projectFilter = '';
     if (projectPath != null) {
@@ -260,7 +264,9 @@ class MessageStore {
     }
     final rows = await _db
         .customSelect(
-          "SELECT date(m.created_at / 1000, 'unixepoch', 'localtime') "
+          "SELECT COALESCE("
+          "date(m.created_at / 1000, 'unixepoch', 'localtime'), "
+          "date(m.created_at / 1000, 'unixepoch', '$offset')) "
           'AS day, '
           'SUM(m.tokens_in + m.tokens_out) AS tokens, '
           "SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END) AS turns, "
@@ -282,7 +288,9 @@ class MessageStore {
     // ambiguous reference and SQLite rejects the statement outright.
     final modelRows = await _db
         .customSelect(
-          "SELECT date(m.created_at / 1000, 'unixepoch', 'localtime') "
+          "SELECT COALESCE("
+          "date(m.created_at / 1000, 'unixepoch', 'localtime'), "
+          "date(m.created_at / 1000, 'unixepoch', '$offset')) "
           'AS day, '
           'm.model AS model, '
           'SUM(m.tokens_in + m.tokens_out) AS tokens '
@@ -312,6 +320,19 @@ class MessageStore {
           byModel: byModel[row.read<String>('day')] ?? const {},
         ),
     };
+  }
+
+  /// SQLite's `localtime` modifier can return NULL in a Windows background
+  /// isolate because the embedded runtime has no usable local-time callback.
+  /// Keep it as the preferred path (it handles historical DST), then fall
+  /// back to Dart's current UTC offset so day aggregation still works rather
+  /// than leaving the Home widgets permanently in their loading state.
+  static String _sqliteUtcOffsetModifier(Duration offset) {
+    final negative = offset.isNegative;
+    final minutes = offset.inMinutes.abs();
+    final hoursPart = (minutes ~/ 60).toString().padLeft(2, '0');
+    final minutesPart = (minutes % 60).toString().padLeft(2, '0');
+    return '${negative ? '-' : '+'}$hoursPart:$minutesPart';
   }
 
   /// Returns up to [limit] messages for [sessionId] in chronological

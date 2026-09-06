@@ -173,6 +173,7 @@ mixin CodingPlanProvider on LlmProvider {
   CodingPlanUsage? _latestCodingPlanUsage;
   CodingPlanUsageError? _latestCodingPlanError;
   Timer? _codingPlanTimer;
+  Future<void>? _codingPlanTickInFlight;
   final StreamController<CodingPlanUsage> _codingPlanController =
       StreamController<CodingPlanUsage>.broadcast();
 
@@ -184,7 +185,25 @@ mixin CodingPlanProvider on LlmProvider {
     );
   }
 
-  Future<void> _tick() async {
+  Future<void> _tick() {
+    // A slow quota endpoint must not create overlapping requests when the
+    // periodic timer fires or the user clicks refresh. Codex may need to boot
+    // an app-server process, so overlap here was especially expensive and
+    // could make an otherwise healthy plan look intermittently unavailable.
+    final inFlight = _codingPlanTickInFlight;
+    if (inFlight != null) return inFlight;
+
+    late final Future<void> tick;
+    tick = _performTick().whenComplete(() {
+      if (identical(_codingPlanTickInFlight, tick)) {
+        _codingPlanTickInFlight = null;
+      }
+    });
+    _codingPlanTickInFlight = tick;
+    return tick;
+  }
+
+  Future<void> _performTick() async {
     final key = _codingPlanApiKey;
     if (key == null || key.isEmpty) {
       _latestCodingPlanError = const CodingPlanUsageError(
@@ -195,6 +214,10 @@ mixin CodingPlanProvider on LlmProvider {
     }
     try {
       final usage = await getCodingPlanUsage();
+      // A credential can change while an HTTP/app-server request is in
+      // flight. Never let the stale completion replace the new account's
+      // quota snapshot.
+      if (_codingPlanApiKey != key) return;
       _latestCodingPlanUsage = usage;
       _latestCodingPlanError = null;
       // `add` is a no-op if the stream is closed (e.g. the

@@ -1,6 +1,8 @@
 import 'package:nocterm/nocterm.dart';
+
 import '../../theme/crux_theme.dart';
 import '../../utils/terminal_symbols.dart';
+import 'hoverable.dart';
 
 /// A segmented toggle widget that displays mutually exclusive options
 /// side-by-side in a bordered group.
@@ -9,8 +11,8 @@ import '../../utils/terminal_symbols.dart';
 /// the selection can be changed with arrow keys (handled by the parent
 /// [Focusable]'s `onKeyEvent`).
 ///
-/// Each option is clickable via [GestureDetector] and responds to
-/// mouse hover with a highlight.
+/// Each option uses the shared [Hoverable] interaction wrapper and responds
+/// to mouse hover with a highlight.
 ///
 /// ```dart
 /// OptionToggle(
@@ -59,6 +61,12 @@ class OptionToggle extends StatefulComponent {
   /// Text color when hovering.
   final Color? hoverTextColor;
 
+  /// Called when a mouse click should move the owning keyboard focus.
+  final ValueChanged<int>? onFocusRequest;
+
+  /// Group border color while the pointer is over any option.
+  final Color? hoveredBorderColor;
+
   const OptionToggle({
     super.key,
     required this.options,
@@ -73,6 +81,8 @@ class OptionToggle extends StatefulComponent {
     this.selectedTextColor,
     this.unselectedTextColor,
     this.hoverTextColor,
+    this.onFocusRequest,
+    this.hoveredBorderColor,
   });
 
   @override
@@ -97,35 +107,31 @@ class _OptionToggleState extends State<OptionToggle> {
 
     for (int i = 0; i < comp.options.length; i++) {
       final isSelected = i == comp.selectedIndex;
-      final isHovered = i == _hoveredIndex;
-
-      Color bgColor;
-      if (isSelected) {
-        bgColor = selectedBgColor;
-      } else if (isHovered) {
-        bgColor = hoverBgColor;
-      } else {
-        bgColor = unselectedBgColor;
-      }
-
-      Color textColor;
-      if (isSelected) {
-        textColor = selectedTextColor;
-      } else if (isHovered) {
-        textColor = hoverTextColor;
-      } else {
-        textColor = unselectedTextColor;
-      }
-
       children.add(
-        MouseRegion(
-          onEnter: (_) => setState(() => _hoveredIndex = i),
-          onExit: (_) => setState(() => _hoveredIndex = null),
-          opaque: false,
-          child: GestureDetector(
-            onTap: () => comp.onChanged(i),
-            behavior: HitTestBehavior.opaque,
-            child: Container(
+        Hoverable(
+          onTap: () {
+            comp.onFocusRequest?.call(i);
+            comp.onChanged(i);
+          },
+          onHoverChanged: (hovered) => setState(() {
+            if (hovered) {
+              _hoveredIndex = i;
+            } else if (_hoveredIndex == i) {
+              _hoveredIndex = null;
+            }
+          }),
+          builder: (context, isHovered) {
+            final bgColor = isSelected
+                ? selectedBgColor
+                : isHovered
+                ? hoverBgColor
+                : unselectedBgColor;
+            final textColor = isSelected
+                ? selectedTextColor
+                : isHovered
+                ? hoverTextColor
+                : unselectedTextColor;
+            return Container(
               padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 0),
               decoration: BoxDecoration(color: bgColor),
               child: Text(
@@ -137,8 +143,8 @@ class _OptionToggleState extends State<OptionToggle> {
                   fontWeight: isSelected ? FontWeight.bold : null,
                 ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       );
 
@@ -147,8 +153,10 @@ class _OptionToggleState extends State<OptionToggle> {
       }
     }
 
-    final borderColor = comp.focused
-        ? comp.focusedBorderColor ?? theme.buttonTextFocused
+    final borderColor = comp.focused || _hoveredIndex != null
+        ? (_hoveredIndex != null
+              ? comp.hoveredBorderColor ?? theme.outlineBright
+              : comp.focusedBorderColor ?? theme.buttonTextFocused)
         : comp.unfocusedBorderColor ?? theme.outline;
 
     return Container(

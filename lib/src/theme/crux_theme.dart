@@ -250,9 +250,10 @@ class CruxThemeData implements MarkdownThemeFields {
   Color get outlineBright => borderActive;
   Color get selectionColor => selection;
 
-  Color get buttonBackground => surface;
-  Color get buttonBackgroundHover => surfaceVariant;
-  Color get buttonBackgroundFocused => surfaceVariant;
+  Color get buttonBackground => Color.lerp(surface, surfaceVariant, 0.28)!;
+  Color get buttonBackgroundHover => Color.lerp(surface, surfaceVariant, 0.62)!;
+  Color get buttonBackgroundFocused =>
+      Color.lerp(surface, surfaceVariant, 0.62)!;
   Color get buttonBackgroundDisabled => mix(surface, 0.55);
   Color get buttonText => text;
   Color get buttonTextHover => accent;

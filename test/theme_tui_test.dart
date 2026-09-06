@@ -50,7 +50,14 @@ void main() {
     );
   }
 
-  for (final id in const ['dracula', 'github']) {
+  for (final id in const [
+    'dracula',
+    'flexoki',
+    'rosepine',
+    'electric-orchid',
+    'cobalt-bloom',
+    'ember-clay',
+  ]) {
     test('renders representative $id colors into terminal cells', () async {
       final theme = await loadTheme(id);
       await HighlightService.initialize();
@@ -106,7 +113,7 @@ void main() {
 
   test('highlight foreground is derived from the theme palette', () async {
     final dark = await loadTheme('dracula');
-    final light = await loadTheme('github');
+    final light = await loadTheme('cobalt-bloom');
     // Light chip → the theme's dark background color contrasts best;
     // dark chip → the theme's light text color wins.
     expect(dark.onColor(const Color(0xFFFFFF)), dark.background);

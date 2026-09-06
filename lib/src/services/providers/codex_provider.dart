@@ -155,6 +155,15 @@ class CodexProvider extends DeepSeekProvider with CodingPlanProvider {
   @override
   AuthStyle get authStyle => AuthStyle.bearer;
 
+  /// Codex reuses DeepSeek's Responses API request implementation, but the
+  /// inherited provider also carries DeepSeek's `/user/balance` machinery.
+  /// ChatGPT Codex exposes subscription quota windows instead, which this
+  /// class surfaces through [CodingPlanProvider]. Keep the credit capability
+  /// disabled so the UI never renders a DeepSeek balance cell or polls that
+  /// endpoint with a Codex OAuth credential.
+  @override
+  bool get isCreditBalance => false;
+
   @override
   String canonicalModelId(String modelId) => switch (modelId) {
     'gpt-5.5-codex' || 'gpt-5.6-codex' => 'gpt-5.6-sol',
@@ -266,10 +275,13 @@ class CodexProvider extends DeepSeekProvider with CodingPlanProvider {
           accountId: accountId,
         );
         return parseCodexCodingPlanUsage(rateLimits);
-      } on _CodexAppServerUnavailable {
-        // Crux can be installed without the Codex CLI. Retain the legacy
-        // HTTP path in that case, but prefer app-server whenever it is
-        // available: it is the supported source of ChatGPT quota buckets.
+      } on Exception {
+        // The CLI can be missing, cold-start too slowly, exit during JSON-RPC
+        // initialization, or temporarily reject the external-token login.
+        // All of those are recoverable because the account-scoped legacy
+        // endpoint exposes the same quota windows. Previously only a missing
+        // executable triggered this fallback, which made the plan appear to
+        // fail at random depending on app-server startup health.
       }
     }
     return _readRateLimitsFromLegacyEndpoint(token);
@@ -349,7 +361,14 @@ class CodexProvider extends DeepSeekProvider with CodingPlanProvider {
       final payload = <String, dynamic>{'method': method, 'id': id};
       if (params != null) payload['params'] = params;
       await writeMessage(payload);
-      return completer.future.timeout(_appServerRequestTimeout);
+      try {
+        return await completer.future.timeout(_appServerRequestTimeout);
+      } finally {
+        // A timed-out future must not remain in [pending]. Completing that
+        // orphan again during process cleanup can surface as an unhandled
+        // asynchronous error after the legacy fallback has already started.
+        pending.remove(id);
+      }
     }
 
     outputSubscription = process.stdout
@@ -404,6 +423,16 @@ class CodexProvider extends DeepSeekProvider with CodingPlanProvider {
             // Ignore non-JSON diagnostics; JSON-RPC replies are line-delimited.
           }
         });
+    unawaited(
+      process.exitCode.then((_) {
+        for (final completer in pending.values.toList()) {
+          if (!completer.isCompleted) {
+            completer.completeError(const _CodexAppServerUnavailable());
+          }
+        }
+        pending.clear();
+      }),
+    );
     try {
       await request(1, 'initialize', {
         'clientInfo': {'name': 'crux', 'title': 'Crux', 'version': '0.1'},
@@ -427,9 +456,17 @@ class CodexProvider extends DeepSeekProvider with CodingPlanProvider {
           completer.completeError(const _CodexAppServerUnavailable());
         }
       }
-      await outputSubscription.cancel();
-      await process.stdin.close();
-      process.kill(ProcessSignal.sigterm);
+      // Cleanup must never replace a successful quota response with an I/O
+      // error when the short-lived child has already exited on its own.
+      try {
+        await outputSubscription.cancel();
+      } catch (_) {}
+      try {
+        await process.stdin.close();
+      } catch (_) {}
+      try {
+        process.kill(ProcessSignal.sigterm);
+      } catch (_) {}
     }
   }
 
@@ -441,6 +478,36 @@ class CodexProvider extends DeepSeekProvider with CodingPlanProvider {
     const desktopCli = '/Applications/Codex.app/Contents/Resources/codex';
     if (Platform.isMacOS && await File(desktopCli).exists()) {
       candidates.add(desktopCli);
+    }
+    // A Windows GUI process often does not inherit the interactive shell's
+    // PATH. Codex Desktop installs versioned CLI binaries below this folder;
+    // discover the newest one so usage polling works regardless of how Crux
+    // itself was launched.
+    if (Platform.isWindows) {
+      final localAppData = Platform.environment['LOCALAPPDATA'];
+      if (localAppData != null && localAppData.isNotEmpty) {
+        final binDir = Directory(
+          '$localAppData${Platform.pathSeparator}OpenAI'
+          '${Platform.pathSeparator}Codex${Platform.pathSeparator}bin',
+        );
+        if (await binDir.exists()) {
+          final installed = <File>[];
+          await for (final entry in binDir.list(followLinks: false)) {
+            final executable = File(
+              '${entry.path}${Platform.pathSeparator}codex.exe',
+            );
+            if (entry is Directory && await executable.exists()) {
+              installed.add(executable);
+            }
+          }
+          installed.sort((a, b) {
+            final aModified = a.lastModifiedSync();
+            final bModified = b.lastModifiedSync();
+            return bModified.compareTo(aModified);
+          });
+          candidates.addAll(installed.map((file) => file.path));
+        }
+      }
     }
     for (final executable in candidates) {
       try {

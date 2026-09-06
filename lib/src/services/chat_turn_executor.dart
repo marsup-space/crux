@@ -25,6 +25,7 @@ import '../utils/partial_json_field_extractor.dart';
 import '../utils/sampling.dart';
 import '../utils/token_estimate.dart';
 import 'auxiliary_service.dart';
+import 'chat_stream_metrics.dart';
 import 'install_slug.dart';
 import 'llm_client.dart';
 import 'llm_error.dart';
@@ -34,6 +35,7 @@ import 'prompts/system_prompt.dart';
 import 'prompts/environment_meta.dart';
 import 'provider_service.dart';
 import 'session_lease_manager.dart';
+import 'tool_execution_event.dart';
 import 'tool_executor.dart';
 import 'wire_format.dart';
 
@@ -172,6 +174,12 @@ class ChatTurnExecutor {
   /// harnesses; the sink in `ToolContext` short-circuits on null and
   /// the whole chain is fail-open (never affects the command itself).
   void Function(int sessionId, ShellMonitorNotice notice)? onShellMonitorNotice;
+
+  /// Receives each completed tool invocation before the executor persists the
+  /// enclosing tool round. Consumers may react to a single command without
+  /// depending on this executor's internal dispatch structure.
+  FutureOr<void> Function(ToolExecutionCompleted event)?
+  onToolExecutionCompleted;
 
   /// Per-process run-id counter for `shell_monitor_logs.run_id`.
   /// Static so every [ChatTurnExecutor] instance shares one sequence
@@ -440,6 +448,10 @@ class ChatTurnExecutor {
     // A chat prompt rendered before the workspace-free env meta still
     // names the launch directory — rebuild it rather than keep leaking.
     final staleChat = session.isChat && isStaleChatSystemPrompt(systemPrompt);
+    // Workspace prompts are cached on the session too. Refresh prompts from
+    // before the reviewed-commit workflow so existing sessions receive it.
+    final staleWorkspace =
+        !session.isChat && isStaleWorkspaceSystemPrompt(systemPrompt);
     // Detect model change: if the cached prompt's env block names a
     // different model than the session's current model, rebuild so the
     // env block reflects the active model. This handles the case where
@@ -451,6 +463,7 @@ class ChatTurnExecutor {
     if (systemPrompt == null ||
         systemPrompt.isEmpty ||
         staleChat ||
+        staleWorkspace ||
         modelChanged) {
       if (modelConfig == null) {
         systemPrompt = null;
@@ -613,8 +626,6 @@ class ChatTurnExecutor {
     DateTime? roundFirstReasoningTime;
     DateTime? roundLastReasoningTime;
     DateTime? roundLastDeltaTime;
-
-    var firstTokenEver = true;
 
     void stopActiveRound({bool accumulate = false}) {
       if (accumulate &&
@@ -1019,11 +1030,10 @@ class ChatTurnExecutor {
               );
             }
 
-            if (chunk.textDelta != null ||
-                chunk.reasoningContent != null ||
-                chunk.toolUse != null) {
+            if (isModelOutputChunk(chunk)) {
               final now = DateTime.now();
               runtime.lastChunkTime = now;
+              recordFirstModelOutput(runtime, chunk, now: now);
               if (runtime.roundFirstTokenTime == null) {
                 runtime.roundFirstTokenTime = now;
                 roundFirstDeltaTime = now;
@@ -1070,17 +1080,7 @@ class ChatTurnExecutor {
                   break;
                 }
               }
-              if (firstTokenEver &&
-                  (chunk.textDelta != null || chunk.reasoningContent != null)) {
-                final now = DateTime.now();
-                final elapsed =
-                    now.difference(runtime.responseStartTime!).inMicroseconds /
-                    1000.0;
-                runtime.ttftMs = elapsed;
-                runtime.ttftReceived = true;
-                runtime.firstTokenTime = now;
-                firstTokenEver = false;
-              }
+
               if (chunk.textDelta != null) {
                 roundTextBuffer.write(chunk.textDelta);
                 checkRepetition(chunk.textDelta!);
@@ -1600,6 +1600,22 @@ class ChatTurnExecutor {
                   },
                 );
                 final result = await toolExecutor.executeTool(call, ctx);
+                final onCompleted = onToolExecutionCompleted;
+                if (onCompleted != null) {
+                  try {
+                    await onCompleted(
+                      ToolExecutionCompleted(
+                        toolName: call.name,
+                        input: call.input,
+                        result: result,
+                        workspacePath: ctx.workingDirectory,
+                      ),
+                    );
+                  } catch (_) {
+                    // Observers are side channels (for example sidebar state).
+                    // A failed observer must never fail the agent tool call.
+                  }
+                }
                 if (_shouldAbortParallelToolSiblings(result)) {
                   for (final sibling in abortSignalsByCallId.entries) {
                     if (sibling.key != call.callId) sibling.value.abort();
@@ -2247,9 +2263,9 @@ class ChatTurnExecutor {
       for (final chunk in chunks)
         if (chunk.toolUse == null || chunk.toolUse!.index < index) chunk,
     ];
-    return ToolExecutor.parseToolUseFromChunks(
-      priorChunks,
-    ).where((call) => call.parseError == null).toList();
+    return ToolExecutor.parseToolUseFromChunks(priorChunks)
+        .where((call) => call.parseError == null)
+        .toList();
   }
 
   static ToolResult _buildGuardAbortedToolResult(

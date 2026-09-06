@@ -9,6 +9,10 @@ import '../version.dart';
 /// release builds.
 const bool kIsJit = !bool.fromEnvironment('dart.vm.product');
 
+/// Compact version text shared by the in-chat mode control and the legacy
+/// overlay component retained for embedders.
+String get cruxVersionLabel => kIsJit ? 'v$kCruxVersion jit' : 'v$kCruxVersion';
+
 /// Overlays a faint, right-aligned version string at the top-right of
 /// the terminal, without affecting the layout of [child].
 ///
@@ -29,8 +33,6 @@ class VersionBadge extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    final label = kIsJit ? 'v$kCruxVersion jit' : 'v$kCruxVersion';
-
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -43,7 +45,7 @@ class VersionBadge extends StatelessComponent {
           // use), so the badge stays subtle in every theme without
           // hardcoding a color here.
           child: Text(
-            label,
+            cruxVersionLabel,
             style: TextStyle(color: CruxTheme.of(context).textMuted),
           ),
         ),

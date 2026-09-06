@@ -66,7 +66,11 @@ class VibeTurnDivider extends StatelessComponent {
             // still paint at its real width, the line would just
             // appear visually mis-cropped.
             final labelWidth = UnicodeWidth.stringWidth(label);
-            final dashWidth = UnicodeWidth.stringWidth('-');
+            // Use the same box-drawing horizontal glyph as borders and
+            // markdown rules. A repeated ASCII hyphen is visibly dashed in
+            // many terminal fonts even though the cells are adjacent.
+            const rule = '─';
+            final dashWidth = UnicodeWidth.stringWidth(rule);
             // Available cell count after the label is set aside.
             // `maxWidth` already reflects whatever Padding above
             // us consumed, so we don't subtract it again here.
@@ -89,7 +93,7 @@ class VibeTurnDivider extends StatelessComponent {
             final leftPad = remaining ~/ (2 * dashWidth);
             final rightPad = (remaining - leftPad * dashWidth) ~/ dashWidth;
             return Text(
-              '-' * leftPad + label + '-' * rightPad,
+              rule * leftPad + label + rule * rightPad,
               style: TextStyle(color: theme.onSurfaceDim),
             );
           },

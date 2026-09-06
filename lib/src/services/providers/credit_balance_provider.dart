@@ -34,10 +34,11 @@ mixin CreditBalanceProvider on LlmProvider {
   // ─── Public API for the chat panel / widget ─────────────────
 
   /// Whether this provider has a credit balance to display.
-  /// Always `true` for providers that include this mixin;
-  /// declared here so callers can use a single
-  /// `is CreditBalanceProvider` check without knowing the
-  /// mixin's specific name.
+  /// Defaults to `true` for providers that include this mixin.
+  /// A subclass that inherits the polling implementation solely
+  /// for unrelated transport reuse may override it to `false`.
+  /// Callers must therefore check both this capability and the
+  /// `CreditBalanceProvider` type before starting a poll.
   @override
   bool get isCreditBalance => true;
 

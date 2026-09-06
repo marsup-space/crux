@@ -65,6 +65,13 @@ class ChatInput extends StatefulComponent {
   final RecentProjectsStore? recentProjectsStore;
   final Strings strings;
 
+  /// Maximum number of text rows visible before the input scrolls.
+  ///
+  /// The chat panel derives this from the terminal height so the whole input
+  /// region (including its vertical padding) never consumes more than half of
+  /// the terminal on normal-sized terminals.
+  final int maxVisibleLines;
+
   /// Basename of the currently-active plan doc, or null when plan mode
   /// is off. Wired by the chat panel to the [PlanModeController] so the
   /// `/plan` autocomplete can flag the active plan.
@@ -97,7 +104,8 @@ class ChatInput extends StatefulComponent {
     this.recentProjectsStore,
     this.activePlanName,
     this.strings = kEnglishStrings,
-  });
+    this.maxVisibleLines = kChatInputMinVisibleLines,
+  }) : assert(maxVisibleLines >= kChatInputMinVisibleLines);
 
   @override
   State<ChatInput> createState() => ChatInputState();
@@ -109,6 +117,7 @@ class ChatInputState extends State<ChatInput> {
   late final InputOverlay _overlay;
   late final InputKeyHandler _keyHandler;
   late final InputPaste _paste;
+  final ScrollController _inputScrollController = ScrollController();
 
   // Command-mode stash state (owned by facade, shared with key handler)
   String? _commandStashedText;
@@ -140,7 +149,10 @@ class ChatInputState extends State<ChatInput> {
       sessionController: component.sessionController,
       turnOrchestrator: component.turnOrchestrator,
       providerService: component.providerService,
-      providerServiceReady: component.providerServiceReady,
+      // Read this lazily: ChatInput commonly mounts before provider loading
+      // finishes. Capturing the initial false value permanently disabled
+      // clipboard-image paste even after the parent rebuilt as ready.
+      isProviderServiceReady: () => component.providerServiceReady,
       textController: component.textController,
       projectPath: component.projectPath,
       onAttachClipboardImage: component.onAttachClipboardImage,
@@ -182,6 +194,7 @@ class ChatInputState extends State<ChatInput> {
     CommandRegistry.instance.removeListener(component.refresh);
     component.recentProjectsStore?.removeListener(_onTextChanged);
     _overlay.dispose();
+    _inputScrollController.dispose();
     super.dispose();
   }
 
@@ -508,17 +521,35 @@ class ChatInputState extends State<ChatInput> {
               style: TextStyle(color: CruxTheme.of(context).metricsActive),
             ),
           Expanded(
-            child: TextField(
-              controller: component.textController,
-              focused: !overlay.showSessionManager,
-              maxLines: null,
-              style: inputStyle,
-              placeholder: placeholder,
-              onKeyEvent: _keyHandler.handleKeyEvent,
-              onPaste: (pastedText) =>
-                  _paste.handlePaste(pastedText, sessionId),
-              wordBoundaryProvider: cjkWordBoundaryProvider,
-              styleSegments: styleSegments,
+            child: ConstrainedBox(
+              // The scroll view keeps the original one-row height while empty,
+              // grows with the text up to the panel-provided limit, then clips
+              // and exposes a vertical scrollbar instead of pushing history
+              // out of the terminal.
+              constraints: BoxConstraints(
+                minHeight: kChatInputMinVisibleLines.toDouble(),
+                maxHeight: component.maxVisibleLines.toDouble(),
+              ),
+              child: Scrollbar(
+                controller: _inputScrollController,
+                thumbVisibility: true,
+                thumbColor: theme.onSurfaceDim,
+                child: SingleChildScrollView(
+                  controller: _inputScrollController,
+                  child: TextField(
+                    controller: component.textController,
+                    focused: !overlay.showSessionManager,
+                    maxLines: null,
+                    style: inputStyle,
+                    placeholder: placeholder,
+                    onKeyEvent: _keyHandler.handleKeyEvent,
+                    onPaste: (pastedText) =>
+                        _paste.handlePaste(pastedText, sessionId),
+                    wordBoundaryProvider: cjkWordBoundaryProvider,
+                    styleSegments: styleSegments,
+                  ),
+                ),
+              ),
             ),
           ),
           Button(
