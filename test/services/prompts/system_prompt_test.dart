@@ -94,6 +94,21 @@ void main() {
       expect(out, contains('no `pie`'));
     });
 
+    test('prefers prepare_commit so commit and push stay human-reviewed', () {
+      final out = buildSystemPrompt(
+        provider: _provider(),
+        model: _provider().models.first,
+        cwd: '/tmp/x',
+        worktree: '/tmp/x',
+        sessionStarted: DateTime.utc(2026, 1, 1),
+      );
+      expect(out, contains('## Human-reviewed commits'));
+      expect(out, contains('prefer the `prepare_commit` tool'));
+      expect(out, contains('only the files that belong to the task'));
+      expect(out, contains('let the user choose **Commit**'));
+      expect(out, contains('never include unrelated or conflicted files'));
+    });
+
     test('always ends with the env meta layer', () {
       final out = buildSystemPrompt(
         provider: _provider(),
@@ -351,6 +366,7 @@ void main() {
       expect(out, isNot(contains('semantic_search')));
       expect(out, isNot(contains('Codebase exploration')));
       expect(out, isNot(contains('Tool tiers')));
+      expect(out, isNot(contains('prepare_commit')));
       expect(out, isNot(contains('available_skills')));
       expect(out, isNot(contains('AGENTS.md')));
     });
@@ -437,6 +453,26 @@ void main() {
       expect(isStaleChatSystemPrompt(null), isFalse);
       expect(isStaleChatSystemPrompt(''), isFalse);
     });
+  });
+
+  test('isStaleWorkspaceSystemPrompt upgrades existing workspace sessions', () {
+    expect(
+      isStaleWorkspaceSystemPrompt(
+        'You are Crux, an interactive AI coding agent for the terminal.\n'
+        '## Tool tiers',
+      ),
+      isTrue,
+    );
+    final fresh = buildSystemPrompt(
+      provider: _provider(),
+      model: _provider().models.first,
+      cwd: '/tmp/x',
+      worktree: '/tmp/x',
+      sessionStarted: DateTime.utc(2026, 1, 1),
+    );
+    expect(isStaleWorkspaceSystemPrompt(fresh), isFalse);
+    expect(isStaleWorkspaceSystemPrompt(null), isFalse);
+    expect(isStaleWorkspaceSystemPrompt(''), isFalse);
   });
 
   group('reply-language section', () {

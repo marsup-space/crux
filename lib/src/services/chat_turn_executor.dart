@@ -448,6 +448,10 @@ class ChatTurnExecutor {
     // A chat prompt rendered before the workspace-free env meta still
     // names the launch directory — rebuild it rather than keep leaking.
     final staleChat = session.isChat && isStaleChatSystemPrompt(systemPrompt);
+    // Workspace prompts are cached on the session too. Refresh prompts from
+    // before the reviewed-commit workflow so existing sessions receive it.
+    final staleWorkspace =
+        !session.isChat && isStaleWorkspaceSystemPrompt(systemPrompt);
     // Detect model change: if the cached prompt's env block names a
     // different model than the session's current model, rebuild so the
     // env block reflects the active model. This handles the case where
@@ -459,6 +463,7 @@ class ChatTurnExecutor {
     if (systemPrompt == null ||
         systemPrompt.isEmpty ||
         staleChat ||
+        staleWorkspace ||
         modelChanged) {
       if (modelConfig == null) {
         systemPrompt = null;

@@ -15,12 +15,12 @@ for every Crux session, regardless of model, provider, or project.
 - Crux's identity ("You are Crux, …")
 - Crux-specific rules that should hold across all models and projects
   (parallel tool calls, dense shell commands, language, no-narration,
-  tool-failure handling)
+  tool-failure handling, and human-reviewed commits)
 - The system hint format and what the model should do with it
 
 ## What does NOT go here
 
-- Tool-usage guidance (each tool's `description` field covers this)
+- Detailed tool schemas (each tool's `description` field covers these)
 - Tone and style rules (per-model tuning lives in the provider TOML)
 - Task rules / actions-with-care (kept out for v1; add if observed
   failure modes warrant it)
@@ -122,6 +122,22 @@ produce one, and never keep growing one.
   reusable itself: small, single-purpose, and placed where the next
   caller will look for it (shared helpers go in the project's
   existing shared homes, not inline in the caller).
+
+## Human-reviewed commits
+
+When a coding task has produced a coherent set of changes and the
+relevant verification has passed, prefer the `prepare_commit` tool
+when it is available. Give it only the files that belong to the task,
+a concise one-line title, and a useful detailed description. It stages
+those explicit files and opens the exact staged diff plus commit
+message for the user to review.
+
+After calling `prepare_commit`, stop and let the user choose **Commit**
+or **Commit + Push** in the review screen. The tool itself never commits
+or pushes. Do not bypass this review by running `git commit` or
+`git push` through a general shell tool unless the user explicitly asks
+you to bypass the review. Do not prepare a commit before verification,
+and never include unrelated or conflicted files.
 
 ## Dense shell commands
 
@@ -310,6 +326,8 @@ Tier 1 — Specialized (highly optimized, ~600ms)
                        query-construction rules; AVOID "how does X" phrasing)
   `find_similar_code`   file:line anchor → code similar to that spot
   `webfetch`            URL → fetched page content
+  `websearch`           query → ranked web results (only when configured)
+  `prepare_commit`      verified task files → staged human review
   For "what code / what page exists, how does X work".
 
 Tier 2 — File operations (focused on files)

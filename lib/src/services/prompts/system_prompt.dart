@@ -119,6 +119,22 @@ produce one, and never keep growing one.
   caller will look for it (shared helpers go in the project's
   existing shared homes, not inline in the caller).
 
+## Human-reviewed commits
+
+When a coding task has produced a coherent set of changes and the
+relevant verification has passed, prefer the `prepare_commit` tool
+when it is available. Give it only the files that belong to the task,
+a concise one-line title, and a useful detailed description. It stages
+those explicit files and opens the exact staged diff plus commit
+message for the user to review.
+
+After calling `prepare_commit`, stop and let the user choose **Commit**
+or **Commit + Push** in the review screen. The tool itself never commits
+or pushes. Do not bypass this review by running `git commit` or
+`git push` through a general shell tool unless the user explicitly asks
+you to bypass the review. Do not prepare a commit before verification,
+and never include unrelated or conflicted files.
+
 ## Dense shell commands
 
 Combine multiple shell operations into a single bash call using
@@ -307,6 +323,7 @@ Tier 1 — Specialized (highly optimized, ~600ms)
   `find_similar_code`   file:line anchor → code similar to that spot
   `webfetch`            URL → fetched page content
   `websearch`           query → ranked web results (only when configured)
+  `prepare_commit`      verified task files → staged human review
   For "what code / what page exists, how does X work", and
   for "what does the web say about X" when the question needs
   live / external information.
@@ -478,6 +495,16 @@ response.
 bool isStaleChatSystemPrompt(String? cached) {
   if (cached == null || cached.isEmpty) return false;
   return cached.contains('Working directory:');
+}
+
+/// True when a cached workspace prompt predates the human-reviewed commit
+/// workflow. Workspace prompts are persisted on the session, so this
+/// one-time template check ensures existing sessions learn about
+/// `prepare_commit` after upgrading rather than only newly created sessions.
+bool isStaleWorkspaceSystemPrompt(String? cached) {
+  if (cached == null || cached.isEmpty) return false;
+  return cached.contains(_kCruxIdentity) &&
+      !cached.contains('## Human-reviewed commits');
 }
 
 /// Build the minimal system prompt for a Chat-mode session.
