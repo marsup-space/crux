@@ -67,7 +67,7 @@ class CodexOAuth {
           );
         }
         final approval = jsonDecode(body) as Map<String, dynamic>;
-        return _exchangeAuthorizationCode(
+        return await _exchangeAuthorizationCode(
           approval['authorization_code'] as String,
           approval['code_verifier'] as String,
         );
@@ -88,17 +88,12 @@ class CodexOAuth {
     'code_verifier': verifier,
   });
 
-  static Future<String> refresh(
-    String refreshToken, {
-    String? accountId,
-  }) => _token(
-    {
-      'grant_type': 'refresh_token',
-      'refresh_token': refreshToken,
-      'client_id': clientId,
-    },
-    fallbackAccountId: accountId,
-  );
+  static Future<String> refresh(String refreshToken, {String? accountId}) =>
+      _token({
+        'grant_type': 'refresh_token',
+        'refresh_token': refreshToken,
+        'client_id': clientId,
+      }, fallbackAccountId: accountId);
 
   static Future<String> _token(
     Map<String, String> fields, {
@@ -165,11 +160,9 @@ class CodexCredential {
   static CodexCredential? decode(String value) {
     if (!value.startsWith(_prefix)) return null;
     try {
-      final json =
-          jsonDecode(
-                utf8.decode(base64Url.decode(value.substring(_prefix.length))),
-              )
-              as Map<String, dynamic>;
+      final json = jsonDecode(
+        utf8.decode(base64Url.decode(value.substring(_prefix.length))),
+      ) as Map<String, dynamic>;
       return CodexCredential(
         json['access'] as String,
         json['refresh'] as String,
@@ -212,11 +205,9 @@ class CodexCredential {
     final parts = token.split('.');
     if (parts.length != 3) return null;
     try {
-      final payload =
-          jsonDecode(
-                utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
-              )
-              as Map<String, dynamic>;
+      final payload = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+      ) as Map<String, dynamic>;
       final direct = payload['chatgpt_account_id'];
       if (direct is String && direct.isNotEmpty) return direct;
       final auth = payload['https://api.openai.com/auth'];

@@ -5,7 +5,6 @@ import 'package:crux/src/components/vibe_segment_bubble.dart';
 import 'package:crux/src/models/message.dart';
 import 'package:crux/src/services/a2ui/basic_catalog_items.dart';
 import 'package:crux/src/services/a2ui/models.dart';
-import 'package:crux/src/services/a2ui/surface_catalog.dart';
 import 'package:crux/src/theme/crux_theme.dart';
 import 'package:crux/src/tools/registry.dart';
 import 'package:crux/src/tools/surface_tool.dart';
@@ -96,20 +95,19 @@ void main() {
 
   group('ses://5047 repro — surface tool call in vibe segment', () {
     test('walker collects the surface tool call', () {
-      final segments = walkSegments(
-        messages,
-        {
-          for (final m in messages.where((m) => m.role == 'tool'))
-            m.toolCallId!: m,
-        },
-        ToolRegistry(),
-      );
+      final segments = walkSegments(messages, {
+        for (final m in messages.where((m) => m.role == 'tool'))
+          m.toolCallId: m,
+      }, ToolRegistry());
 
       // The turn fans into 3 segments (bash+prose, surface+prose, ai).
       expect(segments.length, 3, reason: 'bash close, surface close, ai close');
       final surfaceSeg = segments[1];
-      expect(surfaceSeg.surfaceToolCalls.length, 1,
-          reason: 'surface tool call must be preserved on its segment');
+      expect(
+        surfaceSeg.surfaceToolCalls.length,
+        1,
+        reason: 'surface tool call must be preserved on its segment',
+      );
       expect(surfaceSeg.surfaceToolCalls.first.name, 'surface');
       expect(surfaceSeg.surfaceToolCalls.first.callId, 'call-surface');
     });
@@ -118,10 +116,7 @@ void main() {
       // Simulate persistence: the tool_call message is serialized and
       // restored. jsonDecode produces Map<String, dynamic> for nested
       // maps — surfaceFromToolCall requires exactly that type.
-      final tc = messages
-          .firstWhere((m) => m.id == 4)
-          .toolCalls
-          .first;
+      final tc = messages.firstWhere((m) => m.id == 4).toolCalls.first;
       final restored = ToolCallData.fromJson(
         jsonDecode(jsonEncode(tc.toJson())) as Map<String, dynamic>,
       );
@@ -131,32 +126,32 @@ void main() {
     test('VibeSegmentBubble renders the surface inline', () async {
       final resultsByCallId = {
         for (final m in messages.where((m) => m.role == 'tool'))
-          m.toolCallId!: m,
+          m.toolCallId: m,
       };
       final segments = walkSegments(messages, resultsByCallId, ToolRegistry());
       final catalog = createBasicCatalog();
 
       await testNocterm('vibe surface inline', (tester) async {
-      await tester.pumpComponent(
-        CruxTheme(
-          data: CruxThemeData.draculaFallback,
-          child: VibeSegmentBubble(
-            segment: segments[1],
-            surfaceCatalog: catalog,
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: VibeSegmentBubble(
+              segment: segments[1],
+              surfaceCatalog: catalog,
+            ),
           ),
-        ),
-      );
-      await tester.pump();
+        );
+        await tester.pump();
 
-      expect(
-        tester.terminalState.findText('GOLD PRICE').isNotEmpty,
-        isTrue,
-        reason: 'surface content must render in the vibe segment',
-      );
-      expect(
-        tester.terminalState.findText('\$4629.60 / oz').isNotEmpty,
-        isTrue,
-      );
+        expect(
+          tester.terminalState.findText('GOLD PRICE').isNotEmpty,
+          isTrue,
+          reason: 'surface content must render in the vibe segment',
+        );
+        expect(
+          tester.terminalState.findText('\$4629.60 / oz').isNotEmpty,
+          isTrue,
+        );
       }, size: const Size(80, 24));
     });
 
@@ -192,11 +187,9 @@ void main() {
         ),
         Message(id: 4, sessionId: 1, role: 'ai', content: '重试成功。'),
       ];
-      final segments = walkSegments(
-        msgs,
-        {for (final m in msgs.where((m) => m.role == 'tool')) m.toolCallId!: m},
-        ToolRegistry(),
-      );
+      final segments = walkSegments(msgs, {
+        for (final m in msgs.where((m) => m.role == 'tool')) m.toolCallId: m,
+      }, ToolRegistry());
       final seg = segments.firstWhere(
         (s) => s.surfaceToolCalls.isNotEmpty || s.tools != null,
       );
@@ -255,8 +248,14 @@ void main() {
         'item': ['a', 'b'],
       };
       expect(unwrapListProperty(mangled), ['a', 'b']);
-      expect(unwrapListProperty(['a', 'b']), ['a', 'b'], reason: 'list passthrough');
-      expect(unwrapListProperty('["x","y"]'), ['x', 'y'], reason: 'JSON string');
+      expect(unwrapListProperty(['a', 'b']), [
+        'a',
+        'b',
+      ], reason: 'list passthrough');
+      expect(unwrapListProperty('["x","y"]'), [
+        'x',
+        'y',
+      ], reason: 'JSON string');
       expect(unwrapListProperty(42), 42, reason: 'non-list passthrough');
     });
 
@@ -270,10 +269,9 @@ void main() {
     test('SurfaceTool accepts the mangled payload (validate passes)', () async {
       final catalog = createBasicCatalog();
       final tool = SurfaceTool(catalog: catalog);
-      final result = await tool.execute(
-        {'surface': mangledPayload},
-        _FakeToolContext(),
-      );
+      final result = await tool.execute({
+        'surface': mangledPayload,
+      }, _FakeToolContext());
       expect(
         result.title,
         isNot('Error'),
@@ -284,7 +282,7 @@ void main() {
     test('VibeSegmentBubble renders the mangled surface non-empty', () async {
       final resultsByCallId = {
         for (final m in messages.where((m) => m.role == 'tool'))
-          m.toolCallId!: m,
+          m.toolCallId: m,
       };
       // Swap the clean payload for the real mangled one.
       final mangledMessages = messages.map((m) {

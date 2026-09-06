@@ -112,7 +112,7 @@ Future<_Result> _withProxyRetryAttempt() async {
         if (p != null) client.findProxy = p.findProxyFor;
         try {
           final req = await client.getUrl(Uri.parse(_url));
-          return req.close();
+          return await req.close();
         } catch (e) {
           rethrow;
         }

@@ -7,8 +7,6 @@
 // See SessionLeaseManager.cancelStream / attachRoundCancelToken and
 // the orchestrator's clearCancelRequest call at turn start.
 
-import 'dart:async';
-
 import 'package:crux/src/services/llm_client.dart';
 import 'package:crux/src/services/session_lease_manager.dart';
 import 'package:test/test.dart';
@@ -20,10 +18,7 @@ void main() {
   setUp(() {
     manager = SessionLeaseManager();
     heartbeats = 0;
-    manager.markSessionActive(
-      1,
-      heartbeat: (_) async => heartbeats++,
-    );
+    manager.markSessionActive(1, heartbeat: (_) async => heartbeats++);
   });
 
   tearDown(() {
@@ -36,9 +31,14 @@ void main() {
 
     manager.cancelStream(1);
 
-    expect(token.isCancelled, isTrue, reason: 'the in-flight HTTP response '
-        'must be destroyed so the executor awaits unblock even when the '
-        'provider stream has gone quiet');
+    expect(
+      token.isCancelled,
+      isTrue,
+      reason:
+          'the in-flight HTTP response '
+          'must be destroyed so the executor awaits unblock even when the '
+          'provider stream has gone quiet',
+    );
     expect(manager.isCancelRequested(1), isTrue);
   });
 
@@ -60,33 +60,41 @@ void main() {
     expect(token.isCancelled, isFalse);
   });
 
-  test('attachRoundCancelToken(null) detaches without touching the lease',
-      () async {
-    final token = LlmStreamCancelToken();
-    manager.attachRoundCancelToken(1, token);
+  test(
+    'attachRoundCancelToken(null) detaches without touching the lease',
+    () async {
+      final token = LlmStreamCancelToken();
+      manager.attachRoundCancelToken(1, token);
 
-    manager.attachRoundCancelToken(1, null);
-    manager.cancelStream(1);
+      manager.attachRoundCancelToken(1, null);
+      manager.cancelStream(1);
 
-    expect(token.isCancelled, isFalse,
-        reason: 'after a round ends its token must be inert — an '
+      expect(
+        token.isCancelled,
+        isFalse,
+        reason:
+            'after a round ends its token must be inert — an '
             'interrupt between rounds only sets the flag for the '
-            'executor checkpoints');
-    expect(manager.isStreaming(1), isTrue);
-  });
+            'executor checkpoints',
+      );
+      expect(manager.isStreaming(1), isTrue);
+    },
+  );
 
-  test('re-attaching replaces the previous token (new round, new token)',
-      () async {
-    final first = LlmStreamCancelToken();
-    final second = LlmStreamCancelToken();
-    manager.attachRoundCancelToken(1, first);
-    manager.attachRoundCancelToken(1, second);
+  test(
+    're-attaching replaces the previous token (new round, new token)',
+    () async {
+      final first = LlmStreamCancelToken();
+      final second = LlmStreamCancelToken();
+      manager.attachRoundCancelToken(1, first);
+      manager.attachRoundCancelToken(1, second);
 
-    manager.cancelStream(1);
+      manager.cancelStream(1);
 
-    expect(first.isCancelled, isFalse);
-    expect(second.isCancelled, isTrue);
-  });
+      expect(first.isCancelled, isFalse);
+      expect(second.isCancelled, isTrue);
+    },
+  );
 
   test('a token cancelled after attach still destroys its response when '
       'the response attaches late', () async {
