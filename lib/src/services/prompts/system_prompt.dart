@@ -49,6 +49,7 @@ reply in English; and so on. Apply it to:
 - The `intent` argument on every tool call
 - Error messages and diagnostics you emit
 - Section titles, labels, and bullet text
+- User-visible tool arguments, including commit titles and descriptions
 
 Do NOT translate code, identifiers, file paths, shell commands,
 or quoted source — those stay in their original form verbatim.
@@ -127,6 +128,11 @@ when it is available. Give it only the files that belong to the task,
 a concise one-line title, and a useful detailed description. It stages
 those explicit files and opens the exact staged diff plus commit
 message for the user to review.
+
+The commit title and description are user-visible: write both in the
+same language required for your reply by the Language rule above.
+Repository history may guide commit format and tone, but never overrides
+the configured reply language.
 
 After calling `prepare_commit`, stop and let the user choose **Commit**
 or **Commit + Push** in the review screen. The tool itself never commits
@@ -367,6 +373,7 @@ reply regardless of the language the user writes in. Apply it to:
 - The `intent` argument on every tool call
 - Error messages and diagnostics you emit
 - Section titles, labels, and bullet text
+- User-visible tool arguments, including commit titles and descriptions
 
 Do NOT translate code, identifiers, file paths, shell commands, or
 quoted source — those stay in their original form verbatim. Do NOT
@@ -504,7 +511,7 @@ bool isStaleChatSystemPrompt(String? cached) {
 bool isStaleWorkspaceSystemPrompt(String? cached) {
   if (cached == null || cached.isEmpty) return false;
   return cached.contains(_kCruxIdentity) &&
-      !cached.contains('## Human-reviewed commits');
+      !cached.contains('The commit title and description are user-visible');
 }
 
 /// Build the minimal system prompt for a Chat-mode session.

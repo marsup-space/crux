@@ -49,4 +49,19 @@ void main() {
       }
     });
   });
+
+  group('commitMessageSystemPromptFor', () {
+    test('follow mode requires the configured language', () {
+      final prompt = commitMessageSystemPromptFor(language: '中文');
+      expect(prompt, contains('MUST write both the subject and body in 中文'));
+      expect(prompt, contains('must never\n  override the required language'));
+    });
+
+    test('auto mode follows the current user request language', () {
+      final prompt = commitMessageSystemPromptFor();
+      expect(prompt, contains('same language as the USER REQUEST'));
+      expect(prompt, isNot(contains('MUST write both')));
+      expect(prompt, commitMessageSystemPrompt);
+    });
+  });
 }

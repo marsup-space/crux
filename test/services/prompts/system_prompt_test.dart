@@ -105,6 +105,8 @@ void main() {
       expect(out, contains('## Human-reviewed commits'));
       expect(out, contains('prefer the `prepare_commit` tool'));
       expect(out, contains('only the files that belong to the task'));
+      expect(out, contains('commit title and description are user-visible'));
+      expect(out, contains('same language required for your reply'));
       expect(out, contains('let the user choose **Commit**'));
       expect(out, contains('never include unrelated or conflicted files'));
     });
@@ -281,9 +283,8 @@ void main() {
       () {
         final tempRoot = Directory.systemTemp.createTempSync('crux_proj_in_');
         try {
-          File(
-            p.join(tempRoot.path, 'AGENTS.md'),
-          ).writeAsStringSync('Project rules.');
+          File(p.join(tempRoot.path, 'AGENTS.md'))
+              .writeAsStringSync('Project rules.');
 
           final out = buildSystemPrompt(
             provider: _provider(systemPromptAddition: 'Tuning.'),
@@ -459,7 +460,7 @@ void main() {
     expect(
       isStaleWorkspaceSystemPrompt(
         'You are Crux, an interactive AI coding agent for the terminal.\n'
-        '## Tool tiers',
+        '## Human-reviewed commits\n## Tool tiers',
       ),
       isTrue,
     );
@@ -504,6 +505,12 @@ void main() {
         ),
       );
       expect(out, contains('Always reply in Chinese'));
+      expect(
+        out,
+        contains(
+          'User-visible tool arguments, including commit titles and descriptions',
+        ),
+      );
       expect(out, isNot(contains("Match the user's language")));
     });
 

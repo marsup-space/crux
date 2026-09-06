@@ -63,6 +63,20 @@ void main() {
     expect(opened, isFalse);
     expect(_git(dir.path, ['rev-list', '--count', 'HEAD']), '1\n');
   });
+
+  test('tool contract requires title and description in Crux language', () {
+    final tool = GitPrepareCommitTool(onPrepared: (_) {});
+    expect(tool.description, contains('current Crux language setting'));
+    final properties = tool.parametersSchema['properties'] as Map;
+    expect(
+      (properties['title'] as Map)['description'],
+      contains('current Crux reply language'),
+    );
+    expect(
+      (properties['description'] as Map)['description'],
+      contains('current Crux reply language'),
+    );
+  });
 }
 
 ToolContext _context(String cwd) => ToolContext(

@@ -49,6 +49,7 @@ reply in English; and so on. Apply it to:
 - The `intent` argument on every tool call
 - Error messages and diagnostics you emit
 - Section titles, labels, and bullet text
+- User-visible tool arguments, including commit titles and descriptions
 
 Do NOT translate code, identifiers, file paths, shell commands,
 or quoted source — those stay in their original form verbatim.
@@ -60,7 +61,8 @@ In `follow` mode it becomes "Always reply in <locale>. The user has
 configured the reply language to follow the UI language, which is set
 to <locale>, so use it for every reply regardless of the language the
 user writes in. Apply it to: …" with the same "do not translate
-code/identifiers/paths" and "do not mix languages" caveats.
+code/identifiers/paths" and "do not mix languages" caveats, including
+the same rule for user-visible tool arguments such as commit messages.
 
 ## Codebase exploration
 
@@ -131,6 +133,11 @@ when it is available. Give it only the files that belong to the task,
 a concise one-line title, and a useful detailed description. It stages
 those explicit files and opens the exact staged diff plus commit
 message for the user to review.
+
+The commit title and description are user-visible: write both in the
+same language required for your reply by the Language rule above.
+Repository history may guide commit format and tone, but never overrides
+the configured reply language.
 
 After calling `prepare_commit`, stop and let the user choose **Commit**
 or **Commit + Push** in the review screen. The tool itself never commits

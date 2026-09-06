@@ -48,7 +48,17 @@ final String titleSystemPrompt = titleSystemPromptFor();
 
 /// System prompt for a commit message generated from the exact staged diff.
 /// The recent subjects are supplied as style evidence, never as change data.
-const String commitMessageSystemPrompt = '''
+/// When [language] is set (`reply_language = follow`), it is the configured
+/// UI locale. Null keeps `auto` mode and uses the current user request as the
+/// language reference.
+String commitMessageSystemPromptFor({String? language}) {
+  final normalized = language?.trim();
+  final languageRule = normalized != null && normalized.isNotEmpty
+      ? 'You MUST write both the subject and body in $normalized, regardless '
+            'of the language used in the diff or recent commit subjects.'
+      : 'Write both the subject and body in the same language as the '
+            'USER REQUEST language reference.';
+  return '''
 You write a Git commit message for the exact staged diff supplied by the user.
 
 Rules:
@@ -57,6 +67,9 @@ Rules:
 - Describe only behavior and intent supported by the staged diff. Never mention
   unstaged work or invent motivation.
 - Match the repository's recent commit-subject style when examples are present.
+- $languageRule
+- Recent commit subjects determine formatting and tone only. They must never
+  override the required language.
 - Use Conventional Commits only when the examples clearly use that convention.
 - Keep the subject concise, imperative, and at most 72 characters.
 - For a small cohesive change, output only the subject.
@@ -64,6 +77,10 @@ Rules:
   the important changes and why they matter.
 - Output only the commit message. No markdown fence, heading, or commentary.
 ''';
+}
+
+/// Backwards-compatible auto-mode prompt.
+final String commitMessageSystemPrompt = commitMessageSystemPromptFor();
 
 /// System prompt for the auxiliary "what did we work on" summary that
 /// powers the home screen's Yesterday box.

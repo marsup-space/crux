@@ -208,9 +208,11 @@ class ChatService {
   Future<String?> generateCommitMessage({
     required String stagedDiff,
     List<String> recentSubjects = const [],
+    String? userRequest,
   }) => _auxiliaryService.generateCommitMessage(
     stagedDiff: stagedDiff,
     recentSubjects: recentSubjects,
+    userRequest: userRequest,
   );
 
   Future<String?> generateTldr(

@@ -37,7 +37,9 @@ class GitPrepareCommitTool extends ToolDef {
       'tool NEVER creates a commit and NEVER pushes. Use it only after the '
       'requested implementation and relevant verification are complete. Do '
       'not include unrelated user changes, and do not use it for conflicted '
-      'files.';
+      'files. Write the title and description in the same language required '
+      'for your user-facing reply by the current Crux language setting; recent '
+      'commit history may guide style, but must not override that language.';
 
   @override
   Map<String, dynamic> get parametersSchema => {
@@ -55,12 +57,14 @@ class GitPrepareCommitTool extends ToolDef {
       'title': {
         'type': 'string',
         'description':
-            'Concise one-line commit subject, normally at most 72 characters.',
+            'Concise one-line commit subject, normally at most 72 characters, '
+            'in the current Crux reply language.',
       },
       'description': {
         'type': 'string',
         'description':
-            'Detailed commit body explaining the important changes and why.',
+            'Detailed commit body explaining the important changes and why, '
+            'in the current Crux reply language.',
       },
     },
   };

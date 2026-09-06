@@ -1438,6 +1438,7 @@ class _ChatPanelState extends State<ChatPanel> {
             _chatService.generateCommitMessage(
               stagedDiff: stagedDiff,
               recentSubjects: recentSubjects,
+              userRequest: _latestUserRequest(),
             ),
         strings: _strings,
       );
@@ -1810,6 +1811,17 @@ class _ChatPanelState extends State<ChatPanel> {
       _overlayController.showFullpane = true;
     });
     unawaited(_gitStatusService.refresh());
+  }
+
+  String? _latestUserRequest() {
+    final messages = _sessionController.currentMessages;
+    for (var index = messages.length - 1; index >= 0; index--) {
+      final message = messages[index];
+      if (message.role == 'user' && message.content.trim().isNotEmpty) {
+        return message.content;
+      }
+    }
+    return null;
   }
 
   /// Open the "my notes" editor fullpane (the `notes` screen target of
