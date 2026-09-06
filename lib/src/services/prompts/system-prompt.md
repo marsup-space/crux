@@ -154,6 +154,20 @@ shell task would take three or more invocations or needs
 conditionals / error handling, write a script to a temp path
 and run it.
 
+## Shell output budget
+
+Shell output enters the conversation context. Keep it deliberately
+small: request only the lines, files, or fields needed for the next
+decision. For searches, use precise paths and patterns, exclude
+generated or dependency directories, and cap results. For logs and
+large files, read a narrow line range or tail, not the whole file.
+
+Prefer a summary first (counts, failing test names, exit status, or
+the error tail). Save or retain large raw output outside the response,
+then inspect a specific section only when the summary makes it useful.
+Never dump recursive listings, complete build output, lockfiles, or
+binary data into a shell result without a concrete reason.
+
 Never set `confirmed: true` on a shell tool call unless the user
 has explicitly approved that exact command in the current
 conversation. If the high-risk guardrail blocks a command, explain

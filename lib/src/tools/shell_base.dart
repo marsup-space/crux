@@ -6,13 +6,104 @@ import '../services/auxiliary_prompts.dart';
 import '../services/shell_live_registry.dart';
 import '../services/shell_monitor_notifier.dart' show ShellMonitorRegistry;
 import '../utils/bundled_executable.dart';
-import '../utils/token_estimate.dart' show estimateToolRoundTripTokens;
+import '../utils/token_estimate.dart'
+    show estimateTokens, estimateToolRoundTripTokens;
 import 'shell_guard.dart';
 import 'shell_monitor.dart';
 import 'shell_risk.dart';
 import 'tool_def.dart';
 
+/// Shell results are sent back to the model as tool output. A line-only cap
+/// is insufficient because a single minified line can be many thousands of
+/// tokens, so enforce both a line and character budget.
 const _maxLines = 2000;
+const _outputHeadLines = _maxLines ~/ 2;
+const _outputTailLines = _maxLines - _outputHeadLines;
+const _maxOutputChars = 16 * 1024;
+// Reserve room for the truncation and exit-status annotations appended after
+// this payload is capped, keeping ordinary final tool results within ~4096.
+const _maxOutputTokens = 4000;
+const _outputHeadChars = 4 * 1024;
+const _omissionMarker =
+    '[... shell output omitted; see full output file for the middle ...]';
+const _outputTailChars =
+    _maxOutputChars - _outputHeadChars - _omissionMarker.length - 2;
+
+class _CappedShellOutput {
+  final String output;
+  final bool truncated;
+  final int originalChars;
+
+  const _CappedShellOutput({
+    required this.output,
+    required this.truncated,
+    required this.originalChars,
+  });
+}
+
+/// Return a bounded view that retains both setup/context at the beginning and
+/// the most actionable diagnostics at the end. The raw text is written to a
+/// temporary file by the caller when [truncated] is true.
+_CappedShellOutput _capShellOutput(String output) {
+  final originalChars = output.length;
+  final lines = output.split('\n');
+  final lineTruncated = lines.length > _maxLines;
+  final lineCapped = lineTruncated
+      ? [
+          ...lines.take(_outputHeadLines),
+          _omissionMarker,
+          ...lines.skip(lines.length - _outputTailLines),
+        ].join('\n')
+      : output;
+
+  final tokenTruncated = estimateTokens(lineCapped) > _maxOutputTokens;
+  if (lineCapped.length <= _maxOutputChars &&
+      !lineTruncated &&
+      !tokenTruncated) {
+    return _CappedShellOutput(
+      output: lineCapped,
+      truncated: false,
+      originalChars: originalChars,
+    );
+  }
+
+  if (lineCapped.length <= _maxOutputChars && !tokenTruncated) {
+    return _CappedShellOutput(
+      output: lineCapped,
+      truncated: true,
+      originalChars: originalChars,
+    );
+  }
+
+  final headChars = lineCapped.length < _outputHeadChars
+      ? lineCapped.length
+      : _outputHeadChars;
+  final maxTailChars = lineCapped.length - headChars < _outputTailChars
+      ? lineCapped.length - headChars
+      : _outputTailChars;
+  final head = lineCapped.substring(0, headChars);
+  var low = 0;
+  var high = maxTailChars;
+  while (low < high) {
+    final tailChars = (low + high + 1) ~/ 2;
+    final candidate =
+        '$head\n$_omissionMarker\n'
+        '${lineCapped.substring(lineCapped.length - tailChars)}';
+    if (estimateTokens(candidate) <= _maxOutputTokens) {
+      low = tailChars;
+    } else {
+      high = tailChars - 1;
+    }
+  }
+  final boundedOutput =
+      '$head\n$_omissionMarker\n'
+      '${lineCapped.substring(lineCapped.length - low)}';
+  return _CappedShellOutput(
+    output: boundedOutput,
+    truncated: true,
+    originalChars: originalChars,
+  );
+}
 
 class ShellInvocation {
   final String executable;
@@ -399,19 +490,17 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
             // check AND the visible tail unchanged byte-for-byte.
             // Any progress resets the run. (First check has no
             // baseline to compare against.)
-            final fullyStalled = newBytes == 0 &&
-                checkNumber > 1 &&
-                tail == lastStalledTail;
+            final fullyStalled =
+                newBytes == 0 && checkNumber > 1 && tail == lastStalledTail;
             stallRun = fullyStalled ? stallRun + 1 : 0;
             lastStalledTail = tail;
             final escalation = stallEscalationFor(stallRun);
             // Warn the model once the stall is old enough — injected
             // verbatim into the user turn so a cheap model cannot
             // miss it.
-            final stallNotice =
-                stallRun >= kMonitorStallWarnChecks
-                    ? stallNoticeFor(stallRun)
-                    : null;
+            final stallNotice = stallRun >= kMonitorStallWarnChecks
+                ? stallNoticeFor(stallRun)
+                : null;
 
             monitorMessages.add({
               'role': 'user',
@@ -538,10 +627,9 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
                 },
                 reason: verdict.reason,
                 elapsedSeconds: elapsedSecs(),
-                nextCheckSeconds:
-                    verdict.kind == ShellMonitorVerdictKind.stuck
-                        ? null
-                        : verdict.intervalSeconds,
+                nextCheckSeconds: verdict.kind == ShellMonitorVerdictKind.stuck
+                    ? null
+                    : verdict.intervalSeconds,
                 newOutputBytes: newBytes,
                 totalOutputBytes: totalOutputBytes,
                 tail: cappedTail(stdoutBuf.toString()),
@@ -628,8 +716,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       }
 
       int exitCode;
-      int?
-      finishExitCode; // mirrors exitCode for the FINISH event; null = killed pre-exit
+      int? finishExitCode; // mirrors exitCode for the FINISH event; null = killed pre-exit
       String? monitorKillReason;
       try {
         // Race: process completion vs timeout vs abort vs monitor.
@@ -670,10 +757,8 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         liveFinishExitCode = exitCode;
         // Always wait for output streams to finish, with a timeout.
         try {
-          await Future.wait([
-            stdoutFuture,
-            stderrFuture,
-          ]).timeout(const Duration(seconds: 2));
+          await Future.wait([stdoutFuture, stderrFuture])
+              .timeout(const Duration(seconds: 2));
         } catch (_) {
           // Streams may not close cleanly after kill; that's OK.
         }
@@ -705,7 +790,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
             '[interrupted by user]${stderrBuf.toString().isNotEmpty ? '\n${stderrBuf.toString()}' : ''}',
           );
         }
-            } finally {
+      } finally {
         abortCheckTimer?.cancel();
         monitorFallbackTimer?.cancel();
         // Unblock the monitor loop if it is still sleeping so it can
@@ -728,7 +813,8 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
             ),
           );
           await monitorLogSink.finish(exitCode: code);
-        }      }
+        }
+      }
 
       return ProcessResult(
         process.pid,
@@ -756,11 +842,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       // entry lingers for the registry's TTL, then prunes.
       if (sessionId != null && callId.isNotEmpty) {
         try {
-          liveRegistry.finish(
-            sessionId,
-            callId,
-            exitCode: liveFinishExitCode,
-          );
+          liveRegistry.finish(sessionId, callId, exitCode: liveFinishExitCode);
         } catch (_) {}
       }
       for (final path in invocation.cleanupPaths) {
@@ -1028,19 +1110,16 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       }
       combined.write(stdout);
 
-      var output = combined.toString();
+      final rawOutput = combined.toString();
+      final cappedOutput = _capShellOutput(rawOutput);
+      var output = cappedOutput.output;
       String? outputPath;
-      var truncated = false;
-
-      final lines = output.split('\n');
-      if (lines.length > _maxLines) {
-        final kept = lines.take(_maxLines).join('\n');
-        output = kept;
-        truncated = true;
+      final truncated = cappedOutput.truncated;
+      if (truncated) {
         final tmpFile = File(
           '${Directory.systemTemp.path}/crux_${name}_output_${DateTime.now().millisecondsSinceEpoch}.txt',
         );
-        await tmpFile.writeAsString(combined.toString());
+        await tmpFile.writeAsString(rawOutput);
         outputPath = tmpFile.path;
       }
 
@@ -1049,7 +1128,10 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       final tail = StringBuffer();
       if (truncated) {
         tail.writeln(
-          '\n[output truncated to $_maxLines lines; full output: $outputPath]',
+          '\n[output truncated from ${cappedOutput.originalChars} chars '
+          'to at most $_maxOutputChars chars / $_maxOutputTokens estimated '
+          'tokens / $_maxLines lines; '
+          'full output: $outputPath]',
         );
       }
       if (exitCode != 0) {
@@ -1066,8 +1148,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       // once. The registry keys by the spawned Process's OS pid,
       // which `ProcessResult.pid` carries — no object identity needed
       // across the `_run` boundary.
-      final killNote = ShellMonitorRegistry.instance
-          .takeKillNote(result.pid);
+      final killNote = ShellMonitorRegistry.instance.takeKillNote(result.pid);
       if (killNote != null) {
         finalOutput = '$finalOutput\n[$killNote]';
       }
@@ -1105,7 +1186,12 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         output: finalOutput,
         truncated: truncated,
         outputPath: outputPath,
-        metadata: {'exitCode': exitCode, ...?extraMetadata},
+        metadata: {
+          'exitCode': exitCode,
+          'originalOutputChars': cappedOutput.originalChars,
+          'returnedOutputChars': output.length,
+          ...?extraMetadata,
+        },
       );
     } catch (e) {
       // Keep the guardrail audit trail (confirmed-bypass / fail-open
@@ -1218,8 +1304,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       'command': {'type': 'string', 'description': 'Command to execute'},
       'intent': {
         'type': 'string',
-        'description':
-            'What this command accomplishes / why you are running it. Be concise.',
+        'description': 'What this command accomplishes / why you are running it. Be concise.',
       },
       'timeout': {
         'type': 'integer',

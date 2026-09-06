@@ -149,6 +149,20 @@ shell task would take three or more invocations or needs
 conditionals / error handling, write a script to a temp path
 and run it.
 
+## Shell output budget
+
+Shell output enters the conversation context. Keep it deliberately
+small: request only the lines, files, or fields needed for the next
+decision. For searches, use precise paths and patterns, exclude
+generated or dependency directories, and cap results. For logs and
+large files, read a narrow line range or tail, not the whole file.
+
+Prefer a summary first (counts, failing test names, exit status, or
+the error tail). Save or retain large raw output outside the response,
+then inspect a specific section only when the summary makes it useful.
+Never dump recursive listings, complete build output, lockfiles, or
+binary data into a shell result without a concrete reason.
+
 Never set `confirmed: true` on a shell tool call unless the user
 has explicitly approved that exact command in the current
 conversation. If the high-risk guardrail blocks a command, explain
@@ -504,14 +518,15 @@ bool isStaleChatSystemPrompt(String? cached) {
   return cached.contains('Working directory:');
 }
 
-/// True when a cached workspace prompt predates the human-reviewed commit
-/// workflow. Workspace prompts are persisted on the session, so this
-/// one-time template check ensures existing sessions learn about
-/// `prepare_commit` after upgrading rather than only newly created sessions.
+/// True when a cached workspace prompt predates a required workflow rule.
+/// Workspace prompts are persisted on the session, so this one-time template
+/// check ensures existing sessions learn new guardrails after upgrading rather
+/// than only newly created sessions.
 bool isStaleWorkspaceSystemPrompt(String? cached) {
   if (cached == null || cached.isEmpty) return false;
   return cached.contains(_kCruxIdentity) &&
-      !cached.contains('The commit title and description are user-visible');
+      (!cached.contains('The commit title and description are user-visible') ||
+          !cached.contains('## Shell output budget'));
 }
 
 /// Build the minimal system prompt for a Chat-mode session.

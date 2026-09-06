@@ -111,6 +111,20 @@ void main() {
       expect(out, contains('never include unrelated or conflicted files'));
     });
 
+    test('keeps shell output scoped to the next decision', () {
+      final out = buildSystemPrompt(
+        provider: _provider(),
+        model: _provider().models.first,
+        cwd: '/tmp/x',
+        worktree: '/tmp/x',
+        sessionStarted: DateTime.utc(2026, 1, 1),
+      );
+      expect(out, contains('## Shell output budget'));
+      expect(out, contains('cap results'));
+      expect(out, contains('Prefer a summary first'));
+      expect(out, contains('complete build output'));
+    });
+
     test('always ends with the env meta layer', () {
       final out = buildSystemPrompt(
         provider: _provider(),
@@ -460,7 +474,9 @@ void main() {
     expect(
       isStaleWorkspaceSystemPrompt(
         'You are Crux, an interactive AI coding agent for the terminal.\n'
-        '## Human-reviewed commits\n## Tool tiers',
+        '## Human-reviewed commits\n'
+        'The commit title and description are user-visible\n'
+        '## Tool tiers',
       ),
       isTrue,
     );
