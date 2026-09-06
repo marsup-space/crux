@@ -149,12 +149,60 @@ void main() {
         reason: 'chat input should render without the launch flag',
       );
       expect(
-        tester.terminalState.findText('v0.').isEmpty,
+        tester.terminalState.findText('██████╗').isEmpty,
         isTrue,
-        reason: 'home hero must not appear without the launch flag',
+        reason: 'home logo must not appear without the launch flag',
       );
     }, size: const Size(120, 32));
 
+    deps.theme.dispose();
+    deps.recents.dispose();
+  });
+
+  test('home settings button opens setup directly', () async {
+    final bootState = await loadChatPanelBootState(
+      userProvidersDir: tempDir.path,
+      providerService: providerService,
+      store: store,
+      projectPath: tempDir.path,
+    );
+    final deps = await createDependencies();
+    final locale = await LocaleController.create(
+      configStore: LocaleConfigStore(
+        File(p.join(tempDir.path, 'locale-config.toml')),
+      ),
+    );
+
+    await testNocterm('home setup button routing', (tester) async {
+      await tester.pumpComponent(
+        Container(
+          width: 120,
+          height: 40,
+          child: CruxTheme(
+            data: deps.theme.activeTheme,
+            child: ChatPanel(
+              userProvidersDir: tempDir.path,
+              themeController: deps.theme,
+              localeController: locale,
+              bootState: bootState,
+              recentProjectsStore: deps.recents,
+              showHomeOnLaunch: true,
+              setupEnsureSemble: (progress) async => progress(1, 'ready'),
+              setupEnsureRipgrep: (progress) async => progress(1, 'ready'),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final setup = tester.terminalState.findText('setup').single;
+      await tester.tap(setup.x, setup.y);
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(tester.terminalState, containsText('CRUX  SETUP'));
+    }, size: const Size(120, 40));
+
+    locale.dispose();
     deps.theme.dispose();
     deps.recents.dispose();
   });

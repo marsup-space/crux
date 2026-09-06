@@ -1554,7 +1554,11 @@ class _ChatPanelState extends State<ChatPanel> {
   void _openSetup() {
     setState(() {
       _showSetup = true;
-      _overlayController.showHome = false;
+      // Keep Home mounted underneath when setup is opened from its button.
+      // Both screens own a focused Focusable; replacing Home synchronously
+      // inside the mouse callback leaves FocusManager pointing at an inactive
+      // element while Setup mounts. A full-screen overlay preserves the old
+      // element until setup closes and avoids nocterm's lifecycle assertion.
       _overlayController.showSessionManager = false;
       _overlayController.showFullpane = false;
     });
@@ -1702,6 +1706,9 @@ class _ChatPanelState extends State<ChatPanel> {
       ),
       // Skills box: tapping a skill opens its SKILL.md in a fullpane.
       showSkill: _openSkillFullpane,
+      // Setup is navigation and remains available while a background turn is
+      // running; unlike runCommand, it must not be rejected by the busy guard.
+      showSetup: _openSetup,
       // Activity box: token-per-day heatmap over this workspace's
       // sessions. The store query is one SQL aggregate; the widget
       // re-invokes it per open (no caching) because the data is cheap
@@ -2028,6 +2035,15 @@ class _ChatPanelState extends State<ChatPanel> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             if (_showSetup && component.localeController != null) {
+              if (_overlayController.showHome) {
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned.fill(child: _buildHome()),
+                    Positioned.fill(child: _buildSetup()),
+                  ],
+                );
+              }
               return _buildSetup();
             }
             // Home is an independent full screen, not an overlay: when

@@ -77,6 +77,11 @@ class HomeContext {
   /// the box's rows then do nothing on activation.
   final void Function(SkillInfo skill)? showSkill;
 
+  /// Open the setup guide directly from Home. This is navigation, not a
+  /// session-mutating command, so it must remain available while another
+  /// session is responding. Null in tests/previews without a setup host.
+  final VoidCallback? showSetup;
+
   /// Fetch total tokens (in + out) per local calendar day for the
   /// `activity` heatmap box. [sinceDays] bounds the lookback window.
   /// Null (tests / previews) means "no store wired" — the box renders
@@ -168,6 +173,7 @@ class HomeContext {
     this.activeModel = _noModel,
     this.summarizeYesterday,
     this.showSkill,
+    this.showSetup,
     this.dailyTokenTotals,
     this.dailyUsageStats,
     this.hasProviderKey = _false,
@@ -204,6 +210,7 @@ class HomeContext {
       activeModel = _noModel,
       summarizeYesterday = null,
       showSkill = null,
+      showSetup = null,
       dailyTokenTotals = null,
       dailyUsageStats = null,
       hasProviderKey = _false,

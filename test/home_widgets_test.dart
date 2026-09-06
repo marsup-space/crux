@@ -1415,9 +1415,9 @@ void main() {
       String? themeId = 'dracula',
       String? aux,
       String? viewMode = 'vibe',
-      bool Function(String)? onRunCommand,
+      VoidCallback? showSetup,
     }) => HomeContext(
-      runCommand: onRunCommand ?? (_) => true,
+      runCommand: (_) => false,
       close: () {},
       seedInput: (_) {},
       gitStatusService: GitStatusService(),
@@ -1427,6 +1427,7 @@ void main() {
       themeId: () => themeId,
       auxModelName: () => aux,
       viewMode: () => viewMode,
+      showSetup: showSetup,
     );
 
     test('declares id, title, span, and item count', () {
@@ -1473,13 +1474,10 @@ void main() {
     test(
       'settings rows are passive and its in-box button opens setup',
       () async {
-        var command = '';
+        var setupOpened = false;
         final widget = SettingsHomeWidget();
         final ctx = settingsCtx(
-          onRunCommand: (value) {
-            command = value;
-            return true;
-          },
+          showSetup: () => setupOpened = true,
         );
 
         expect(widget.activate(ctx), isNull);
@@ -1515,7 +1513,7 @@ void main() {
 
           await tester.tap(setup.x, setup.y);
 
-          expect(command, '/setup');
+          expect(setupOpened, isTrue);
         }, size: const Size(80, 24));
       },
     );

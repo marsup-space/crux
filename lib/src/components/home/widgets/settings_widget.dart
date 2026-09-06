@@ -18,7 +18,8 @@ class _Setting {
 ///
 /// Rows are informational: each shows `label  value` and deliberately has
 /// no mouse or keyboard activation. The in-box upper-right button opens
-/// `/setup`, which replaces home with the setup guide.
+/// the setup guide directly, which replaces home without going through the
+/// session-command busy guard.
 class SettingsHomeWidget extends HomeWidget {
   @override
   String get id => 'settings';
@@ -97,9 +98,7 @@ class SettingsHomeWidget extends HomeWidget {
             ),
             Button(
               label: ctx.strings.t('home.settings.openSetup'),
-              onPressed: () {
-                ctx.runCommand('/setup');
-              },
+              onPressed: ctx.showSetup,
               color: theme.accent,
               hoverColor: theme.buttonTextHover,
               bgColor: theme.surfaceVariant,
