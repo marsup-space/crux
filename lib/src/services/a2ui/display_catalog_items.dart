@@ -30,6 +30,7 @@ import '../../i18n/strings.dart';
 // ignore_for_file: implementation_imports
 import 'package:nocterm/src/framework/terminal_canvas.dart';
 import 'basic_catalog_items.dart' show resolveString, resolveValue;
+import 'interactive_list_item.dart' show ListItemCatalogItem;
 import 'models.dart';
 import 'surface_catalog.dart';
 
@@ -257,113 +258,6 @@ class StatCatalogItem extends CatalogItem {
           style: TextStyle(color: theme.onSurfaceDim),
         ),
       ],
-    );
-  }
-}
-
-/// A standard two-line row for lists. Actions deliberately remain a host or
-/// Button concern, so this display primitive stays safe for every catalog.
-class ListItemCatalogItem extends CatalogItem {
-  @override
-  String get typeName => 'ListItem';
-
-  @override
-  String get description =>
-      'A selectable list row with optional leading marker, detail and badge.';
-
-  @override
-  Map<String, dynamic> get propertiesSchema => {
-    'title': {'type': 'string', 'description': 'Primary row text.'},
-    'leading': {
-      'type': 'string',
-      'description':
-          'Optional compact leading marker, such as an icon or state.',
-    },
-    'detail': {'type': 'string', 'description': 'Optional secondary text.'},
-    'inline': {
-      'type': 'boolean',
-      'description':
-          'Keep title and detail on one row. Useful for compact action lists.',
-    },
-    'badge': {'type': 'string', 'description': 'Optional trailing status.'},
-    'selected': {
-      'type': 'boolean',
-      'description': 'Whether the host currently selects this row.',
-    },
-  };
-
-  @override
-  Component build({
-    required BuildContext context,
-    required A2uiComponent component,
-    required Map<String, dynamic> dataModel,
-    required Component Function(String childId) buildChild,
-    void Function(A2uiAction action)? onAction,
-    void Function(String path, dynamic value)? onDataModelUpdate,
-    bool submitted = false,
-    String? Function(String childId)? childType,
-    Strings strings = kEnglishStrings,
-  }) {
-    final theme = CruxTheme.of(context);
-    final leading = resolveString(component.properties['leading'], dataModel);
-    final detail = resolveString(component.properties['detail'], dataModel);
-    final badge = resolveString(component.properties['badge'], dataModel);
-    final selected = component.properties['selected'] == true;
-    final inline = component.properties['inline'] == true;
-    final titleColor = selected ? theme.selectedText : theme.onSurface;
-    final secondaryColor = selected ? theme.selectedText : theme.onSurfaceDim;
-    return Container(
-      color: selected ? theme.selection : null,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (leading.isNotEmpty) ...[
-            Text(leading, style: TextStyle(color: secondaryColor)),
-            const SizedBox(width: 1),
-          ],
-          Expanded(
-            child: inline
-                ? Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        resolveString(component.properties['title'], dataModel),
-                        style: TextStyle(color: titleColor),
-                      ),
-                      if (detail.isNotEmpty)
-                        Expanded(
-                          child: Text(
-                            '  $detail',
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: secondaryColor),
-                          ),
-                        ),
-                    ],
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        resolveString(component.properties['title'], dataModel),
-                        style: TextStyle(color: titleColor),
-                      ),
-                      if (detail.isNotEmpty)
-                        Text(detail, style: TextStyle(color: secondaryColor)),
-                    ],
-                  ),
-          ),
-          if (badge.isNotEmpty) ...[
-            const SizedBox(width: 1),
-            Text(
-              badge,
-              style: TextStyle(
-                color: selected ? theme.selectedText : theme.secondary,
-              ),
-            ),
-          ],
-        ],
-      ),
     );
   }
 }

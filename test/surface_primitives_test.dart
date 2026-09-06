@@ -89,6 +89,57 @@ void main() {
     expect(catalog.validate(declaration), isEmpty);
   });
 
+  test('ListItem dispatches its declared action on mouse click', () async {
+    final actions = <A2uiAction>[];
+    final clickable = CreateSurface(
+      surfaceId: 'clickable-list-item',
+      catalogId: 'crux/1.0/chat',
+      components: const [
+        A2uiComponent(
+          id: 'root',
+          component: 'ListItem',
+          properties: {
+            'title': 'Open session',
+            'inline': true,
+            'action': {
+              'event': {
+                'name': 'open_session',
+                'context': {'sessionId': 7},
+              },
+            },
+          },
+        ),
+      ],
+    );
+
+    await testNocterm('clickable list item', (tester) async {
+      final catalog = createBasicCatalog();
+      await tester.pumpComponent(
+        Container(
+          width: 40,
+          height: 4,
+          child: CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: SurfaceHost(
+              declaration: clickable,
+              catalog: catalog,
+              instanceKey: 'clickable-list-item',
+              submitOnAction: false,
+              onAction: actions.add,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(2, 0);
+      await tester.pump();
+
+      expect(actions, hasLength(1));
+      expect(actions.single.name, 'open_session');
+      expect(actions.single.context, {'sessionId': 7});
+    }, size: const Size(40, 4));
+  });
+
   test('Toggle updates the data model through keyboard activation', () async {
     await testNocterm('surface primitive toggle', (tester) async {
       final catalog = createBasicCatalog();
