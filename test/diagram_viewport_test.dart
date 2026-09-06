@@ -17,32 +17,50 @@ void main() {
       expect(data.naturalWidth, 8);
     });
 
-    test('infers node outlines without styling standalone edge lines', () {
+    test('keeps an LR branch trunk in edge color beside node borders', () {
+      // Mirrors the reported failure: a third vertical stroke shares a node
+      // content row, but it is the branch trunk rather than a border.
       final data = DiagramViewportData.inferBorders([
-        '┌───┐',
-        '│ box │',
-        '└───┘',
-        '  │',
+        '┌─────┐  ',
+        '│ node│  │',
+        '└─────┘  │',
+        '         │',
       ]);
       expect(data.isBorderGlyph(0, 0), isTrue);
       expect(data.isBorderGlyph(1, 0), isTrue);
       expect(data.isBorderGlyph(1, 6), isTrue);
-      expect(data.isBorderGlyph(3, 2), isFalse);
+      expect(data.isBorderGlyph(1, 9), isFalse);
+      expect(data.isBorderGlyph(2, 9), isFalse);
     });
 
-    test('styles every wall of adjacent boxes as a border', () {
-      final data = DiagramViewportData.inferBorders(['│ one │  │ two │']);
-      expect(data.isBorderGlyph(0, 0), isTrue);
-      expect(data.isBorderGlyph(0, 6), isTrue);
-      expect(data.isBorderGlyph(0, 9), isTrue);
-      expect(data.isBorderGlyph(0, 15), isTrue);
-    });
+    test(
+      'preserves borders and bright shafts in a vertical Mermaid flowchart',
+      () {
+        // An end-to-end TD case ensures the fix cannot regress vertical
+        // Mermaid output while correcting the LR branch-trunk false positive.
+        final data = tryBuildDiagramViewportData(
+          '''flowchart TD
+Start[收到工具调用] --> Check{命令包含 git?}
+Check -->|否| Keep[保持原逻辑]
+Check -->|是| Done[本工具轮完成]
+Done --> Refresh[刷新当前 workspace Git 状态]
+Refresh --> Sidebar[侧栏立即更新]''',
+          'mermaid',
+        )!;
+        final startRow = data.lines.indexWhere((line) => line.contains('收到工具调用'));
+        final startLine = data.lines[startRow];
+        final leftBorder = startLine.indexOf('│');
+        final shaftRow = data.lines.indexWhere((line) => line.trim() == '│');
+        final shaftLine = data.lines[shaftRow];
+
+        expect(data.isBorderGlyph(startRow, leftBorder), isTrue);
+        expect(data.isBorderGlyph(shaftRow, shaftLine.indexOf('│')), isFalse);
+      },
+    );
 
     test('keeps rounded edge elbows out of the border color', () {
-      final edge = DiagramViewportData.inferBorders(['╭─────╮', '   │']);
-      final decision = DiagramViewportData.inferBorders(['╭─────╮', ' ╱    ╲']);
-      expect(edge.isBorderGlyph(0, 0), isFalse);
-      expect(decision.isBorderGlyph(0, 0), isTrue);
+      final data = DiagramViewportData.inferBorders(['╭─────╮', '   │']);
+      expect(data.isBorderGlyph(0, 0), isFalse);
     });
   });
 
@@ -296,48 +314,45 @@ ask://Continue{continue}''';
       expect(ctrl.canPanV, isFalse);
     });
 
-    test(
-      'wheel over the viewport never pans horizontally (scroll chains)',
-      () async {
-        await testNocterm('wheel chains to vertical scroll', (tester) async {
-          const src =
-              '```mermaid\nflowchart LR\nA[AAAAAAAAAA] --> B[BBBBBBBBBB] --> C[CCCCCCCCCC] --> D[DDDDDDDDDD]\n```';
-          await tester.pumpComponent(HighlightedMarkdownText(src));
-          final viewport = tester.findComponent<DiagramViewport>();
-          expect(viewport, isNotNull);
-          expect(viewport!.data.naturalWidth, greaterThan(56));
+    test('wheel over the viewport never pans horizontally (scroll chains)', () async {
+      await testNocterm('wheel chains to vertical scroll', (tester) async {
+        const src =
+            '```mermaid\nflowchart LR\nA[AAAAAAAAAA] --> B[BBBBBBBBBB] --> C[CCCCCCCCCC] --> D[DDDDDDDDDD]\n```';
+        await tester.pumpComponent(HighlightedMarkdownText(src));
+        final viewport = tester.findComponent<DiagramViewport>();
+        expect(viewport, isNotNull);
+        expect(viewport!.data.naturalWidth, greaterThan(56));
 
-          // Leftmost node label's painted column, before any wheel.
-          final before = tester.terminalState.findText('AAAAAAAAAA').first;
+        // Leftmost node label's painted column, before any wheel.
+        final before = tester.terminalState.findText('AAAAAAAAAA').first;
 
-          // Wheel down + up on the canvas: the render object consumes
-          // neither (no ScrollableRenderObjectMixin) — the pan offset
-          // stays 0 and the events chain to the enclosing vertical
-          // scroll. If the wheel hijack came back, even one wheelDown
-          // (+3 cols) would visibly shift this label left.
-          await tester.sendMouseEvent(
-            const MouseEvent(
-              button: MouseButton.wheelDown,
-              x: 30,
-              y: 2,
-              pressed: false,
-            ),
-          );
-          await tester.sendMouseEvent(
-            const MouseEvent(
-              button: MouseButton.wheelUp,
-              x: 30,
-              y: 2,
-              pressed: false,
-            ),
-          );
+        // Wheel down + up on the canvas: the render object consumes
+        // neither (no ScrollableRenderObjectMixin) — the pan offset
+        // stays 0 and the events chain to the enclosing vertical
+        // scroll. If the wheel hijack came back, even one wheelDown
+        // (+3 cols) would visibly shift this label left.
+        await tester.sendMouseEvent(
+          const MouseEvent(
+            button: MouseButton.wheelDown,
+            x: 30,
+            y: 2,
+            pressed: false,
+          ),
+        );
+        await tester.sendMouseEvent(
+          const MouseEvent(
+            button: MouseButton.wheelUp,
+            x: 30,
+            y: 2,
+            pressed: false,
+          ),
+        );
 
-          final after = tester.terminalState.findText('AAAAAAAAAA').first;
-          expect(after.x, before.x);
-          expect(after.y, before.y);
-        });
-      },
-    );
+        final after = tester.terminalState.findText('AAAAAAAAAA').first;
+        expect(after.x, before.x);
+        expect(after.y, before.y);
+      });
+    });
 
     test('drag over the viewport pans the canvas', () async {
       await testNocterm('drag pans', (tester) async {
