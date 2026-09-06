@@ -1,5 +1,7 @@
 import 'dart:async';
+
 import 'package:nocterm/nocterm.dart';
+
 import '../models/message.dart';
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
@@ -44,6 +46,7 @@ import 'cmd_unarchive.dart';
 import 'cmd_rename.dart';
 import 'cmd_quit.dart';
 import 'cmd_home.dart';
+import 'cmd_setup.dart';
 
 typedef ShowToastCallback = void Function(String message, {ToastMode mode});
 
@@ -99,7 +102,8 @@ class CommandContext {
   /// A string lookup bound to the active UI language, for localizing
   /// command feedback (toasts) and descriptions. Falls back to English
   /// when no [localeController] is wired.
-  Strings get strings => Strings(AppLocale.fromCode(localeController?.activeCode));
+  Strings get strings =>
+      Strings(AppLocale.fromCode(localeController?.activeCode));
   final Future<void> Function({String? text}) sendTurn;
   final Future<void> Function()? compactSession;
   final Future<Message?> Function() findLastUserMessage;
@@ -110,6 +114,7 @@ class CommandContext {
   final VoidCallback? quitApp;
   final VoidCallback? showFullpane;
   final VoidCallback? showHome;
+  final VoidCallback? showSetup;
   final RecentProjectsStore? recentProjectsStore;
 
   /// Store for `shell_monitor_logs` (one row per aux-monitor event).
@@ -166,6 +171,7 @@ class CommandContext {
     this.quitApp,
     this.showFullpane,
     this.showHome,
+    this.showSetup,
     this.recentProjectsStore,
     this.appendLocalMessage,
     this.shellMonitorLogStore,
@@ -239,6 +245,8 @@ class CommandExecutor {
         await executeQuit(ctx);
       case '/home':
         await executeHome(ctx);
+      case '/setup':
+        await executeSetup(ctx);
       case '/project':
         await executeProject(parts, ctx);
       case '/debug':

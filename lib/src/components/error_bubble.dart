@@ -5,6 +5,7 @@ import '../services/llm_error.dart';
 import '../theme/crux_theme.dart';
 import '../utils/terminal_symbols.dart';
 import 'system_hint_bubble.dart';
+import 'ui/button.dart';
 
 /// Persisted error bubble rendered at the end of a chat when the
 /// last LLM turn failed. Shows [LlmError.toUserMessage] as the body
@@ -15,7 +16,7 @@ import 'system_hint_bubble.dart';
 ///
 ///   - **Can-continue + callback**: body message, then a separator
 ///     line, then the affordance. The affordance is a
-///     [GestureDetector] wrapping a styled `Text`, so it picks up
+///     shared [Button], so it picks up
 ///     click detection directly from nocterm without routing through
 ///     the chat input pipeline (which would interpret `/continue` as
 ///     a literal user message instead of a command).
@@ -100,15 +101,17 @@ class ErrorBubble extends SystemHintBubble {
               children: [
                 Text(glyph, style: TextStyle(color: color)),
                 Expanded(
-                  child: GestureDetector(
-                    onTap: onRetry,
-                    child: Text(
-                      '$symbol ${strings.t('error.continue')}',
-                      style: TextStyle(
-                        color: color,
-                        fontWeight: FontWeight.bold,
-                        decoration: TextDecoration.underline,
-                      ),
+                  child: Button(
+                    label: '$symbol ${strings.t('error.continue')}',
+                    onPressed: onRetry,
+                    color: color,
+                    hoverColor: theme.buttonTextHover,
+                    bgColor: theme.surface,
+                    hoverBgColor: theme.buttonBackgroundHover,
+                    padding: EdgeInsets.zero,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      decoration: TextDecoration.underline,
                     ),
                   ),
                 ),

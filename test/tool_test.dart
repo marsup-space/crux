@@ -847,7 +847,7 @@ void main() {
       );
       final result = await tool.execute({
         'command': 'echo hello_crux_test',
-        'description': 'Test echo command',
+        'intent': 'Test echo command',
       }, ctx);
       expect(result.output.toLowerCase(), contains('hello_crux_test'));
       expect(result.metadata['exitCode'], 0);
@@ -865,6 +865,7 @@ void main() {
         );
         final result = await tool.execute({
           'command': r'echo "fix /continue"',
+          'intent': 'Verify quoted slash handling',
         }, ctx);
         expect(
           result.output.contains("'/continue' is outside repository"),
@@ -889,6 +890,7 @@ void main() {
         final result = await tool.execute({
           'command':
               r'echo "fix(commands): reject /continue" & echo "second line with /flag"',
+          'intent': 'Verify multiline quoted slash handling',
         }, ctx);
         expect(
           result.output.contains("'/continue' is outside repository"),
@@ -908,13 +910,24 @@ void main() {
         abort: AbortSignal(),
         workingDirectory: Directory.systemTemp.path,
       );
-      await tool.execute({'command': 'echo cleanup_test'}, ctx);
+      final existingTempBatches = Directory(Directory.systemTemp.path)
+          .listSync()
+          .where((e) => e.path.contains('crux_cmd_') && e.path.endsWith('.bat'))
+          .map((e) => e.path)
+          .toSet();
+      await tool.execute({
+        'command': 'echo cleanup_test',
+        'intent': 'Verify temporary batch cleanup',
+      }, ctx);
       await Future.delayed(const Duration(milliseconds: 100));
       final leaked = Directory(Directory.systemTemp.path)
           .listSync()
           .where((e) => e.path.contains('crux_cmd_') && e.path.endsWith('.bat'))
           .toList();
-      expect(leaked, isEmpty);
+      expect(
+        leaked.map((e) => e.path).where((path) => !existingTempBatches.contains(path)),
+        isEmpty,
+      );
     }, skip: !Platform.isWindows);
 
     test('returns error for missing command', () async {

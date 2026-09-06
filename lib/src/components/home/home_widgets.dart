@@ -70,7 +70,7 @@ class HomeContext {
   /// falls back to its static session list. Null callback (tests /
   /// previews) means "no summarizer", same fallback.
   final Future<YesterdaySummary?> Function(List<Session> sessions)?
-      summarizeYesterday;
+  summarizeYesterday;
 
   /// Open a fullpane showing a skill's full SKILL.md content (the
   /// `skills` box). Null (tests / previews) means "no viewer wired" —
@@ -82,14 +82,14 @@ class HomeContext {
   /// Null (tests / previews) means "no store wired" — the box renders
   /// an empty grid.
   final Future<Map<String, int>> Function({required int sinceDays})?
-      dailyTokenTotals;
+  dailyTokenTotals;
 
   /// Fetch per-local-day usage stats (tokens, turns, active-session
   /// count) for the `today` box. [sinceDays] bounds the lookback window.
   /// Null (tests / previews) means "no store wired" — the box renders
   /// its empty state.
   final Future<Map<String, DailyUsageStats>> Function({required int sinceDays})?
-      dailyUsageStats;
+  dailyUsageStats;
 
   /// Whether any LLM provider has an API key configured. Feeds the
   /// `setup` box's first checklist row. Defaults to `false` (tests /
@@ -194,30 +194,30 @@ class HomeContext {
   /// a fresh (non-repo) git service, nothing runs. [gitStatusService] is
   /// a real instance so the widget can subscribe to it harmlessly.
   HomeContext.minimal({required this.close})
-      : runCommand = ((_) => true),
-        seedInput = ((_) {}),
-        gitStatusService = GitStatusService(),
-        sessions = (() => const <Session>[]),
-        currentSessionId = (() => null),
-        switchSession = ((_) => false),
-        projectPath = '',
-        activeModel = _noModel,
-        summarizeYesterday = null,
-        showSkill = null,
-        dailyTokenTotals = null,
-        dailyUsageStats = null,
-        hasProviderKey = _false,
-        auxModelName = _nullString,
-        themeId = _nullString,
-        localeId = _nullString,
-        replyLanguageId = _nullString,
-        viewMode = _nullString,
-        hasWebProvider = _false,
-        notesService = null,
-        openNotes = null,
-        connectedUsageProviders = _noConnectedUsage,
-        plugins = null,
-        pluginHost = null;
+    : runCommand = ((_) => true),
+      seedInput = ((_) {}),
+      gitStatusService = GitStatusService(),
+      sessions = (() => const <Session>[]),
+      currentSessionId = (() => null),
+      switchSession = ((_) => false),
+      projectPath = '',
+      activeModel = _noModel,
+      summarizeYesterday = null,
+      showSkill = null,
+      dailyTokenTotals = null,
+      dailyUsageStats = null,
+      hasProviderKey = _false,
+      auxModelName = _nullString,
+      themeId = _nullString,
+      localeId = _nullString,
+      replyLanguageId = _nullString,
+      viewMode = _nullString,
+      hasWebProvider = _false,
+      notesService = null,
+      openNotes = null,
+      connectedUsageProviders = _noConnectedUsage,
+      plugins = null,
+      pluginHost = null;
 }
 
 /// One pluggable dashboard box.
@@ -335,8 +335,7 @@ abstract class HomeWidget {
   /// items that do nothing; the default routes to [activate] so legacy
   /// single-action boxes keep working. When this returns `null` *and*
   /// [itemCount] is 0, home's box-level Enter/click is a no-op.
-  void Function()? activateItem(HomeContext ctx, int index) =>
-      activate(ctx);
+  void Function()? activateItem(HomeContext ctx, int index) => activate(ctx);
 
   /// Primary action for the whole box (Enter/click when the box has no
   /// selectable items). Return `null` for a passive box (no-op on
@@ -365,13 +364,22 @@ abstract class HomeWidget {
   // These two members provide that without making HomeWidget a
   // nocterm Component.
 
-  /// Small buttons rendered on the box's title row, after the title
-  /// text (e.g. the yesterday box's `‹ ›` day navigation). Home lays
-  /// them out and wires the taps; a null/empty list renders nothing.
-  /// A button with a null [HomeTitleButton.onPressed] renders dimmed
-  /// (disabled). Recomputed on each build, so enabled/disabled tracks
-  /// the widget's state.
-    List<HomeTitleButton>? get titleButtons => null;
+  /// Small buttons rendered on the box's title row (e.g. the yesterday
+  /// box's `‹ ›` day navigation). Home lays them out and wires the taps;
+  /// a null/empty list renders nothing. A button with a null
+  /// [HomeTitleButton.onPressed] renders dimmed (disabled). Recomputed on
+  /// each build, so enabled/disabled tracks the widget's state.
+  List<HomeTitleButton>? get titleButtons => null;
+
+  /// Context-aware variant of [titleButtons]. Most boxes use the context-free
+  /// getter above; boxes whose title action runs a command can override this
+  /// method without retaining stale home state between renders.
+  List<HomeTitleButton>? titleButtonsFor(HomeContext ctx) => titleButtons;
+
+  /// Whether title buttons sit at the box's trailing edge. The default
+  /// keeps navigation controls directly after the title; action buttons
+  /// such as Settings' setup control opt into the upper-right corner.
+  bool get titleButtonsAlignRight => false;
 
   /// Whether the box has title buttons to render ([titleButtons] is
   /// non-empty). Home uses this to budget an extra title-row cell in

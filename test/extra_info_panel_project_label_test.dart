@@ -204,10 +204,20 @@ void main() {
     test('non-repo project shows just the path, no branch suffix', () async {
       await testNocterm('project widget not a repo', (tester) async {
         await pump(tester, git: GitStatus.empty);
-        // When [GitStatus.isRepo] is false, the project widget
-        // must fall back to showing just the path with no
-        // `:branch` suffix and no arrows.
-        expect(tester.terminalState.findText(':'), isEmpty);
+        // When [GitStatus.isRepo] is false, the project widget must fall
+        // back to the path with no sync arrows. Do not assert that the
+        // whole label contains no colon: an absolute Windows path starts
+        // with a drive prefix such as `C:`.
+        expect(
+          tester.terminalState.findText('↑').isNotEmpty ||
+              tester.terminalState.findText('^').isNotEmpty,
+          isFalse,
+        );
+        expect(
+          tester.terminalState.findText('↓').isNotEmpty ||
+              tester.terminalState.findText('v').isNotEmpty,
+          isFalse,
+        );
       });
     });
 

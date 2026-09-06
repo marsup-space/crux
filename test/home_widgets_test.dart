@@ -11,14 +11,12 @@ import 'package:crux/src/components/home/widgets/git_status_widget.dart';
 import 'package:crux/src/components/home/widgets/coding_plan_widget.dart';
 import 'package:crux/src/components/home/widgets/quick_actions_widget.dart';
 import 'package:crux/src/components/home/widgets/recent_sessions_widget.dart';
-import 'package:crux/src/components/home/widgets/setup_widget.dart';
 import 'package:crux/src/components/home/widgets/settings_widget.dart';
 import 'package:crux/src/components/home/widgets/skills_widget.dart';
 import 'package:crux/src/components/home/widgets/tokens_widget.dart';
 import 'package:crux/src/components/home/widgets/workspace_widget.dart';
 import 'package:crux/src/components/home/widgets/yesterday_widget.dart';
-import 'package:crux/src/services/auxiliary_service.dart'
-    show YesterdaySummary;
+import 'package:crux/src/services/auxiliary_service.dart' show YesterdaySummary;
 import 'package:crux/src/models/session.dart';
 import 'package:crux/src/models/coding_plan_usage.dart';
 import 'package:crux/src/models/credit_balance.dart';
@@ -66,7 +64,8 @@ class _PumpHostState extends State<_PumpHost> {
       child: CruxTheme(
         data: CruxThemeData.draculaFallback,
         child: Builder(
-          builder: (context) => component.widget.build(context, component.ctx, 1),
+          builder: (context) =>
+              component.widget.build(context, component.ctx, 1),
         ),
       ),
     );
@@ -154,8 +153,11 @@ void main() {
   group('tokens', () {
     /// `'yyyy-MM-dd'` for the day [daysAgo] before [now].
     String dayKey(DateTime now, int daysAgo) {
-      final d = DateTime(now.year, now.month, now.day)
-          .subtract(Duration(days: daysAgo));
+      final d = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(Duration(days: daysAgo));
       return '${d.year}-${d.month.toString().padLeft(2, '0')}-'
           '${d.day.toString().padLeft(2, '0')}';
     }
@@ -187,10 +189,7 @@ void main() {
               tokens: 17800,
               turns: 34,
               sessions: 3,
-              byModel: {
-                'claude-opus-4': 12800,
-                'gpt-5.2': 5000,
-              },
+              byModel: {'claude-opus-4': 12800, 'gpt-5.2': 5000},
             ),
           },
         );
@@ -198,10 +197,7 @@ void main() {
         await tester.pump();
         expect(widget.title, 'Today');
         // Both models show, labelled with a compact count.
-        expect(
-          tester.terminalState.findText('claude-opus-4'),
-          isNotEmpty,
-        );
+        expect(tester.terminalState.findText('claude-opus-4'), isNotEmpty);
         expect(tester.terminalState.findText('gpt-5.2'), isNotEmpty);
         expect(tester.terminalState.findText('12.8k'), isNotEmpty);
         expect(tester.terminalState.findText('5k'), isNotEmpty);
@@ -249,10 +245,7 @@ void main() {
         final widget = TokensHomeWidget(
           now: () => now,
           loader: (_) async => {
-            dayKey(now, 0): DailyUsageStats(
-              tokens: 3600,
-              byModel: byModel,
-            ),
+            dayKey(now, 0): DailyUsageStats(tokens: 3600, byModel: byModel),
           },
         );
         final base = HomeContext.minimal(close: () {});
@@ -271,8 +264,11 @@ void main() {
             height: 24,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child:
-                  HomeScreen(onExit: () {}, widgets: [widget], context_: ctx),
+              child: HomeScreen(
+                onExit: () {},
+                widgets: [widget],
+                context_: ctx,
+              ),
             ),
           ),
         );
@@ -282,46 +278,44 @@ void main() {
 
         // Sorted busiest-first: model-01 tops the chart; the tail
         // (model-08) is clipped below the fold.
-        expect(
-          tester.terminalState.findText('model-01'),
-          isNotEmpty,
-        );
+        expect(tester.terminalState.findText('model-01'), isNotEmpty);
         expect(tester.terminalState.containsText('model-08'), isFalse);
 
         // Wheel down over the box → the clipped tail scrolls into view.
         final top = tester.terminalState.findText('model-01').first;
         for (var i = 0; i < 2; i++) {
-          await tester.sendMouseEvent(MouseEvent(
-            button: MouseButton.wheelDown,
-            x: top.x + 2,
-            y: top.y,
-            pressed: false,
-          ));
+          await tester.sendMouseEvent(
+            MouseEvent(
+              button: MouseButton.wheelDown,
+              x: top.x + 2,
+              y: top.y,
+              pressed: false,
+            ),
+          );
           await tester.pump();
         }
         expect(tester.terminalState.containsText('model-08'), isTrue);
       }, size: const Size(80, 24));
     });
 
-    test('falls back to plain totals without a per-model breakdown',
-        () async {
+    test('falls back to plain totals without a per-model breakdown', () async {
       await testNocterm('tokens legacy totals', (tester) async {
         final now = DateTime(2024, 6, 15, 12);
         final widget = TokensHomeWidget(
           now: () => now,
           loader: (_) async => {
-            dayKey(now, 0):
-                const DailyUsageStats(tokens: 12800, turns: 34, sessions: 3),
+            dayKey(now, 0): const DailyUsageStats(
+              tokens: 12800,
+              turns: 34,
+              sessions: 3,
+            ),
           },
         );
         await _pump(tester, widget, _ctx());
         await tester.pump();
         expect(tester.terminalState.findText('12,800'), isNotEmpty);
         expect(tester.terminalState.findText('turns  34'), isNotEmpty);
-        expect(
-          tester.terminalState.findText('sessions  3'),
-          isNotEmpty,
-        );
+        expect(tester.terminalState.findText('sessions  3'), isNotEmpty);
       });
     });
 
@@ -399,10 +393,7 @@ void main() {
         // is simply absent from the map; day 3 is the latest non-empty.
         expect(widget.daysAgo, 3);
         expect(widget.title, '3 days ago');
-        expect(
-          tester.terminalState.findText('3,400'),
-          nocterm.isNotEmpty,
-        );
+        expect(tester.terminalState.findText('3,400'), nocterm.isNotEmpty);
 
         // Manual navigation still works from the seeded day.
         widget.goForward();
@@ -432,8 +423,7 @@ void main() {
       });
     });
 
-    test('entirely empty window stays on today with the placeholder',
-        () async {
+    test('entirely empty window stays on today with the placeholder', () async {
       await testNocterm('tokens all empty', (tester) async {
         final now = DateTime(2024, 6, 15, 12);
         final widget = TokensHomeWidget(
@@ -493,8 +483,11 @@ void main() {
       await testNocterm('tokens keys', (tester) async {
         final now = DateTime(2024, 6, 15, 12);
         String dayKey(int d) {
-          final date = DateTime(now.year, now.month, now.day)
-              .subtract(Duration(days: d));
+          final date = DateTime(
+            now.year,
+            now.month,
+            now.day,
+          ).subtract(Duration(days: d));
           return '${date.year}-${date.month.toString().padLeft(2, '0')}-'
               '${date.day.toString().padLeft(2, '0')}';
         }
@@ -522,7 +515,11 @@ void main() {
             height: 24,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: HomeScreen(onExit: () {}, widgets: [widget], context_: ctx),
+              child: HomeScreen(
+                onExit: () {},
+                widgets: [widget],
+                context_: ctx,
+              ),
             ),
           ),
         );
@@ -589,15 +586,17 @@ void main() {
       });
     });
 
-    test('renders sessions most-recent first with a current marker',
-        () async {
+    test('renders sessions most-recent first with a current marker', () async {
       await testNocterm('recent data', (tester) async {
         final now = DateTime.now();
         final widget = RecentSessionsHomeWidget(
           sessions: () => [
             _session(1, 'newest refactor', updatedAt: now),
-            _session(2, 'older bugfix',
-                updatedAt: now.subtract(const Duration(hours: 3))),
+            _session(
+              2,
+              'older bugfix',
+              updatedAt: now.subtract(const Duration(hours: 3)),
+            ),
           ],
           currentSessionId: () => 1,
           onSwitch: (_) => true,
@@ -771,8 +770,16 @@ void main() {
           sessions: () => [
             // Active yesterday, 2 days ago, and 3 days ago.
             _session(1, 'yesterday work', updatedAt: DateTime(2024, 6, 14, 8)),
-            _session(2, 'two days ago work', updatedAt: DateTime(2024, 6, 13, 9)),
-            _session(3, 'three days ago work', updatedAt: DateTime(2024, 6, 12, 9)),
+            _session(
+              2,
+              'two days ago work',
+              updatedAt: DateTime(2024, 6, 13, 9),
+            ),
+            _session(
+              3,
+              'three days ago work',
+              updatedAt: DateTime(2024, 6, 12, 9),
+            ),
           ],
           now: () => now,
         );
@@ -897,7 +904,11 @@ void main() {
             height: 24,
             child: CruxTheme(
               data: CruxThemeData.draculaFallback,
-              child: HomeScreen(onExit: () {}, widgets: [widget], context_: ctx),
+              child: HomeScreen(
+                onExit: () {},
+                widgets: [widget],
+                context_: ctx,
+              ),
             ),
           ),
         );
@@ -1023,56 +1034,52 @@ void main() {
       });
     });
 
-    test('falls back to the session list when the summarizer returns null', () async {
-      await testNocterm('yesterday null summary', (tester) async {
-        final now = DateTime(2024, 6, 15, 12);
-        final widget = YesterdayHomeWidget(
-          sessions: () => [
-            _session(1, 'morning thing', updatedAt: DateTime(2024, 6, 14, 8)),
-          ],
-          now: () => now,
-        );
-        final ctx = HomeContext(
-          runCommand: (_) => true,
-          close: () {},
-          seedInput: (_) {},
-          gitStatusService: GitStatusService(),
-          sessions: () => const [],
-          currentSessionId: () => null,
-          switchSession: (_) => false,
-          summarizeYesterday: (_) async => null,
-        );
-        await _pump(tester, widget, ctx);
-        for (var i = 0; i < 4; i++) {
-          await tester.pump();
-        }
-        // Null summary → static fallback list.
-        expect(
-          tester.terminalState.findText('1 session active'),
-          nocterm.isNotEmpty,
-        );
-        expect(
-          tester.terminalState.findText('morning thing'),
-          nocterm.isNotEmpty,
-        );
-      });
-    });
+    test(
+      'falls back to the session list when the summarizer returns null',
+      () async {
+        await testNocterm('yesterday null summary', (tester) async {
+          final now = DateTime(2024, 6, 15, 12);
+          final widget = YesterdayHomeWidget(
+            sessions: () => [
+              _session(1, 'morning thing', updatedAt: DateTime(2024, 6, 14, 8)),
+            ],
+            now: () => now,
+          );
+          final ctx = HomeContext(
+            runCommand: (_) => true,
+            close: () {},
+            seedInput: (_) {},
+            gitStatusService: GitStatusService(),
+            sessions: () => const [],
+            currentSessionId: () => null,
+            switchSession: (_) => false,
+            summarizeYesterday: (_) async => null,
+          );
+          await _pump(tester, widget, ctx);
+          for (var i = 0; i < 4; i++) {
+            await tester.pump();
+          }
+          // Null summary → static fallback list.
+          expect(
+            tester.terminalState.findText('1 session active'),
+            nocterm.isNotEmpty,
+          );
+          expect(
+            tester.terminalState.findText('morning thing'),
+            nocterm.isNotEmpty,
+          );
+        });
+      },
+    );
   });
 
   group('quick-actions', () {
     test('renders the default action rows', () async {
       await testNocterm('quick actions render', (tester) async {
-        await _pump(
-          tester,
-          QuickActionsHomeWidget(seedInput: (_) {}),
-          _ctx(),
-        );
+        await _pump(tester, QuickActionsHomeWidget(seedInput: (_) {}), _ctx());
         expect(tester.terminalState.findText('/new'), nocterm.isNotEmpty);
         expect(tester.terminalState.findText('/chat'), nocterm.isNotEmpty);
-        expect(
-          tester.terminalState.findText('/project'),
-          nocterm.isNotEmpty,
-        );
+        expect(tester.terminalState.findText('/project'), nocterm.isNotEmpty);
       });
     });
 
@@ -1279,17 +1286,19 @@ void main() {
       expect(widget.verticallyCenter, isFalse);
     });
 
-    test('renders an empty state with no connected providers and is passive',
-        () async {
-      await testNocterm('coding-plan empty', (tester) async {
-        await _pump(tester, CodingPlanHomeWidget(), _ctx());
-        expect(
-          tester.terminalState.findText('no usage data'),
-          nocterm.isNotEmpty,
-        );
-        expect(CodingPlanHomeWidget().activate(_ctx()), isNull);
-      });
-    });
+    test(
+      'renders an empty state with no connected providers and is passive',
+      () async {
+        await testNocterm('coding-plan empty', (tester) async {
+          await _pump(tester, CodingPlanHomeWidget(), _ctx());
+          expect(
+            tester.terminalState.findText('no usage data'),
+            nocterm.isNotEmpty,
+          );
+          expect(CodingPlanHomeWidget().activate(_ctx()), isNull);
+        });
+      },
+    );
 
     test('renders every connected provider with its name and usage', () async {
       await testNocterm('coding-plan all providers', (tester) async {
@@ -1336,41 +1345,43 @@ void main() {
       });
     });
 
-    test('hovering a coding-plan row swaps percentages for the countdown',
-        () async {
-      await testNocterm('coding-plan hover countdown', (tester) async {
-        final kimi = _FakeCodingPlanProvider(intervalPct: 88, weeklyPct: 55);
-        kimi.startCodingPlanPolling(apiKey: 'x');
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        kimi.stopCodingPlanPolling();
+    test(
+      'hovering a coding-plan row swaps percentages for the countdown',
+      () async {
+        await testNocterm('coding-plan hover countdown', (tester) async {
+          final kimi = _FakeCodingPlanProvider(intervalPct: 88, weeklyPct: 55);
+          kimi.startCodingPlanPolling(apiKey: 'x');
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          kimi.stopCodingPlanPolling();
 
-        final entries = [
-          ConnectedProviderUsage(name: 'kimi', codingPlan: kimi),
-        ];
-        final widget = CodingPlanHomeWidget(entriesOverride: () => entries);
-        await _pump(tester, widget, _ctx());
+          final entries = [
+            ConnectedProviderUsage(name: 'kimi', codingPlan: kimi),
+          ];
+          final widget = CodingPlanHomeWidget(entriesOverride: () => entries);
+          await _pump(tester, widget, _ctx());
 
-        // Steady state shows percentages.
-        expect(tester.terminalState.findText('88%'), nocterm.isNotEmpty);
-        expect(tester.terminalState.findText('55%'), nocterm.isNotEmpty);
-        expect(tester.terminalState.findText('4h 32m'), isEmpty);
+          // Steady state shows percentages.
+          expect(tester.terminalState.findText('88%'), nocterm.isNotEmpty);
+          expect(tester.terminalState.findText('55%'), nocterm.isNotEmpty);
+          expect(tester.terminalState.findText('4h 32m'), isEmpty);
 
-        // Hover the row → percentages swap to the remaining-time countdown.
-        await tester.hover(0, 0);
-        expect(tester.terminalState.findText('4h 32m'), nocterm.isNotEmpty);
-        expect(tester.terminalState.findText('6d 4h'), nocterm.isNotEmpty);
-        expect(tester.terminalState.findText('88%'), isEmpty);
-        expect(tester.terminalState.findText('55%'), isEmpty);
+          // Hover the row → percentages swap to the remaining-time countdown.
+          await tester.hover(0, 0);
+          expect(tester.terminalState.findText('4h 32m'), nocterm.isNotEmpty);
+          expect(tester.terminalState.findText('6d 4h'), nocterm.isNotEmpty);
+          expect(tester.terminalState.findText('88%'), isEmpty);
+          expect(tester.terminalState.findText('55%'), isEmpty);
 
-        // Hover away → percentages come back.
-        await tester.hover(0, 5);
-        expect(tester.terminalState.findText('88%'), nocterm.isNotEmpty);
-        expect(tester.terminalState.findText('55%'), nocterm.isNotEmpty);
-        expect(tester.terminalState.findText('4h 32m'), isEmpty);
+          // Hover away → percentages come back.
+          await tester.hover(0, 5);
+          expect(tester.terminalState.findText('88%'), nocterm.isNotEmpty);
+          expect(tester.terminalState.findText('55%'), nocterm.isNotEmpty);
+          expect(tester.terminalState.findText('4h 32m'), isEmpty);
 
-        await kimi.disposeCodingPlanPolling();
-      });
-    });
+          await kimi.disposeCodingPlanPolling();
+        });
+      },
+    );
 
     test('shows a waiting state before the first snapshot', () async {
       await testNocterm('coding-plan waiting', (tester) async {
@@ -1404,30 +1415,30 @@ void main() {
       String? themeId = 'dracula',
       String? aux,
       String? viewMode = 'vibe',
-      void Function(String)? onSeed,
-      void Function()? onClose,
-    }) =>
-        HomeContext(
-          runCommand: (_) => true,
-          close: onClose ?? () {},
-          seedInput: onSeed ?? (_) {},
-          gitStatusService: GitStatusService(),
-          sessions: () => const [],
-          currentSessionId: () => null,
-          switchSession: (_) => false,
-          themeId: () => themeId,
-          auxModelName: () => aux,
-          viewMode: () => viewMode,
-        );
+      bool Function(String)? onRunCommand,
+    }) => HomeContext(
+      runCommand: onRunCommand ?? (_) => true,
+      close: () {},
+      seedInput: (_) {},
+      gitStatusService: GitStatusService(),
+      sessions: () => const [],
+      currentSessionId: () => null,
+      switchSession: (_) => false,
+      themeId: () => themeId,
+      auxModelName: () => aux,
+      viewMode: () => viewMode,
+    );
 
     test('declares id, title, span, and item count', () {
       final widget = SettingsHomeWidget();
       expect(widget.id, 'settings');
       expect(widget.title, 'Settings');
       expect(widget.supportedSpans, {1, 2});
-      expect(widget.heightFor(1), 4);
-      expect(widget.itemCount, 5);
+      expect(widget.heightFor(1), 5);
+
+      expect(widget.itemCount, 0);
       expect(widget.verticallyCenter, isFalse);
+      expect(widget.titleButtons, isNull);
     });
 
     test('renders every setting with its current value', () async {
@@ -1439,10 +1450,7 @@ void main() {
         );
         expect(tester.terminalState.findText('theme'), nocterm.isNotEmpty);
         expect(tester.terminalState.findText('dracula'), nocterm.isNotEmpty);
-        expect(
-          tester.terminalState.findText('auxiliary'),
-          nocterm.isNotEmpty,
-        );
+        expect(tester.terminalState.findText('auxiliary'), nocterm.isNotEmpty);
         expect(
           tester.terminalState.findText('deepseek-v4-flash'),
           nocterm.isNotEmpty,
@@ -1462,211 +1470,76 @@ void main() {
       });
     });
 
-    test('activating a row seeds its command and stays on home', () {
-      var seeded = '';
-      var closed = false;
-      final widget = SettingsHomeWidget();
-
-      final ctx = settingsCtx(
-        onSeed: (t) => seeded = t,
-        onClose: () => closed = true,
-      );
-
-      widget.activateItem(ctx, 0)!();
-      expect(seeded, '/theme ');
-      expect(closed, isFalse);
-
-      widget.activateItem(ctx, 1)!();
-      expect(seeded, '/auxiliary ');
-
-      widget.activateItem(ctx, 2)!();
-      expect(seeded, '/view ');
-
-      widget.activateItem(ctx, 4)!();
-      expect(seeded, '/reply-language ');
-
-      // None of the activations closed home.
-      expect(closed, isFalse);
-    });
-
-    test('the language row is read-only', () {
-      final widget = SettingsHomeWidget();
-      expect(widget.activateItem(settingsCtx(), 3), isNull);
-    });
-  });
-
-  group('setup', () {
-    HomeContext setupCtx({
-      bool hasKey = false,
-      String? aux,
-      bool hasWeb = false,
-      String path = '',
-      void Function(String)? onSeed,
-      void Function()? onClose,
-    }) =>
-        HomeContext(
-          runCommand: (_) => true,
-          close: onClose ?? () {},
-          seedInput: onSeed ?? (_) {},
-          gitStatusService: GitStatusService(),
-          sessions: () => const [],
-          currentSessionId: () => null,
-          switchSession: (_) => false,
-          projectPath: path,
-          hasProviderKey: () => hasKey,
-          auxModelName: () => aux,
-          hasWebProvider: () => hasWeb,
+    test(
+      'settings rows are passive and its in-box button opens setup',
+      () async {
+        var command = '';
+        final widget = SettingsHomeWidget();
+        final ctx = settingsCtx(
+          onRunCommand: (value) {
+            command = value;
+            return true;
+          },
         );
 
-    test('renders the pending checklist with command hints', () async {
-      await testNocterm('setup pending', (tester) async {
-        await _pump(tester, SetupHomeWidget(), setupCtx());
-        expect(
-          tester.terminalState.findText('provider key'),
-          nocterm.isNotEmpty,
-        );
-        expect(tester.terminalState.findText('aux model'), nocterm.isNotEmpty);
-        expect(
-          tester.terminalState.findText('web provider'),
-          nocterm.isNotEmpty,
-        );
-        expect(tester.terminalState.findText('workspace'), nocterm.isNotEmpty);
-        // Pending rows advertise the command they'll seed.
-        expect(tester.terminalState.findText('/provider'), nocterm.isNotEmpty);
-        expect(
-          tester.terminalState.findText('/auxiliary'),
-          nocterm.isNotEmpty,
-        );
-        expect(
-          tester.terminalState.findText('/web-provider'),
-          nocterm.isNotEmpty,
-        );
-      });
-    });
+        expect(widget.activate(ctx), isNull);
+        expect(widget.activateItem(ctx, 0), isNull);
+        expect(widget.titleButtonsFor(ctx), isNull);
 
-    test('done rows show their detail instead of the command hint', () async {
-      await testNocterm('setup partial', (tester) async {
-        await _pump(
-          tester,
-          SetupHomeWidget(),
-          setupCtx(hasKey: true, aux: 'glm-5.3-flash', path: '/work/crux'),
-        );
-        // Done rows carry their detail.
-        expect(
-          tester.terminalState.findText('connected'),
-          nocterm.isNotEmpty,
-        );
-        expect(
-          tester.terminalState.findText('glm-5.3-flash'),
-          nocterm.isNotEmpty,
-        );
-        expect(tester.terminalState.findText('crux'), nocterm.isNotEmpty);
-        // The one pending row still shows its command hint.
-        expect(
-          tester.terminalState.findText('/web-provider'),
-          nocterm.isNotEmpty,
-        );
-        // And done rows no longer advertise theirs.
-        expect(tester.terminalState.findText('/provider'), isEmpty);
-        expect(tester.terminalState.findText('/auxiliary'), isEmpty);
-      });
-    });
+        await testNocterm('settings in-box button', (tester) async {
+          await tester.pumpComponent(
+            Container(
+              width: 80,
+              height: 24,
+              child: CruxTheme(
+                data: CruxThemeData.draculaFallback,
+                child: HomeScreen(
+                  onExit: () {},
+                  widgets: [widget],
+                  context_: ctx,
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
 
-    test('is titled Quick Start and spans the full width', () {
-      final widget = SetupHomeWidget();
-      expect(widget.title, 'Quick Start');
-      expect(widget.supportedSpans, containsAll([1, 2, 4]));
-    });
+          final setup = tester.terminalState.findText('setup').single;
+          final title = tester.terminalState.findText('Settings').single;
+          final theme = tester.terminalState.findText('theme').single;
+          expect(setup.y, theme.y);
+          expect(
+            setup.y,
+            greaterThan(title.y),
+            reason: 'the setup button stays below the border, inside the box',
+          );
 
-    test('hides (visibleWhen false) only when every row is done', () {
-      final widget = SetupHomeWidget();
-      // All four done → the box drops out of the grid entirely.
-      expect(
-        widget.visibleWhen(
-          setupCtx(hasKey: true, aux: 'glm', hasWeb: true, path: '/work/x'),
-        ),
-        isFalse,
-      );
-      // Any one pending row keeps it visible.
-      expect(
-        widget.visibleWhen(
-          setupCtx(hasKey: true, aux: 'glm', hasWeb: false, path: '/work/x'),
-        ),
-        isTrue,
-      );
-      expect(widget.visibleWhen(setupCtx()), isTrue);
-    });
+          await tester.tap(setup.x, setup.y);
 
-    test('activating a pending row seeds its command and closes', () {
-      var seeded = '';
-      var closed = false;
-      final widget = SetupHomeWidget();
-      final ctx = setupCtx(
-        onSeed: (t) => seeded = t,
-        onClose: () => closed = true,
-      );
-      // Row 0 (provider key) is pending.
-      widget.activateItem(ctx, 0)!();
-      expect(seeded, '/provider ');
-      expect(closed, isTrue);
-    });
-
-    test('activating a done row or the workspace row is a no-op', () {
-      var seeded = false;
-      final widget = SetupHomeWidget();
-      final ctx = setupCtx(
-        hasKey: true,
-        aux: 'glm',
-        path: '/work/crux',
-        onSeed: (_) => seeded = true,
-      );
-      // Row 0 is done → null.
-      expect(widget.activateItem(ctx, 0), isNull);
-      // Row 2 (web provider) is the only actionable one.
-      expect(widget.activateItem(ctx, 2), isNotNull);
-      // Row 3 (workspace) has no command even though it's done.
-      expect(widget.activateItem(ctx, 3), isNull);
-      expect(seeded, isFalse);
-    });
-
-    test('selection wraps across the four rows', () {
-      final widget = SetupHomeWidget();
-      expect(widget.itemCount, 4);
-      expect(widget.selectedIndex, 0);
-      widget.moveSelection(-1);
-      expect(widget.selectedIndex, 3);
-      widget.moveSelection(1);
-      expect(widget.selectedIndex, 0);
-    });
-
-    test('default context reports everything pending', () {
-      // HomeContext.minimal (tests/previews) renders the full checklist.
-      final items = SetupHomeWidget().itemsFor(_ctx());
-      expect(items, hasLength(4));
-      expect(items.where((i) => i.done), isEmpty);
-    });
+          expect(command, '/setup');
+        }, size: const Size(80, 24));
+      },
+    );
   });
 
   group('skills', () {
     SkillInfo skill(String name, [String desc = 'does things']) => SkillInfo(
-          name: name,
-          description: desc,
-          location: '/tmp/$name/SKILL.md',
-          baseDirectory: '/tmp/$name',
-          content: '# $name',
-        );
+      name: name,
+      description: desc,
+      location: '/tmp/$name/SKILL.md',
+      baseDirectory: '/tmp/$name',
+      content: '# $name',
+    );
 
-    HomeContext skillCtx({void Function(SkillInfo)? showSkill}) =>
-        HomeContext(
-          runCommand: (_) => true,
-          close: () {},
-          seedInput: (_) {},
-          gitStatusService: GitStatusService(),
-          sessions: () => const [],
-          currentSessionId: () => null,
-          switchSession: (_) => false,
-          showSkill: showSkill,
-        );
+    HomeContext skillCtx({void Function(SkillInfo)? showSkill}) => HomeContext(
+      runCommand: (_) => true,
+      close: () {},
+      seedInput: (_) {},
+      gitStatusService: GitStatusService(),
+      sessions: () => const [],
+      currentSessionId: () => null,
+      switchSession: (_) => false,
+      showSkill: showSkill,
+    );
 
     test('empty state when no skills are found', () async {
       await testNocterm('skills empty', (tester) async {
@@ -1688,15 +1561,19 @@ void main() {
           ],
         );
         await _pump(tester, widget, skillCtx());
-        expect(tester.terminalState.findText('crux-release'), nocterm.isNotEmpty);
+        expect(
+          tester.terminalState.findText('crux-release'),
+          nocterm.isNotEmpty,
+        );
         expect(tester.terminalState.findText('nocterm'), nocterm.isNotEmpty);
-        expect(tester.terminalState.findText('release a version'),
-            nocterm.isNotEmpty);
+        expect(
+          tester.terminalState.findText('release a version'),
+          nocterm.isNotEmpty,
+        );
       });
     });
 
-    test('item interface covers every skill (scrollable, not truncated)',
-        () {
+    test('item interface covers every skill (scrollable, not truncated)', () {
       final widget = SkillsHomeWidget(
         skills: () => [for (var i = 0; i < 20; i++) skill('skill-$i')],
       );
@@ -1732,35 +1609,39 @@ void main() {
       expect(empty.activate(skillCtx()), isNull);
     });
 
-    test('selectItemAt translates a viewport row through the scroll offset',
-        () async {
-      await testNocterm('skills hover offset', (tester) async {
-        final widget = SkillsHomeWidget(
-          skills: () => [for (var i = 0; i < 12; i++) skill('skill-$i')],
-        );
-        // Move the selection past the viewport so the list scrolls, then
-        // build so the view mirrors its scroll offset back to the widget.
-        for (var i = 0; i < 8; i++) {
-          widget.moveSelection(1);
-        }
-        expect(widget.selectedIndex, 8);
-        await _pump(tester, widget, skillCtx());
-        for (var i = 0; i < 3; i++) {
-          await tester.pump();
-        }
-        // Viewport row 0 must map through the scroll offset to a valid
-        // absolute index (not crash / not out-of-range), and hovering it
-        // changes the selection from 8 to the hovered row.
-        expect(widget.selectItemAt(0), isTrue);
-        expect(widget.selectedIndex, isNot(8));
-        expect(widget.selectedIndex, greaterThanOrEqualTo(0));
-        expect(widget.selectedIndex, lessThan(12));
-      });
-    });
+    test(
+      'selectItemAt translates a viewport row through the scroll offset',
+      () async {
+        await testNocterm('skills hover offset', (tester) async {
+          final widget = SkillsHomeWidget(
+            skills: () => [for (var i = 0; i < 12; i++) skill('skill-$i')],
+          );
+          // Move the selection past the viewport so the list scrolls, then
+          // build so the view mirrors its scroll offset back to the widget.
+          for (var i = 0; i < 8; i++) {
+            widget.moveSelection(1);
+          }
+          expect(widget.selectedIndex, 8);
+          await _pump(tester, widget, skillCtx());
+          for (var i = 0; i < 3; i++) {
+            await tester.pump();
+          }
+          // Viewport row 0 must map through the scroll offset to a valid
+          // absolute index (not crash / not out-of-range), and hovering it
+          // changes the selection from 8 to the hovered row.
+          expect(widget.selectItemAt(0), isTrue);
+          expect(widget.selectedIndex, isNot(8));
+          expect(widget.selectedIndex, greaterThanOrEqualTo(0));
+          expect(widget.selectedIndex, lessThan(12));
+        });
+      },
+    );
 
     test('is not vertically centered (it scrolls)', () {
-      expect(SkillsHomeWidget(skills: () => const []).verticallyCenter,
-          isFalse);
+      expect(
+        SkillsHomeWidget(skills: () => const []).verticallyCenter,
+        isFalse,
+      );
     });
   });
 }

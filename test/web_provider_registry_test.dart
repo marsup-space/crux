@@ -226,6 +226,25 @@ void main() {
       expect(content, contains('sk-tiny-xyz'));
     });
 
+    test(
+      'concurrent initialize callers both wait for persisted keys',
+      () async {
+        final authFile = File(p.join(tempDir.path, 'auth.toml'));
+        await authFile.writeAsString('TINYFISH_API_KEY = "tf-reloaded"\n');
+        final registry = newRegistry()
+          ..register(TinyFishWebProvider(envLookup: () => const {}));
+
+        final first = registry.initialize();
+        final second = registry.initialize();
+        expect(identical(first, second), isTrue);
+        await second;
+
+        expect(registry.getApiKey('tinyfish'), 'tf-reloaded');
+        await first;
+        await registry.dispose();
+      },
+    );
+
     test('setApiKey rejects empty string', () async {
       final registry = newRegistry()..register(TinyFishWebProvider());
       await registry.initialize();

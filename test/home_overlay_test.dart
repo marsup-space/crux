@@ -6,6 +6,8 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'package:crux/src/components/chat_panel.dart';
+import 'package:crux/src/i18n/locale_config_store.dart';
+import 'package:crux/src/i18n/locale_controller.dart';
 import 'package:crux/src/services/provider_service.dart';
 import 'package:crux/src/services/recent_projects_store.dart';
 import 'package:crux/src/storage/storage.dart';
@@ -34,7 +36,8 @@ void main() {
     }
   });
 
-  Future<({ThemeController theme, RecentProjectsStore recents})> _deps() async {
+  Future<({ThemeController theme, RecentProjectsStore recents})>
+  createDependencies() async {
     final themeController = await ThemeController.create(
       registry: ThemeRegistry(
         themes: {'dracula': CruxThemeData.draculaFallback},
@@ -55,7 +58,7 @@ void main() {
       store: store,
       projectPath: tempDir.path,
     );
-    final deps = await _deps();
+    final deps = await createDependencies();
 
     await testNocterm('home screen swap', (tester) async {
       await tester.pumpComponent(
@@ -98,9 +101,7 @@ void main() {
       );
 
       // esc returns to the chat interface.
-      await tester.sendKeyEvent(
-        KeyboardEvent(logicalKey: LogicalKey.escape),
-      );
+      await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.escape));
       await tester.pump();
       expect(
         tester.terminalState.findText('paste').isNotEmpty,
@@ -120,7 +121,7 @@ void main() {
       store: store,
       projectPath: tempDir.path,
     );
-    final deps = await _deps();
+    final deps = await createDependencies();
 
     await testNocterm('home screen suppressed', (tester) async {
       await tester.pumpComponent(
@@ -154,6 +155,52 @@ void main() {
       );
     }, size: const Size(120, 32));
 
+    deps.theme.dispose();
+    deps.recents.dispose();
+  });
+
+  test('first-run setup takes precedence over the home screen', () async {
+    final bootState = await loadChatPanelBootState(
+      userProvidersDir: tempDir.path,
+      providerService: providerService,
+      store: store,
+      projectPath: tempDir.path,
+    );
+    final deps = await createDependencies();
+    final locale = await LocaleController.create(
+      configStore: LocaleConfigStore(
+        File(p.join(tempDir.path, 'locale-config.toml')),
+      ),
+    );
+
+    await testNocterm('setup launch routing', (tester) async {
+      await tester.pumpComponent(
+        Container(
+          width: 120,
+          height: 32,
+          child: CruxTheme(
+            data: deps.theme.activeTheme,
+            child: ChatPanel(
+              userProvidersDir: tempDir.path,
+              themeController: deps.theme,
+              localeController: locale,
+              bootState: bootState,
+              recentProjectsStore: deps.recents,
+              showHomeOnLaunch: true,
+              showSetupOnLaunch: true,
+              setupEnsureSemble: (progress) async => progress(1, 'ready'),
+              setupEnsureRipgrep: (progress) async => progress(1, 'ready'),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(tester.terminalState, containsText('CRUX  SETUP'));
+      expect(tester.terminalState.findText('v0.').isEmpty, isTrue);
+    }, size: const Size(120, 32));
+
+    locale.dispose();
     deps.theme.dispose();
     deps.recents.dispose();
   });

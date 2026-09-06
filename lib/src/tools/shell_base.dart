@@ -209,7 +209,11 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         invocation.executable,
         invocation.args,
         environment: environment,
-        runInShell: Platform.isWindows,
+        // Every ShellInvocation already supplies its own interpreter.
+        // A second Windows shell would nest cmd.exe around CmdTool's
+        // temporary batch file, which surfaces a "Terminate batch job"
+        // prompt when an interrupted run is cleaned up.
+        runInShell: false,
         mode: ProcessStartMode.normal,
       );
 

@@ -7,6 +7,7 @@ import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
 import 'package:nocterm_bloc/nocterm_bloc.dart';
+
 import '../../services/auxiliary_task_tracker.dart';
 import '../session_controller.dart';
 import '../session_cubit.dart';
@@ -102,6 +103,9 @@ class _AuxiliaryModelButtonState extends State<AuxiliaryModelButton> {
       builder: (context, shortName) => GlossyModelButton(
         label: _fitLabel(_composeLabel(shortName, busy)),
         isAnimating: busy != null,
+        // Keep the normal AUX model name left-aligned, but center a short
+        // transient task label such as `titling…` in the same fixed width.
+        centerLabel: busy != null,
         onPressed: component.onPressed,
         minWidth: component.maxWidth,
       ),

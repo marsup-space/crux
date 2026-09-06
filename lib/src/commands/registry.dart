@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+
 import '../models/slash_command.dart';
 import '../utils/fuzzy_match.dart';
 
@@ -182,6 +183,11 @@ const List<SlashCommand> _baseCommands = [
     availableDuringResponse: true,
   ),
   SlashCommand(
+    name: '/setup',
+    description: 'cmd.setup.desc',
+    availableDuringResponse: true,
+  ),
+  SlashCommand(
     name: '/theme',
     description: 'cmd.theme.desc',
     params: ['name'],
@@ -254,19 +260,10 @@ const List<SlashCommand> _baseCommands = [
       [
         CommandSuggestion(value: 'off', description: 'sug.think.off'),
         CommandSuggestion(value: 'low', description: 'sug.think.low'),
-        CommandSuggestion(
-          value: 'normal',
-          description: 'sug.think.normal',
-        ),
-        CommandSuggestion(
-          value: 'adaptive',
-          description: 'sug.think.adaptive',
-        ),
+        CommandSuggestion(value: 'normal', description: 'sug.think.normal'),
+        CommandSuggestion(value: 'adaptive', description: 'sug.think.adaptive'),
         CommandSuggestion(value: 'high', description: 'sug.think.high'),
-        CommandSuggestion(
-          value: 'max',
-          description: 'sug.think.max',
-        ),
+        CommandSuggestion(value: 'max', description: 'sug.think.max'),
       ],
     ],
     availableDuringResponse: true,
@@ -281,14 +278,8 @@ const List<SlashCommand> _baseCommands = [
     params: ['mode'],
     suggestionsPerParam: [
       [
-        CommandSuggestion(
-          value: 'verbose',
-          description: 'sug.view.verbose',
-        ),
-        CommandSuggestion(
-          value: 'vibe',
-          description: 'sug.view.vibe',
-        ),
+        CommandSuggestion(value: 'verbose', description: 'sug.view.verbose'),
+        CommandSuggestion(value: 'vibe', description: 'sug.view.vibe'),
       ],
     ],
     availableDuringResponse: true,
@@ -341,18 +332,9 @@ const List<SlashCommand> _baseCommands = [
     params: ['level'],
     suggestionsPerParam: [
       [
-        CommandSuggestion(
-          value: 'concise',
-          description: 'sug.tldr.concise',
-        ),
-        CommandSuggestion(
-          value: 'default',
-          description: 'sug.tldr.default',
-        ),
-        CommandSuggestion(
-          value: 'detailed',
-          description: 'sug.tldr.detailed',
-        ),
+        CommandSuggestion(value: 'concise', description: 'sug.tldr.concise'),
+        CommandSuggestion(value: 'default', description: 'sug.tldr.default'),
+        CommandSuggestion(value: 'detailed', description: 'sug.tldr.detailed'),
       ],
     ],
   ),
@@ -393,22 +375,14 @@ const List<SlashCommand> _baseCommands = [
   // unsatisfactory; also useful for recovering from an interrupted
   // generation. Alias `/重试` matches the semantics of a typical
   // "retry last request" affordance in chat UIs.
-  SlashCommand(
-    name: '/retry',
-    description: 'cmd.retry.desc',
-    aliases: ['/重试'],
-  ),
+  SlashCommand(name: '/retry', description: 'cmd.retry.desc', aliases: ['/重试']),
   // Wipe the last round (the user prompt plus everything it
   // produced) and copy the original prompt back into the input box
   // for editing — unlike /retry, nothing is re-sent automatically.
   // Alias `/撤销` mirrors /retry's `/重试`. Not available mid-stream:
   // the executor refuses while a response is in flight, so the
   // overlay hides it too.
-  SlashCommand(
-    name: '/undo',
-    description: 'cmd.undo.desc',
-    aliases: ['/撤销'],
-  ),
+  SlashCommand(name: '/undo', description: 'cmd.undo.desc', aliases: ['/撤销']),
   // Ephemeral side-question: ask the model a quick question without
   // polluting the real conversation. The AI's reply is rendered in a
   // boxed, dim bubble and lives only in memory. Consecutive `/btw`
@@ -417,10 +391,7 @@ const List<SlashCommand> _baseCommands = [
   // message or switches sessions — nothing is ever persisted.
   // `availableDuringResponse: false` so it never races with the
   // main model's in-flight stream.
-  SlashCommand(
-    name: '/btw',
-    description: 'cmd.btw.desc',
-  ),
+  SlashCommand(name: '/btw', description: 'cmd.btw.desc'),
   SlashCommand(
     name: '/archive',
     description: 'cmd.archive.desc',
@@ -513,8 +484,7 @@ const List<SlashCommand> _debugCommands = [
   ),
   SlashCommand(
     name: '/d-toast',
-    description:
-        '[debug] Display a toast — mode (info/error/status) is auto-detected from the message',
+    description: '[debug] Display a toast — mode (info/error/status) is auto-detected from the message',
     params: ['message'],
     availableDuringResponse: true,
   ),
@@ -534,8 +504,7 @@ const List<SlashCommand> _debugCommands = [
   //                              dump the report immediately
   SlashCommand(
     name: '/d-profiler',
-    description:
-        '[debug] Record per-frame timings: /d-profiler <secs> [path], /d-profiler stop',
+    description: '[debug] Record per-frame timings: /d-profiler <secs> [path], /d-profiler stop',
     params: ['secs', 'path?'],
     availableDuringResponse: true,
   ),

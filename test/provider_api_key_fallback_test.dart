@@ -14,6 +14,8 @@
 import 'dart:io';
 
 import 'package:crux/src/services/provider_service.dart';
+import 'package:crux/src/services/providers/tinyfish_web_provider.dart';
+import 'package:crux/src/services/web_provider_registry.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -35,14 +37,16 @@ void main() {
   });
 
   group('base-name fallback', () {
-    test('hyphenated provider falls back to base-name key in auth.toml',
-        () async {
-      // Simulate the user's real situation: key stored under the short name.
-      await service.setApiKey('openrouter', 'sk-or-short-name');
+    test(
+      'hyphenated provider falls back to base-name key in auth.toml',
+      () async {
+        // Simulate the user's real situation: key stored under the short name.
+        await service.setApiKey('openrouter', 'sk-or-short-name');
 
-      // Variant provider id must resolve to the same key.
-      expect(service.getApiKey('openrouter-free'), 'sk-or-short-name');
-    });
+        // Variant provider id must resolve to the same key.
+        expect(service.getApiKey('openrouter-free'), 'sk-or-short-name');
+      },
+    );
 
     test('exact-name key wins over base-name key', () async {
       await service.setApiKey('openrouter', 'sk-or-base');
@@ -93,13 +97,30 @@ void main() {
   });
 
   group('auth.toml layout (persistence regression)', () {
+    test('LLM settings do not clobber a TinyFish key saved later', () async {
+      await service.initialize();
+      final web = WebProviderRegistry(userDataDirOverride: tempDir.path)
+        ..register(TinyFishWebProvider(envLookup: () => const {}));
+      await web.initialize();
+      await web.setApiKey('tinyfish', 'tf-persisted');
+
+      // This used to rewrite all of auth.toml from stale LLM-only state and
+      // silently delete the TinyFish root key.
+      await service.setAuxiliaryModel('mimo/mimo-v2.5');
+
+      final reloaded = WebProviderRegistry(userDataDirOverride: tempDir.path)
+        ..register(TinyFishWebProvider(envLookup: () => const {}));
+      await reloaded.initialize();
+      expect(reloaded.getApiKey('tinyfish'), 'tf-persisted');
+      await web.dispose();
+      await reloaded.dispose();
+    });
+
     test('top-level settings stay out of the [apiKeys] section', () async {
       await service.setApiKey('mimo', 'sk-mimo');
       await service.setLastUsedModel('mimo/mimo-v2.5');
 
-      final raw = await File(
-        p.join(tempDir.path, 'auth.toml'),
-      ).readAsString();
+      final raw = await File(p.join(tempDir.path, 'auth.toml')).readAsString();
 
       // `lastUsedModel` must appear BEFORE the `[apiKeys]` header —
       // anything after that header is parsed as part of the section and
@@ -111,19 +132,21 @@ void main() {
       expect(lastUsedIdx, lessThan(apiKeysIdx));
     });
 
-    test('settings written before keys are not clobbered by a later key write',
-        () async {
-      // Order matters: reproduce the exact sequence that ate MiMo's key —
-      // a `/model` switch (writes settings) followed by an api-key write.
-      await service.setApiKey('mimo', 'sk-mimo');
-      await service.setLastUsedModel('deepseek/deepseek-v4-flash');
-      await service.setApiKey('openrouter', 'sk-or');
+    test(
+      'settings written before keys are not clobbered by a later key write',
+      () async {
+        // Order matters: reproduce the exact sequence that ate MiMo's key —
+        // a `/model` switch (writes settings) followed by an api-key write.
+        await service.setApiKey('mimo', 'sk-mimo');
+        await service.setLastUsedModel('deepseek/deepseek-v4-flash');
+        await service.setApiKey('openrouter', 'sk-or');
 
-      final reloaded = freshService();
-      await reloaded.initialize();
-      expect(reloaded.getApiKey('mimo'), 'sk-mimo');
-      expect(reloaded.getApiKey('openrouter'), 'sk-or');
-      expect(reloaded.lastUsedModel, 'deepseek/deepseek-v4-flash');
-    });
+        final reloaded = freshService();
+        await reloaded.initialize();
+        expect(reloaded.getApiKey('mimo'), 'sk-mimo');
+        expect(reloaded.getApiKey('openrouter'), 'sk-or');
+        expect(reloaded.lastUsedModel, 'deepseek/deepseek-v4-flash');
+      },
+    );
   });
 }

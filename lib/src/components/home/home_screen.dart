@@ -239,10 +239,7 @@ class _HomeScreenState extends State<HomeScreen> {
       CodingPlanHomeWidget(),
       ActivityHomeWidget(),
       SkillsHomeWidget(skills: _cachedSkills),
-      NotesHomeWidget(
-        service: ctx.notesService,
-        openNotes: ctx.openNotes,
-      ),
+      NotesHomeWidget(service: ctx.notesService, openNotes: ctx.openNotes),
       RecentSessionsHomeWidget(
         sessions: ctx.sessions,
         currentSessionId: ctx.currentSessionId,
@@ -362,8 +359,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// Current layout as persistable entries (order + span).
-  List<HomeLayoutEntry> _layoutEntries() =>
-      [for (final p in _placements) HomeLayoutEntry(p.widget.id, p.span)];
+  List<HomeLayoutEntry> _layoutEntries() => [
+    for (final p in _placements) HomeLayoutEntry(p.widget.id, p.span),
+  ];
 
   /// Persist the current layout via the caller's callback, if any.
   void _persistLayout() {
@@ -388,7 +386,10 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Hidden widgets available for re-add (registered but not placed).
   List<HomeWidget> get _hiddenWidgets {
     final placed = {for (final p in _placements) p.widget.id};
-    return [for (final w in _allById.values) if (!placed.contains(w.id)) w];
+    return [
+      for (final w in _allById.values)
+        if (!placed.contains(w.id)) w,
+    ];
   }
 
   /// Reorder the focused box one step left/right in the placement list.
@@ -567,10 +568,12 @@ class _HomeScreenState extends State<HomeScreen> {
       final newRigidPixels = rigidPixels + cellWidth;
       final overSpan = usedSpan + span > columns;
       final overWide = newRigidPixels > gridWidth;
-      final starved = !isRigid &&
+      final starved =
+          !isRigid &&
           rowWidgets.isNotEmpty &&
           prospectiveFlexWidth(span) < _minFlexCellWidth;
-      final rigidStarvesFlex = isRigid &&
+      final rigidStarvesFlex =
+          isRigid &&
           (rowWidgets.length - rigidCells) > 0 &&
           (gridWidth - newRigidPixels) <
               _minFlexCellWidth * (rowWidgets.length - rigidCells);
@@ -806,10 +809,11 @@ class _HomeScreenState extends State<HomeScreen> {
       final widgets = _visibleWidgets;
       if (widgets.isNotEmpty) {
         final widget = widgets[_focusedIndex.clamp(0, widgets.length - 1)];
-        final buttons = widget.titleButtons;
+        final buttons = widget.titleButtonsFor(_ctx);
         if (buttons != null && buttons.isNotEmpty) {
-          final action =
-              key == LogicalKey.bracketLeft ? buttons.first : buttons.last;
+          final action = key == LogicalKey.bracketLeft
+              ? buttons.first
+              : buttons.last;
           action.onPressed?.call();
         }
       }
@@ -959,23 +963,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   // Visible widgets come from the packed rows, not the
                   // placement list: a box dropped for lack of width is
                   // out of rendering AND keyboard navigation.
-                  _visibleWidgets = [
-                    for (final row in rows) ...row.widgets,
-                  ];
+                  _visibleWidgets = [for (final row in rows) ...row.widgets];
                   // The focused box may have just dropped out (window
                   // narrowed past its min width) — clamp the index so
                   // navigation never points at a hidden box.
                   if (_focusedIndex >= _visibleWidgets.length) {
-                    _focusedIndex =
-                        (_visibleWidgets.length - 1).clamp(0, 1 << 30);
+                    _focusedIndex = (_visibleWidgets.length - 1).clamp(
+                      0,
+                      1 << 30,
+                    );
                   }
-                  return _buildGrid(
-                    context,
-                    theme,
-                    rows,
-                    width,
-                    columns,
-                  );
+                  return _buildGrid(context, theme, rows, width, columns);
                 },
               ),
             ),
@@ -1048,10 +1046,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (widget.minColumnWidth > 0) {
           // Rigid box: a fixed cell width it never shrinks below.
           cells.add(
-            SizedBox(
-              width: (widget.minColumnWidth + 4).toDouble(),
-              child: box,
-            ),
+            SizedBox(width: (widget.minColumnWidth + 4).toDouble(), child: box),
           );
         } else {
           // Flexible box: its span's share of the pixels left over.
@@ -1116,7 +1111,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // components layered on the border row work — visually the title
     // sits IN the border like every other box, while content gets the
     // full inner height (the old in-column title row stole one).
-    final titleButtons = widget.titleButtons;
+    final titleButtons = widget.titleButtonsFor(_ctx);
     final hasTitleButtons = titleButtons != null && titleButtons.isNotEmpty;
 
     final inner = _BoxScrollArea(
@@ -1170,7 +1165,14 @@ class _HomeScreenState extends State<HomeScreen> {
               Positioned(
                 top: 0,
                 left: 2,
-                child: _titleRow(theme, widget, titleButtons, focused),
+                right: widget.titleButtonsAlignRight ? 2 : null,
+                child: _titleRow(
+                  theme,
+                  widget,
+                  titleButtons,
+                  focused,
+                  alignButtonsRight: widget.titleButtonsAlignRight,
+                ),
               ),
             ],
           )
@@ -1200,8 +1202,7 @@ class _HomeScreenState extends State<HomeScreen> {
         // The box content is itself scrollable now — the cursor's
         // viewport row maps to the absolute item index through the
         // box's own scroll offset.
-        final row =
-            (event.y - firstContentY).round() + widget.boxScrollOffset;
+        final row = (event.y - firstContentY).round() + widget.boxScrollOffset;
         if (row < 0 || row >= widget.itemCount) return;
         // selectItemAt reports whether the highlight actually moved
         // (the same-index short-circuit inside the widgets keeps a
@@ -1262,15 +1263,14 @@ class _HomeScreenState extends State<HomeScreen> {
         : Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              widget.build(context, _ctx, span, focused: focused),
-            ],
+            children: [widget.build(context, _ctx, span, focused: focused)],
           );
   }
 
   /// The interactive title row for a box with [HomeWidget.titleButtons]:
-  /// the title text (styled like the painted border title) followed by
-  /// the buttons. Buttons render as the shared [Button] component —
+  /// the title text (styled like the painted border title) and its buttons.
+  /// Action buttons may instead align to the title row's right edge. Buttons
+  /// render as the shared [Button] component —
   /// hover raises their background, click fires [HomeTitleButton
   /// .onPressed]. A button with a null callback renders as a dimmed,
   /// inert label (taps ignored), matching the disabled look of the
@@ -1279,11 +1279,12 @@ class _HomeScreenState extends State<HomeScreen> {
     CruxThemeData theme,
     HomeWidget widget,
     List<HomeTitleButton> buttons,
-    bool focused,
-  ) {
+    bool focused, {
+    required bool alignButtonsRight,
+  }) {
     final titleColor = focused ? theme.accent : theme.onSurfaceVariant;
     return Row(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisSize: alignButtonsRight ? MainAxisSize.max : MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
@@ -1293,6 +1294,7 @@ class _HomeScreenState extends State<HomeScreen> {
             fontWeight: focused ? FontWeight.bold : null,
           ),
         ),
+        if (alignButtonsRight) const Spacer(),
         for (final button in buttons)
           if (button.onPressed == null)
             Text(
@@ -1367,7 +1369,10 @@ class _BoxScrollAreaState extends State<_BoxScrollArea> {
           } else if (selected > first + viewport - 1) {
             first = selected - viewport + 1;
           }
-          first = first.clamp(0, (owner.itemCount - viewport).clamp(0, owner.itemCount));
+          first = first.clamp(
+            0,
+            (owner.itemCount - viewport).clamp(0, owner.itemCount),
+          );
           if (_controller.offset.round() != first) {
             _controller.jumpTo(first.toDouble());
           }

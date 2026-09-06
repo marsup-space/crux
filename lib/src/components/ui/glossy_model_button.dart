@@ -1,5 +1,11 @@
+// ignore_for_file: implementation_imports
+
 import 'dart:math';
+
+import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart';
+import 'package:nocterm/src/utils/unicode_width.dart';
+
 import '../../theme/crux_theme.dart';
 import '../../utils/ticker_registry.dart';
 
@@ -14,9 +20,14 @@ class GlossyModelButton extends StatefulComponent {
   final bool isAnimating;
   final VoidCallback? onPressed;
 
+  /// Centers [label] within the fixed-width content area. Intended for
+  /// transient task labels such as `titling…`; normal model names remain
+  /// left-aligned.
+  final bool centerLabel;
+
   /// Minimum rendered width in terminal columns. When the label
   /// (plus its 2 padding cells) is narrower, the button is padded
-  /// with trailing background cells so short labels stay the same
+  /// with background cells so short labels stay centered at the same
   /// width as long ones — used by the side panel's auxiliary-model
   /// button, whose label shrinks from `AUX: model-name` to
   /// `titling…` while busy but must keep occupying the full panel
@@ -28,6 +39,7 @@ class GlossyModelButton extends StatefulComponent {
     this.hoverLabel,
     required this.isAnimating,
     this.onPressed,
+    this.centerLabel = false,
     this.minWidth,
   });
 
@@ -45,6 +57,32 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
 
   static const double _bandWidth = 8.0;
   static const int _fadeTicks = 20; // ~1.2s at 60ms per tick
+
+  /// The text area between the button's two outer padding cells.
+  ///
+  /// This must use terminal *column* width, not [String.length]: in the
+  /// Chinese UI, `中断` is two Dart characters but occupies four columns.
+  /// Keeping one shared width for both labels makes hover a content change,
+  /// rather than a layout change.
+  int get _contentWidth => max(
+    max(
+      UnicodeWidth.stringWidth(component.label),
+      UnicodeWidth.stringWidth(component.hoverLabel ?? ''),
+    ),
+    max(0, (component.minWidth ?? 0) - 2),
+  );
+
+  ({int leading, int trailing}) _labelPadding(String label) {
+    final remaining = max(
+      0,
+      _contentWidth - UnicodeWidth.stringWidth(label),
+    ).toInt();
+    final shouldCenter =
+        component.centerLabel || (_hovered && component.hoverLabel != null);
+    return shouldCenter
+        ? (leading: remaining ~/ 2, trailing: remaining - remaining ~/ 2)
+        : (leading: 0, trailing: remaining);
+  }
 
   @override
   void initState() {
@@ -99,11 +137,8 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
             ? 60.0 / 1000.0
             : elapsed.inMicroseconds / Duration.microsecondsPerSecond;
         _phase += 25.0 * dt; // 25 cells/sec = matches original 1.5/60ms
-        // Sweep across the longer of the base/hover labels so the path
-        // length stays constant when the label swaps on hover.
-        final maxLabelLen =
-            max(component.label.length, component.hoverLabel?.length ?? 0);
-        final sweepEnd = maxLabelLen + 2 + _bandWidth; // +2 for padding cells
+        // Sweep across the fixed button width so hover cannot alter its path.
+        final sweepEnd = _contentWidth + 2 + _bandWidth; // outer padding
         if (_phase > sweepEnd) {
           _phase = -_bandWidth;
         }
@@ -148,22 +183,18 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
     // over the button and one is provided, else the base label. Applies
     // to both the static and the animated branches so the streaming
     // model button can swap to "Interrupt" on hover.
-    final effectiveLabel =
-        (_hovered && btn.hoverLabel != null) ? btn.hoverLabel! : btn.label;
+    final effectiveLabel = (_hovered && btn.hoverLabel != null)
+        ? btn.hoverLabel!
+        : btn.label;
 
     if (!btn.isAnimating && !_isFadingOut) {
       // Static mode with hover support
       final bgColor = _hovered ? theme.buttonBackgroundHover : baseBg;
       final fg = _hovered ? theme.buttonTextHover : baseFg;
 
-      // minWidth padding: trailing cells in the same background so
-      // the padded area is visually part of the button (and, thanks
-      // to the opaque GestureDetector, part of its hit region). Padding
-      // is sized off the longer of the two labels so the button width
-      // doesn't jitter when the label swaps on hover.
-      final maxLabelLen = max(btn.label.length, effectiveLabel.length);
-      final padCells =
-          btn.minWidth == null ? 0 : max(0, btn.minWidth! - maxLabelLen - 2);
+      // Center either label inside the shared content width. The spaces use
+      // the same background and remain inside the opaque hit region.
+      final padding = _labelPadding(effectiveLabel);
 
       return MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
@@ -177,6 +208,7 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
             padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
             child: Row(
               children: [
+                if (padding.leading > 0) Text(' ' * padding.leading),
                 Text(
                   effectiveLabel,
                   style: TextStyle(
@@ -184,7 +216,7 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
                     fontWeight: _hovered ? FontWeight.bold : null,
                   ),
                 ),
-                if (padCells > 0) Text(' ' * padCells),
+                if (padding.trailing > 0) Text(' ' * padding.trailing),
               ],
             ),
           ),
@@ -198,22 +230,13 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
     // Pulse: brief periodic flash using sin² — peaks every 0.33s
     final pulseValue = pow(max(0.0, sin(_tickCount * 1.142)), 2.0).toDouble();
 
-    // Geometry (sweep end + right padding) is sized off the longer of
-    // the base/hover labels so the button's width and the sweep path
-    // stay constant when the label swaps on hover; only the characters
-    // change. Render the EFFECTIVE label's characters.
-    final labelLength = effectiveLabel.length;
-    final maxLabelLen = max(btn.label.length, effectiveLabel.length);
+    // The animated button uses the same centered, fixed-width geometry as
+    // the static one. Graphemes are used so emoji and CJK labels consume
+    // their proper number of terminal columns.
+    final padding = _labelPadding(effectiveLabel);
     final cells = <Component>[];
 
-    // Sweep-relative positions: left pad = -1, label chars = 0..labelLength-1,
-    // then right padding. minWidth extends the right padding so the
-    // gradient covers the full requested width — trailing cells are
-    // background-only, exactly like the two natural padding cells.
-    final rightPadEnd = btn.minWidth == null
-        ? maxLabelLen
-        : max(maxLabelLen, btn.minWidth! - 1);
-    for (int sweepPos = -1; sweepPos <= rightPadEnd; sweepPos++) {
+    Component buildCell(String text, int sweepPos, {bool isLabel = false}) {
       final distance = (sweepPos - _phase).abs();
       double sweepEase;
       if (distance < _bandWidth) {
@@ -226,26 +249,37 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
       final bgBrightness = sweepEase * _fadeIntensity;
       final bg = Color.lerp(baseBg, peakBg, bgBrightness)!;
 
-      if (sweepPos >= 0 && sweepPos < labelLength) {
-        // Label character — also has foreground with pulse flash
+      if (isLabel) {
+        // Label grapheme — also has foreground with pulse flash.
         final fgBrightness = max(sweepEase, pulseValue) * _fadeIntensity;
         final fg = Color.lerp(baseFg, flashFg, fgBrightness)!;
-
-        cells.add(
-          Text(
-            effectiveLabel[sweepPos],
-            style: TextStyle(
-              color: fg,
-              backgroundColor: bg,
-              fontWeight: fgBrightness > 0.3 ? FontWeight.bold : null,
-            ),
+        return Text(
+          text,
+          style: TextStyle(
+            color: fg,
+            backgroundColor: bg,
+            fontWeight: fgBrightness > 0.3 ? FontWeight.bold : null,
           ),
         );
-      } else {
-        // Padding cell — space with sweep-based background only
-        cells.add(Text(' ', style: TextStyle(backgroundColor: bg)));
       }
+      // Padding cell — space with sweep-based background only.
+      return Text(' ', style: TextStyle(backgroundColor: bg));
     }
+
+    // One outer padding cell, then the centered content, then the other.
+    var sweepPos = -1;
+    cells.add(buildCell(' ', sweepPos++));
+    for (var i = 0; i < padding.leading; i++) {
+      cells.add(buildCell(' ', sweepPos++));
+    }
+    for (final grapheme in effectiveLabel.characters) {
+      cells.add(buildCell(grapheme, sweepPos, isLabel: true));
+      sweepPos += UnicodeWidth.graphemeWidth(grapheme);
+    }
+    for (var i = 0; i < padding.trailing; i++) {
+      cells.add(buildCell(' ', sweepPos++));
+    }
+    cells.add(buildCell(' ', sweepPos));
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),

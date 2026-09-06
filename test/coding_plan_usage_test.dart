@@ -1902,6 +1902,30 @@ void main() {
         await provider.disposeCodingPlanPolling();
       },
     );
+
+    test(
+      'coalesces refreshes while a quota request is still in flight',
+      () async {
+        final provider = _BlockingCodingPlanProvider();
+        provider.startCodingPlanPolling(
+          apiKey: 'test-key',
+          interval: const Duration(hours: 1),
+        );
+        await provider.started.future;
+
+        provider.refreshNow();
+        provider.refreshNow();
+        await Future<void>.delayed(Duration.zero);
+        expect(provider.calls, 1);
+
+        provider.release.complete();
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+        expect(provider.latestCodingPlanUsage, isNotNull);
+
+        await provider.disposeCodingPlanPolling();
+      },
+    );
   });
 
   // ─── MiniMaxProvider integration ──────────────────────────
@@ -1974,6 +1998,30 @@ class _FakeCodingPlanProvider extends AnthropicCompatibleProvider
       modelName: 'general',
       intervalRemainingPct: 88,
       weeklyRemainingPct: 55,
+      fetchedAt: DateTime.now(),
+    );
+  }
+}
+
+class _BlockingCodingPlanProvider extends AnthropicCompatibleProvider
+    with CodingPlanProvider {
+  final Completer<void> started = Completer<void>();
+  final Completer<void> release = Completer<void>();
+  int calls = 0;
+
+  @override
+  String get name => 'blocking';
+
+  @override
+  Future<CodingPlanUsage> getCodingPlanUsage() async {
+    calls++;
+    if (!started.isCompleted) started.complete();
+    await release.future;
+    return CodingPlanUsage(
+      providerName: name,
+      modelName: 'general',
+      intervalRemainingPct: 80,
+      weeklyRemainingPct: 60,
       fetchedAt: DateTime.now(),
     );
   }

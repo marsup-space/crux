@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart' show NativeDatabase;
 import 'package:nocterm/nocterm.dart' hide isEmpty, isNotEmpty;
 import 'package:nocterm/nocterm.dart' as nocterm show isNotEmpty;
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'package:crux/src/components/home/home_widgets.dart';
@@ -252,6 +255,50 @@ void main() {
       );
       expect(totals, isEmpty);
     });
+
+  });
+
+  test('daily aggregates work through the production background isolate',
+      () async {
+    final dir = await Directory.systemTemp.createTemp(
+      'crux_daily_background_',
+    );
+    final backgroundStore = SessionStore(
+      CruxDatabase.forTesting(
+        NativeDatabase.createInBackground(
+          File(p.join(dir.path, 'stats.db')),
+        ),
+      ),
+    );
+    addTearDown(() async {
+      await backgroundStore.database.close();
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+    final session = await backgroundStore.create(
+      title: 'background',
+      projectPath: '/p',
+    );
+    await backgroundStore.messageStore.addMessage(
+      session.id,
+      role: 'ai',
+      content: 'done',
+      model: 'provider/model',
+      tokensIn: 120,
+      tokensOut: 30,
+    );
+
+    final totals = await backgroundStore.messageStore.dailyTokenTotals(
+      sinceDaysAgo: 1,
+      projectPath: '/p',
+    );
+    final usage = await backgroundStore.messageStore.dailyUsageStats(
+      sinceDaysAgo: 1,
+      projectPath: '/p',
+    );
+
+    expect(totals.values.single, 150);
+    expect(usage.values.single.tokens, 150);
+    expect(usage.values.single.byModel['provider/model'], 150);
   });
 
   group('dailyUsageStats', () {

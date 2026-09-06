@@ -14,6 +14,7 @@ import '../utils/token_estimate.dart';
 import '../utils/tool_metrics_animator.dart';
 import 'tool_detail_utils.dart';
 import 'ui/highlighted_markdown_text.dart';
+import 'ui/hoverable.dart';
 import 'ui/layout_metrics.dart';
 
 /// Data needed to render a tool detail fullpane.
@@ -136,32 +137,30 @@ class _ToolDetailPaneState extends State<ToolDetailPane> {
 
   Component _buildTab(String label, int index, CruxThemeData theme) {
     final active = _activeTab == index;
-    return GestureDetector(
+    return Hoverable(
       onTap: () => setState(() => _activeTab = index),
-      behavior: HitTestBehavior.opaque,
-      child: MouseRegion(
-        opaque: false,
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: kTabHeaderHorizontalPadding,
-            vertical: 0,
-          ),
-          decoration: active
-              ? BoxDecoration(
-                  color: theme.surfaceVariant,
-                  border: BoxBorder.all(
-                    color: theme.outline,
-                    style: BoxBorderStyle.rounded,
-                  ),
-                  borderRadius: BorderRadius.circular(1),
-                )
-              : null,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: active ? theme.foreground : theme.onSurfaceDim,
-              fontWeight: active ? FontWeight.bold : null,
-            ),
+      builder: (context, hovered) => Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: kTabHeaderHorizontalPadding,
+          vertical: 0,
+        ),
+        decoration: active || hovered
+            ? BoxDecoration(
+                color: active
+                    ? theme.buttonBackgroundFocused
+                    : theme.buttonBackgroundHover,
+                border: BoxBorder.all(
+                  color: active ? theme.outlineBright : theme.outline,
+                  style: BoxBorderStyle.rounded,
+                ),
+                borderRadius: BorderRadius.circular(1),
+              )
+            : BoxDecoration(color: theme.buttonBackground),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active || hovered ? theme.foreground : theme.onSurfaceDim,
+            fontWeight: active ? FontWeight.bold : null,
           ),
         ),
       ),

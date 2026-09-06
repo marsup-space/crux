@@ -61,6 +61,15 @@ jobs:
         with:
           sdk: 3.13
 
+      - name: Set up MinGW-w64 for Semble
+        if: env.SHOULD_BUILD == 'true' && matrix.target == 'windows-x64'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc
+          path-type: inherit
+
       - name: Cache pub packages
         if: env.SHOULD_BUILD == 'true'
         uses: actions/cache@v5
@@ -101,15 +110,6 @@ jobs:
       # Every other target has to compile it from source as
       # part of the release pipeline.
       #
-      # Skipped on windows-x64 — the build_native tool needs
-      # `cl.exe` and Visual Studio's MSVC toolchain, which
-      # `windows-latest` runners don't ship. The Windows
-      # release currently ships without `libcrux_grammars.dll`,
-      # so the bundled Crux on Windows can't run
-      # `semantic_search` / `find_similar_code` — every other
-      # tool works. TODO: build the dylib in a Windows-friendly
-      # way (cross-compile from linux, or add a windows-latest
-      # step that sets up cl.exe).
       - name: Build libcrux_grammars (POSIX)
         if: env.SHOULD_BUILD == 'true' && matrix.target != 'windows-x64'
         env:
@@ -140,6 +140,16 @@ jobs:
           fi
           echo "libcrux_grammars: built $dylib"
         shell: bash
+
+      - name: Build libcrux_grammars (Windows)
+        if: env.SHOULD_BUILD == 'true' && matrix.target == 'windows-x64'
+        env:
+          SEMBLE_GIT_HTTPS: '1'
+        shell: msys2 {0}
+        run: |
+          cd semble-dart
+          dart run tool/build_native.dart --target "$TARGET"
+          test -f "third_party/bin/${TARGET}/libcrux_grammars.dll"
 
       # CI runners start with an empty HuggingFace cache, and
       # `build_release.dart` only warns when the embedding model is

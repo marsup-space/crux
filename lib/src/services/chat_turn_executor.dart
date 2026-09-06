@@ -35,6 +35,7 @@ import 'prompts/system_prompt.dart';
 import 'prompts/environment_meta.dart';
 import 'provider_service.dart';
 import 'session_lease_manager.dart';
+import 'tool_execution_event.dart';
 import 'tool_executor.dart';
 import 'wire_format.dart';
 
@@ -173,6 +174,12 @@ class ChatTurnExecutor {
   /// harnesses; the sink in `ToolContext` short-circuits on null and
   /// the whole chain is fail-open (never affects the command itself).
   void Function(int sessionId, ShellMonitorNotice notice)? onShellMonitorNotice;
+
+  /// Receives each completed tool invocation before the executor persists the
+  /// enclosing tool round. Consumers may react to a single command without
+  /// depending on this executor's internal dispatch structure.
+  FutureOr<void> Function(ToolExecutionCompleted event)?
+  onToolExecutionCompleted;
 
   /// Per-process run-id counter for `shell_monitor_logs.run_id`.
   /// Static so every [ChatTurnExecutor] instance shares one sequence
@@ -1588,6 +1595,22 @@ class ChatTurnExecutor {
                   },
                 );
                 final result = await toolExecutor.executeTool(call, ctx);
+                final onCompleted = onToolExecutionCompleted;
+                if (onCompleted != null) {
+                  try {
+                    await onCompleted(
+                      ToolExecutionCompleted(
+                        toolName: call.name,
+                        input: call.input,
+                        result: result,
+                        workspacePath: ctx.workingDirectory,
+                      ),
+                    );
+                  } catch (_) {
+                    // Observers are side channels (for example sidebar state).
+                    // A failed observer must never fail the agent tool call.
+                  }
+                }
                 if (_shouldAbortParallelToolSiblings(result)) {
                   for (final sibling in abortSignalsByCallId.entries) {
                     if (sibling.key != call.callId) sibling.value.abort();
@@ -2235,9 +2258,9 @@ class ChatTurnExecutor {
       for (final chunk in chunks)
         if (chunk.toolUse == null || chunk.toolUse!.index < index) chunk,
     ];
-    return ToolExecutor.parseToolUseFromChunks(
-      priorChunks,
-    ).where((call) => call.parseError == null).toList();
+    return ToolExecutor.parseToolUseFromChunks(priorChunks)
+        .where((call) => call.parseError == null)
+        .toList();
   }
 
   static ToolResult _buildGuardAbortedToolResult(

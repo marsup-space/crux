@@ -4,9 +4,12 @@
 
 import 'dart:io';
 import 'dart:math';
+
 import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart';
+import 'package:nocterm/src/framework/terminal_canvas.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
+
 import '../services/git_status_service.dart';
 import '../services/plugin.dart';
 import '../services/plugin_registry.dart';
@@ -57,8 +60,7 @@ class _DividerRow {
 ///
 /// Sessions older than 3 days are auto-archived by
 /// [SessionController.initSessions] and don't appear in the list.
-/// An "Archived" hint row at the bottom shows the count and reminds
-/// the user about `/unarchive`.
+/// A subtle centered "Archived" row at the bottom shows the count.
 class ExtraInfoPanel extends StatefulComponent {
   final List<Session> sessions;
 
@@ -110,6 +112,10 @@ class ExtraInfoPanel extends StatefulComponent {
   /// instance here would orphan the timer (and leak it on dispose).
   final GitStatusService gitStatusService;
 
+  /// Opens the live Git changes/review fullpane. When omitted, tapping the
+  /// Git box keeps the lightweight refresh-only fallback used by tests.
+  final VoidCallback? onGitPressed;
+
   /// Spec-driven plugins for the current project (sidebar placement —
   /// `.crux/plugins/*.toml` + global `~/.crux/plugins/`, discovered by
   /// [PluginRegistry]). Each renders one boxed row above the git
@@ -144,6 +150,7 @@ class ExtraInfoPanel extends StatefulComponent {
     this.onCreateChat,
     this.onCreateSession,
     required this.gitStatusService,
+    this.onGitPressed,
     this.plugins,
     this.onSessionTitleTap,
     this.onOpenProject,
@@ -161,6 +168,7 @@ class ExtraInfoPanel extends StatefulComponent {
 class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   TickerToken? _animTicker;
   double _phase = 0.0;
+  final ScrollController _scrollController = ScrollController();
   final Set<int> _hoveredIds = {};
   bool _titleHovered = false;
 
@@ -214,7 +222,8 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
       // continued, which is exactly the signal we need. pinnedAt is
       // mixed in so pin/unpin re-derives the row list without touching
       // updatedAt.
-      hash ^= s.id ^
+      hash ^=
+          s.id ^
           s.updatedAt.millisecondsSinceEpoch ^
           (s.pinnedAt?.millisecondsSinceEpoch ?? 0);
     }
@@ -240,14 +249,14 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   ///   - Today's sessions, **no header label**
   ///   - "Yesterday" header + yesterday's sessions
   ///   - "3 Days" header + sessions from 2–3 days ago
-  ///   - "N archived /unarchive #id" hint
+  ///   - Centered "N archived" hint
   /// - Chats section:
   ///   - "Chats" header (divider)
   ///   - Pinned chats (sorted by pin time, newest first), followed
   ///     by a divider
   ///   - Today's chats, no header
   ///   - "Yesterday" / "3 Days" headers + those buckets
-  ///   - "N archived /unarchive #id" hint
+  ///   - Centered "N archived" hint
   ///
   /// Pinned rows are deliberately not hoisted into a single
   /// cross-section group at the very top: a pinned chat must stay
@@ -426,6 +435,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   @override
   void dispose() {
     _animTicker?.cancel();
+    _scrollController.dispose();
     component.gitStatusService.removeListener(_onGitStatusChanged);
     super.dispose();
   }
@@ -684,173 +694,196 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
         final git = component.gitStatusService.current;
         final projectLabel = _composeProjectLabel(displayPath, git);
 
-        return Stack(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 1),
-                header,
-                Divider(color: CruxTheme.of(context).outline, height: 1),
-                Expanded(
-                  child: ListView.builder(
-                    lazy: true,
-                    itemCount: rows.length,
-                    itemBuilder: (context, index) {
-                      final item = rows[index];
-                      if (item is _SessionGroup) {
-                        return _buildGroupHeader(item);
-                      }
-                      if (item is _DividerRow) {
-                        // Closes the "Pinned" visual band at the top
-                        // of a section. Width: 1 cell, color matches
-                        // the panel's outline so it reads as a
-                        // continuation of the section chrome.
-                        return Divider(
-                          color: CruxTheme.of(context).outline,
-                          height: 1,
-                        );
-                      }
-                      return _buildSessionRow(
-                        item as Session,
-                        panel,
-                        maxTitleLen,
-                      );
-                    },
-                  ),
+        Component buildSessionItem(Object item) {
+          if (item is _SessionGroup) return _buildGroupHeader(item);
+          if (item is _DividerRow) {
+            // Closes the "Pinned" visual band at the top of a section.
+            return Divider(color: CruxTheme.of(context).outline, height: 1);
+          }
+          return _buildSessionRow(item as Session, panel, maxTitleLen);
+        }
+
+        final sessionContent = <Component>[
+          header,
+          Divider(color: CruxTheme.of(context).outline, height: 1),
+          for (final item in rows) buildSessionItem(item),
+        ];
+        final bottomContent = <Component>[
+          // Spec-driven plugins (sidebar placement): one boxed row
+          // per `.crux/plugins/*.toml` (or legacy/global) spec —
+          // status label + action segments. Written by any
+          // session, rendered by every session on the same project.
+          for (final plugin in component.plugins ?? const <Plugin>[])
+            PluginSidebarBox(
+              plugin: plugin,
+              host:
+                  component.pluginHost ??
+                  PluginHost(projectPath: Directory.current.path),
+              strings: component.strings,
+            ),
+          // Auxiliary-model button, hosted by the side panel
+          // on wide terminals (on narrow terminals the chat
+          // toolbar renders it instead). Sits directly above
+          // the git/project widgets; click dumps `/auxiliary `
+          // into the chat input.
+          // Renders as its own full-width bordered box (same
+          // chrome as the spec widgets above), with `aux` as
+          // the border title. The border + horizontal padding
+          // eat 4 columns, so the button's width budget is
+          // trimmed accordingly to keep the label inside.
+          if (component.sessionController != null)
+            Container(
+              width: constraints.maxWidth,
+              decoration: BoxDecoration(
+                color: CruxTheme.of(context).surface,
+                border: BoxBorder.all(
+                  color: CruxTheme.of(context).outline,
+                  style: BoxBorderStyle.rounded,
                 ),
-                // Spec-driven plugins (sidebar placement): one boxed row
-                // per `.crux/plugins/*.toml` (or legacy/global) spec —
-                // status label + action segments. Written by any
-                // session, rendered by every session on the same
-                // project. Sits directly above the auxiliary-model
-                // button, grouped with the panel's workspace-level
-                // controls.
-                for (final plugin in component.plugins ??
-                    const <Plugin>[])
-                  PluginSidebarBox(
-                    plugin: plugin,
-                    host: component.pluginHost ??
-                        PluginHost(projectPath: Directory.current.path),
-                    strings: component.strings,
-                  ),
-                // Auxiliary-model button, hosted by the side panel
-                // on wide terminals (on narrow terminals the chat
-                // toolbar renders it instead). Sits directly above
-                // the git/project widgets; click dumps `/auxiliary `
-                // into the chat input.
-                // Renders as its own full-width bordered box (same
-                // chrome as the spec widgets above), with `aux` as
-                // the border title. The border + horizontal padding
-                // eat 4 columns, so the button's width budget is
-                // trimmed accordingly to keep the label inside.
-                if (component.sessionController != null)
-                  Container(
-                    width: constraints.maxWidth,
-                    decoration: BoxDecoration(
-                      color: CruxTheme.of(context).surface,
-                      border: BoxBorder.all(
-                        color: CruxTheme.of(context).outline,
-                        style: BoxBorderStyle.rounded,
-                      ),
-                      title: BorderTitle(
-                        text: component.strings.t('chat.sidebar.aux'),
-                        style: TextStyle(
-                          color: CruxTheme.of(context).onSurfaceVariant,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 1),
-                    child: Hinted(
-                      hint: component.strings.t('chat.sidebar.auxHint'),
-                      child: AuxiliaryModelButton(
-                        sessionController: component.sessionController!,
-                        onPressed: component.onAuxiliaryPressed,
-                        showAuxLabel: false,
-                        maxWidth: (constraints.maxWidth - 4).toInt(),
-                      ),
-                    ),
-                  ),
-                // Git status: file-level info (branch is also
-                // surfaced here, but the project widget below
-                // repeats it as part of `path:branch`). Now rendered
-                // in its own full-width bordered box — same chrome as
-                // the spec widgets and the aux button above — so the
-                // bottom block reads as a matched set. The box is
-                // omitted entirely outside a repo, keeping the old
-                // collapse behaviour (layout stays tight).
-                if (git.isRepo)
-                  Container(
-                    width: constraints.maxWidth,
-                    decoration: BoxDecoration(
-                      color: CruxTheme.of(context).surface,
-                      border: BoxBorder.all(
-                        color: CruxTheme.of(context).outline,
-                        style: BoxBorderStyle.rounded,
-                      ),
-                      title: BorderTitle(
-                        text: component.strings.t('chat.sidebar.git'),
-                        style: TextStyle(
-                          color: CruxTheme.of(context).onSurfaceVariant,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 1),
-                    child: GitStatusWidget(
-                      service: component.gitStatusService,
-                      onTap: () => component.gitStatusService.refresh(),
-                      strings: component.strings,
-                    ),
-                  ),
-                // Project directory: `path:branch ↑N ↓N` plus the
-                // `open` / `switch` actions. Wrapped in the same
-                // bordered box as the other bottom-block widgets.
-                Container(
-                  width: constraints.maxWidth,
-                  decoration: BoxDecoration(
-                    color: CruxTheme.of(context).surface,
-                    border: BoxBorder.all(
-                      color: CruxTheme.of(context).outline,
-                      style: BoxBorderStyle.rounded,
-                    ),
-                    title: BorderTitle(
-                      text: component.strings.t('chat.sidebar.project'),
-                      style: TextStyle(
-                        color: CruxTheme.of(context).onSurfaceVariant,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 1),
-                  child: MultiButton(
-                    label: projectLabel,
+                title: BorderTitle(
+                  text: component.strings.t('chat.sidebar.aux'),
+                  style: TextStyle(
                     color: CruxTheme.of(context).onSurfaceVariant,
-                    hoverColor: CruxTheme.of(context).foreground,
-                    segments: [
-                      MultiButtonSegment(
-                        label: component.strings.t('chat.sidebar.open'),
-                        onPressed: panel.onOpenProject,
-                      ),
-                      MultiButtonSegment(
-                        label: component.strings.t('chat.sidebar.switch'),
-                        onPressed: panel.onSwitchProject,
-                      ),
-                    ],
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-                // FPS readout (debug-only). Rendered as a bordered widget
-                // at the very bottom — same chrome as the git / project /
-                // aux boxes — and collapses to nothing when debug is off.
-                // Because it's a child of this panel (which itself only
-                // mounts when the terminal is wide enough to show the side
-                // panel), it inherits the "panel hidden ⇒ counter hidden"
-                // behaviour for free.
-                const FpsCounter(),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 1),
+              child: Hinted(
+                hint: component.strings.t('chat.sidebar.auxHint'),
+                child: AuxiliaryModelButton(
+                  sessionController: component.sessionController!,
+                  onPressed: component.onAuxiliaryPressed,
+                  showAuxLabel: false,
+                  maxWidth: (constraints.maxWidth - 4).toInt(),
+                ),
+              ),
+            ),
+          // Git status: file-level info (branch is also
+          // surfaced here, but the project widget below
+          // repeats it as part of `path:branch`). Now rendered
+          // in its own full-width bordered box — same chrome as
+          // the spec widgets and the aux button above — so the
+          // bottom block reads as a matched set. The box is
+          // omitted entirely outside a repo, keeping the old
+          // collapse behaviour (layout stays tight).
+          if (git.isRepo)
+            Container(
+              width: constraints.maxWidth,
+              decoration: BoxDecoration(
+                color: CruxTheme.of(context).surface,
+                border: BoxBorder.all(
+                  color: CruxTheme.of(context).outline,
+                  style: BoxBorderStyle.rounded,
+                ),
+                title: BorderTitle(
+                  text: component.strings.t('chat.sidebar.git'),
+                  style: TextStyle(
+                    color: CruxTheme.of(context).onSurfaceVariant,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 1),
+              child: GitStatusWidget(
+                service: component.gitStatusService,
+                onTap:
+                    component.onGitPressed ??
+                    () => component.gitStatusService.refresh(),
+                strings: component.strings,
+              ),
+            ),
+          // Project directory: `path:branch ↑N ↓N` plus the
+          // `open` / `switch` actions. Wrapped in the same
+          // bordered box as the other bottom-block widgets.
+          Container(
+            width: constraints.maxWidth,
+            decoration: BoxDecoration(
+              color: CruxTheme.of(context).surface,
+              border: BoxBorder.all(
+                color: CruxTheme.of(context).outline,
+                style: BoxBorderStyle.rounded,
+              ),
+              title: BorderTitle(
+                text: component.strings.t('chat.sidebar.project'),
+                style: TextStyle(
+                  color: CruxTheme.of(context).onSurfaceVariant,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 1),
+            child: MultiButton(
+              label: projectLabel,
+              color: CruxTheme.of(context).onSurfaceVariant,
+              hoverColor: CruxTheme.of(context).foreground,
+              segments: [
+                MultiButtonSegment(
+                  label: component.strings.t('chat.sidebar.open'),
+                  onPressed: panel.onOpenProject,
+                ),
+                MultiButtonSegment(
+                  label: component.strings.t('chat.sidebar.switch'),
+                  onPressed: panel.onSwitchProject,
+                ),
               ],
             ),
-          ],
+          ),
+          // FPS readout (debug-only). Rendered as a bordered widget
+          // after the other sidebar content and collapses to nothing
+          // when debug is off.
+          FpsCounter(),
+        ];
+
+        // The sidebar is one continuous scroll document. When the combined
+        // content is short, the lower group hugs the bottom edge; when it is
+        // tall, the gap collapses to zero and everything scrolls together.
+        return SizedBox(
+          width: constraints.maxWidth,
+          height: constraints.maxHeight,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              SingleChildScrollView(
+                controller: _scrollController,
+                child: _BottomAnchoredScrollContent(
+                  minimumHeight: constraints.maxHeight,
+                  children: [
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: sessionContent,
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: bottomContent,
+                    ),
+                  ],
+                ),
+              ),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 1,
+                child: _SidebarScrollIndicator(
+                  controller: _scrollController,
+                  direction: _ScrollOverflowDirection.above,
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: 1,
+                child: _SidebarScrollIndicator(
+                  controller: _scrollController,
+                  direction: _ScrollOverflowDirection.below,
+                ),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -859,25 +892,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
   /// Build a group header row (Yesterday / 3 Days / Archived / Chats).
   Component _buildGroupHeader(_SessionGroup group) {
     if (group == _SessionGroup.archived) {
-      final count = component.archivedCount;
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-        child: Row(
-          children: [
-            Text(
-              component.strings.t('chat.sessions.archivedCount', {'n': '$count'}),
-              style: TextStyle(
-                color: CruxTheme.of(context).onSurfaceDim,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Text(
-              ' /unarchive #id',
-              style: TextStyle(color: CruxTheme.of(context).hintText),
-            ),
-          ],
-        ),
-      );
+      return _buildArchivedCountRow(component.archivedCount);
     }
     // "Chats" section header — a divider + label so it reads as a
     // distinct section below the project sessions. The "+" button for
@@ -916,25 +931,7 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
       );
     }
     if (group == _SessionGroup.chatsArchived) {
-      final count = component.archivedChatCount;
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
-        child: Row(
-          children: [
-            Text(
-              component.strings.t('chat.sessions.archivedCount', {'n': '$count'}),
-              style: TextStyle(
-                color: CruxTheme.of(context).onSurfaceDim,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Text(
-              ' /unarchive #id',
-              style: TextStyle(color: CruxTheme.of(context).hintText),
-            ),
-          ],
-        ),
-      );
+      return _buildArchivedCountRow(component.archivedChatCount);
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
@@ -944,6 +941,25 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
           color: CruxTheme.of(context).onSurfaceDim,
           fontWeight: FontWeight.bold,
         ),
+      ),
+    );
+  }
+
+  Component _buildArchivedCountRow(int count) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 1),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              component.strings.t('chat.sessions.archivedCount', {
+                'n': '$count',
+              }),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: CruxTheme.of(context).textMuted),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -994,8 +1010,9 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
                       ' $title',
                       style: TextStyle(
                         color: _titleColor(status, isCurrent, isHovered),
-                        fontWeight:
-                            isCurrent || isHovered ? FontWeight.bold : null,
+                        fontWeight: isCurrent || isHovered
+                            ? FontWeight.bold
+                            : null,
                       ),
                     ),
                   ],
@@ -1014,6 +1031,221 @@ class _ExtraInfoPanelState extends State<ExtraInfoPanel> {
         ),
       ),
     );
+  }
+}
+
+/// Lays out a top group and a bottom group with a flexible gap between them.
+/// The gap exists only while both groups fit within [minimumHeight]; once their
+/// natural height exceeds it, they become adjacent so the parent scroll view
+/// gets one continuous content extent.
+class _BottomAnchoredScrollContent extends MultiChildRenderObjectComponent {
+  final double minimumHeight;
+
+  const _BottomAnchoredScrollContent({
+    required this.minimumHeight,
+    required super.children,
+  });
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderBottomAnchoredScrollContent(minimumHeight);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderBottomAnchoredScrollContent renderObject,
+  ) {
+    renderObject.minimumHeight = minimumHeight;
+  }
+}
+
+class _RenderBottomAnchoredScrollContent extends RenderObject
+    with ContainerRenderObjectMixin<RenderObject> {
+  _RenderBottomAnchoredScrollContent(this._minimumHeight);
+
+  double _minimumHeight;
+  set minimumHeight(double value) {
+    if (value == _minimumHeight) return;
+    _minimumHeight = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderObject child) {
+    if (child.parentData is! BoxParentData) child.parentData = BoxParentData();
+  }
+
+  @override
+  void performLayout() {
+    final childConstraints = BoxConstraints(
+      minWidth: constraints.minWidth,
+      maxWidth: constraints.maxWidth,
+      minHeight: 0,
+      maxHeight: double.infinity,
+    );
+    for (final child in children) {
+      child.layout(childConstraints, parentUsesSize: true);
+    }
+
+    final top = children.isNotEmpty ? children.first : null;
+    final bottom = children.length > 1 ? children[1] : null;
+    final topHeight = top?.size.height ?? 0;
+    final bottomHeight = bottom?.size.height ?? 0;
+    final naturalHeight = topHeight + bottomHeight;
+    final contentHeight = max(_minimumHeight, naturalHeight);
+    final contentWidth = children.fold<double>(
+      constraints.minWidth,
+      (width, child) => max(width, child.size.width),
+    );
+    size = constraints.constrain(Size(contentWidth, contentHeight));
+
+    if (top != null) {
+      (top.parentData as BoxParentData).offset = Offset.zero;
+    }
+    if (bottom != null) {
+      (bottom.parentData as BoxParentData).offset = Offset(
+        0,
+        max(topHeight, size.height - bottomHeight),
+      );
+    }
+  }
+
+  @override
+  void paint(TerminalCanvas canvas, Offset offset) {
+    super.paint(canvas, offset);
+    for (final child in children) {
+      final childOffset = (child.parentData as BoxParentData).offset;
+      child.paintWithContext(canvas, offset + childOffset);
+    }
+  }
+
+  @override
+  bool hitTestChildren(HitTestResult result, {required Offset position}) {
+    for (final child in children.reversed) {
+      final childOffset = (child.parentData as BoxParentData).offset;
+      if (child.hitTest(result, position: position - childOffset)) return true;
+    }
+    return false;
+  }
+}
+
+enum _ScrollOverflowDirection { above, below }
+
+/// One-row overlay that reports hidden sidebar content without consuming
+/// layout height. It listens independently so scrolling repaints only the
+/// edge chrome, not the list whose metrics triggered the notification.
+class _SidebarScrollIndicator extends SingleChildRenderObjectComponent {
+  final ScrollController controller;
+  final _ScrollOverflowDirection direction;
+
+  const _SidebarScrollIndicator({
+    required this.controller,
+    required this.direction,
+  });
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    final theme = CruxTheme.of(context);
+    return _RenderSidebarScrollIndicator(
+      controller,
+      direction,
+      theme.onSurfaceDim,
+      theme.surface,
+    );
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderSidebarScrollIndicator renderObject,
+  ) {
+    final theme = CruxTheme.of(context);
+    renderObject
+      ..controller = controller
+      ..direction = direction
+      ..foreground = theme.onSurfaceDim
+      ..background = theme.surface;
+  }
+}
+
+class _RenderSidebarScrollIndicator extends RenderObject {
+  _RenderSidebarScrollIndicator(
+    this._controller,
+    this._direction,
+    this._foreground,
+    this._background,
+  ) {
+    _controller.addListener(_onScrollChanged);
+  }
+
+  ScrollController _controller;
+  set controller(ScrollController value) {
+    if (identical(value, _controller)) return;
+    _controller.removeListener(_onScrollChanged);
+    _controller = value;
+    _controller.addListener(_onScrollChanged);
+    markNeedsPaint();
+  }
+
+  _ScrollOverflowDirection _direction;
+  set direction(_ScrollOverflowDirection value) {
+    if (value == _direction) return;
+    _direction = value;
+    markNeedsPaint();
+  }
+
+  Color _foreground;
+  set foreground(Color value) {
+    if (value == _foreground) return;
+    _foreground = value;
+    markNeedsPaint();
+  }
+
+  Color _background;
+  set background(Color value) {
+    if (value == _background) return;
+    _background = value;
+    markNeedsPaint();
+  }
+
+  void _onScrollChanged() => markNeedsPaint();
+
+  @override
+  void performLayout() {
+    size = constraints.constrain(const Size(double.infinity, 1));
+  }
+
+  @override
+  void paint(TerminalCanvas canvas, Offset offset) {
+    super.paint(canvas, offset);
+    final canScroll = _controller.maxScrollExtent > 0;
+    final visible =
+        canScroll &&
+        (_direction == _ScrollOverflowDirection.above
+            ? !_controller.atStart
+            : !_controller.atEnd);
+    if (!visible) return;
+
+    final glyph = _direction == _ScrollOverflowDirection.above
+        ? terminalSymbol('▲', '^')
+        : terminalSymbol('▼', 'v');
+    final columns = max(1, size.width.floor());
+    final remaining = max(0, columns - glyph.length);
+    final left = remaining ~/ 2;
+    final line =
+        '${List.filled(left, '─').join()}$glyph'
+        '${List.filled(remaining - left, '─').join()}';
+    canvas.drawText(
+      offset,
+      line,
+      style: TextStyle(color: _foreground, backgroundColor: _background),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_onScrollChanged);
+    super.dispose();
   }
 }
 

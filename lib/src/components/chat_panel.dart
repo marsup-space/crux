@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm_bloc/nocterm_bloc.dart';
+import 'package:path/path.dart' as p;
+
 import '../commands/cmd_help.dart';
 import '../commands/command_executor.dart';
 import '../commands/registry.dart';
@@ -16,6 +19,7 @@ import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
 import '../services/git_status_service.dart';
+import '../services/git_review_service.dart';
 import '../services/notes_service.dart';
 import '../services/plugin.dart';
 import '../services/plugin_registry.dart';
@@ -26,6 +30,7 @@ import '../services/openrouter_stealth_sync.dart';
 import '../services/provider_service.dart';
 import '../services/recent_projects_store.dart';
 import '../services/skills/skill.dart';
+import '../services/tool_execution_event.dart';
 import '../services/tool_executor.dart';
 import '../services/web_provider_registry.dart';
 import '../services/providers/tinyfish_web_provider.dart';
@@ -41,10 +46,10 @@ import '../utils/quick_reply_parser.dart';
 import '../utils/markdown_links.dart';
 import '../tools/registry.dart';
 import '../tools/ask_tool.dart';
-import '../tools/shell_monitor.dart'
-    show ShellMonitorNotice, mkMonitorTail;
+import '../tools/shell_monitor.dart' show ShellMonitorNotice, mkMonitorTail;
 import '../tools/tool_def.dart';
 import '../tools/file_read_tracker.dart';
+import '../tools/git_prepare_commit_tool.dart';
 import '../utils/frame_profiler.dart';
 import '../utils/url_launcher.dart';
 import 'ask_form.dart';
@@ -61,6 +66,7 @@ import 'streaming_cubit.dart';
 import 'context_bar.dart';
 import 'chat_turn_orchestrator.dart';
 import 'extra_info_panel.dart';
+import 'git_review_fullpane.dart';
 import 'home/home_layout_store.dart';
 import 'home/home_screen.dart';
 import 'home/home_widgets.dart';
@@ -72,9 +78,11 @@ import 'quit_handler.dart';
 import 'session_controller.dart';
 import 'session_cycle.dart';
 import 'session_management_panel.dart';
+import 'setup_guide.dart';
 import 'shell_live_fullpane.dart';
 import 'streaming_controller.dart';
 import 'tool_detail_pane.dart';
+import 'version_badge.dart' show cruxVersionLabel;
 import 'vibe_box_data.dart';
 import 'vibe_diff_fullpane.dart';
 import 'ui/toast.dart';
@@ -249,6 +257,13 @@ class ChatPanel extends StatefulComponent {
   /// *do* pass a bootState, so provenance-sniffing was wrong.
   final bool showHomeOnLaunch;
 
+  /// Force the first-run setup screen. This takes precedence over Home.
+  final bool showSetupOnLaunch;
+
+  /// Test seams for the setup screen's automatic runtime preparation.
+  final PrerequisiteCheck? setupEnsureSemble;
+  final PrerequisiteCheck? setupEnsureRipgrep;
+
   /// The `[home]` config.toml store. When non-null, edit-mode layout
   /// changes persist; when null (tests), edit mode works but isn't saved.
   final HomeLayoutStore? homeLayoutStore;
@@ -269,6 +284,9 @@ class ChatPanel extends StatefulComponent {
     required this.recentProjectsStore,
     this.startupWarnings = const [],
     this.showHomeOnLaunch = false,
+    this.showSetupOnLaunch = false,
+    this.setupEnsureSemble,
+    this.setupEnsureRipgrep,
     this.homeLayoutStore,
     this.initialHomeLayout,
   });
@@ -317,6 +335,7 @@ class _ChatPanelState extends State<ChatPanel> {
   /// Session id is captured at open time so a background session's
   /// run stays viewable.
   ({int sessionId, String callId})? _shellLiveFullpane;
+
   /// The skill whose SKILL.md the fullpane is showing (home `skills`
   /// box). Null when the fullpane is showing something else.
   SkillInfo? _skillFullpane;
@@ -330,6 +349,10 @@ class _ChatPanelState extends State<ChatPanel> {
   /// note is loaded from the DB by the pane itself via [_notesService].
   bool _notesFullpaneOpen = false;
 
+  /// Whether the live working-tree Git review surface is open.
+  bool _gitReviewFullpaneOpen = false;
+  GitCommitReviewRequest? _gitCommitReviewRequest;
+
   /// Backs the "my notes" feature: the per-project note plus the
   /// status-file projection the sidebar widget reads. Bound to this
   /// session's project, sharing the session store's DB connection.
@@ -341,6 +364,7 @@ class _ChatPanelState extends State<ChatPanel> {
   late final PlanModeController _planModeController;
 
   bool _providerServiceReady = false;
+  late bool _showSetup;
 
   final _toastKey = GlobalKey<ToastHubState>();
   final _chatInputKey = GlobalKey<ChatInputState>();
@@ -368,6 +392,7 @@ class _ChatPanelState extends State<ChatPanel> {
   @override
   void initState() {
     super.initState();
+    _showSetup = component.showSetupOnLaunch;
     final bootState = component.bootState;
     _providerService =
         bootState?.providerService ??
@@ -448,6 +473,7 @@ class _ChatPanelState extends State<ChatPanel> {
       lsp: _lspManager,
       pendingAskCubit: _pendingAskCubit,
       planModeController: _planModeController,
+      gitCommitReviewOpener: _openPreparedCommitReview,
     );
     final toolExecutor = ToolExecutor(registry);
     _toolRegistry = registry;
@@ -456,7 +482,8 @@ class _ChatPanelState extends State<ChatPanel> {
       _providerService,
       LlmClient(),
       toolExecutor,
-      replyLanguage: () => component.localeController?.replyLanguageSettings ??
+      replyLanguage: () =>
+          component.localeController?.replyLanguageSettings ??
           ReplyLanguageSettings.fallback,
     );
     _webProviderChangesSub = _webProviderRegistry.changes.listen((_) {
@@ -492,8 +519,9 @@ class _ChatPanelState extends State<ChatPanel> {
         sessionId: sessionId,
       );
     };
-    // Human-in-the-loop shell-monitor toasts: every aux evaluation of
-    // a long-running shell command surfaces as a standing killable
+    _chatService.onToolExecutionCompleted = _onToolExecutionCompleted;
+    // Human-in-the-loop shell-monitor toasts: every aux evaluation of a
+    // long-running shell command surfaces as a standing killable
     // toast, and a manual kill notifies the main session.
     _chatService.onShellMonitorNotice = (sessionId, notice) {
       _onShellMonitorNotice(sessionId, notice);
@@ -789,9 +817,7 @@ class _ChatPanelState extends State<ChatPanel> {
         return;
       case OpenDirectoryResult.notFound:
         _showToast(
-          _strings.t('toast.dirNotFoundCwd', {
-            'path': Directory.current.path,
-          }),
+          _strings.t('toast.dirNotFoundCwd', {'path': Directory.current.path}),
           mode: ToastMode.error,
         );
       case OpenDirectoryResult.failed:
@@ -1051,6 +1077,15 @@ class _ChatPanelState extends State<ChatPanel> {
     unawaited(_gitStatusService.refresh());
   }
 
+  void _onToolExecutionCompleted(ToolExecutionCompleted event) {
+    if (!event.isWorkspaceGitCommand) return;
+    // The execution context supplies the session workspace. Git's own status
+    // service resolves its path from the active workspace, so refresh only
+    // when that workspace is still the one this panel displays.
+    if (!p.equals(event.workspacePath, Directory.current.path)) return;
+    unawaited(_gitStatusService.refresh());
+  }
+
   @override
   void dispose() {
     CommandRegistry.instance.removeListener(_refresh);
@@ -1062,6 +1097,7 @@ class _ChatPanelState extends State<ChatPanel> {
     _recentProjectsStore.removeListener(_refresh);
     _recentProjectsStore.removeListener(_refreshGitStatus);
     component.pluginRegistry?.removeListener(_refresh);
+    _chatService.onToolExecutionCompleted = null;
     _chatService.dispose();
     _sessionController.dispose();
     _streamingController.dispose();
@@ -1206,6 +1242,7 @@ class _ChatPanelState extends State<ChatPanel> {
       showFullpane: _openFullpane,
       showCodexLoginPane: _showCodexLoginPane,
       showHome: _openHome,
+      showSetup: _openSetup,
       recentProjectsStore: _recentProjectsStore,
       shellMonitorLogStore: _chatService.shellMonitorLogStore,
       planModeController: _planModeController,
@@ -1309,8 +1346,7 @@ class _ChatPanelState extends State<ChatPanel> {
     final model = _sessionController.currentSession.model;
     final slashIdx = model.indexOf('/');
     if (slashIdx <= 0) return false;
-    return model.substring(0, slashIdx) ==
-        OpenRouterStealthSync.providerName;
+    return model.substring(0, slashIdx) == OpenRouterStealthSync.providerName;
   }
 
   /// Invoked by the toolbar's `⟳ sync` button: run the one-shot
@@ -1391,9 +1427,28 @@ class _ChatPanelState extends State<ChatPanel> {
         strings: _strings,
       );
     }
+    if (_gitReviewFullpaneOpen) {
+      return GitReviewFullpane(
+        backend: GitReviewService(projectPath: Directory.current.path),
+        initialDraft: _gitCommitReviewRequest?.draft,
+        onClose: _closeFullpane,
+        onIndexChanged: () => unawaited(_gitStatusService.refresh()),
+        onCommitted: () => unawaited(_gitStatusService.refresh()),
+        generateCommitMessage: (stagedDiff, recentSubjects) =>
+            _chatService.generateCommitMessage(
+              stagedDiff: stagedDiff,
+              recentSubjects: recentSubjects,
+            ),
+        strings: _strings,
+      );
+    }
     final vibeDiff = _vibeDiffRequest;
     if (vibeDiff != null) {
-      return VibeDiffFullpane(request: vibeDiff, onClose: _closeFullpane, strings: _strings);
+      return VibeDiffFullpane(
+        request: vibeDiff,
+        onClose: _closeFullpane,
+        strings: _strings,
+      );
     }
     final skill = _skillFullpane;
     if (skill != null) {
@@ -1494,6 +1549,40 @@ class _ChatPanelState extends State<ChatPanel> {
       _overlayController.showFullpane = false;
     });
   }
+
+  void _openSetup() {
+    setState(() {
+      _showSetup = true;
+      _overlayController.showHome = false;
+      _overlayController.showSessionManager = false;
+      _overlayController.showFullpane = false;
+    });
+  }
+
+  Future<void> _finishSetup(String defaultModel) async {
+    final sessionId = _sessionController.currentSessionId;
+    if (sessionId != null) {
+      await _store.update(sessionId, model: defaultModel);
+      _sessionController.currentSession.model = defaultModel;
+    }
+    _sessionController.resolveAuxiliaryModel();
+    setState(() {
+      _showSetup = false;
+      _overlayController.showHome = false;
+    });
+  }
+
+  Component _buildSetup() => SetupGuide(
+    providerService: _providerService,
+    webProviderRegistry: _webProviderRegistry,
+    themeController: component.themeController,
+    localeController: component.localeController!,
+    projectPath: Directory.current.path,
+    ensureSemble: component.setupEnsureSemble,
+    ensureRipgrep: component.setupEnsureRipgrep,
+    onQuit: _quitHandler.quitAndPrintSummary,
+    onFinish: _finishSetup,
+  );
 
   void _closeHome() {
     setState(() {
@@ -1616,8 +1705,8 @@ class _ChatPanelState extends State<ChatPanel> {
       // sessions. The store query is one SQL aggregate; the widget
       // re-invokes it per open (no caching) because the data is cheap
       // and always fresh.
-      dailyTokenTotals: ({required sinceDays}) => _store.messageStore
-          .dailyTokenTotals(
+      dailyTokenTotals: ({required sinceDays}) =>
+          _store.messageStore.dailyTokenTotals(
             sinceDaysAgo: sinceDays,
             projectPath: Directory.current.path,
           ),
@@ -1698,7 +1787,29 @@ class _ChatPanelState extends State<ChatPanel> {
       _shellLiveFullpane = null;
       _skillFullpane = null;
       _notesFullpaneOpen = false;
+      _gitReviewFullpaneOpen = false;
+      _gitCommitReviewRequest = null;
     });
+  }
+
+  void _openGitReviewFullpane() {
+    setState(() {
+      _gitCommitReviewRequest = null;
+      _gitReviewFullpaneOpen = true;
+      _overlayController.showFullpane = true;
+    });
+  }
+
+  void _openPreparedCommitReview(GitCommitReviewRequest request) {
+    if (!mounted || !p.equals(request.projectPath, Directory.current.path)) {
+      return;
+    }
+    setState(() {
+      _gitCommitReviewRequest = request;
+      _gitReviewFullpaneOpen = true;
+      _overlayController.showFullpane = true;
+    });
+    unawaited(_gitStatusService.refresh());
   }
 
   /// Open the "my notes" editor fullpane (the `notes` screen target of
@@ -1744,13 +1855,13 @@ class _ChatPanelState extends State<ChatPanel> {
   /// wherever it's placed. Deferred rebuild on each call reads the
   /// panel's live session state.
   PluginHost _pluginHost() => PluginHost(
-        onPromptAction: _handlePluginPromptAction,
-        onShellAction: _handlePluginShellAction,
-        onScreenAction: _handlePluginScreenAction,
-        onTodoToggle: _handlePluginTodoToggle,
-        onAction: _recordPluginAction,
-        projectPath: Directory.current.path,
-      );
+    onPromptAction: _handlePluginPromptAction,
+    onShellAction: _handlePluginShellAction,
+    onScreenAction: _handlePluginScreenAction,
+    onTodoToggle: _handlePluginTodoToggle,
+    onAction: _recordPluginAction,
+    projectPath: Directory.current.path,
+  );
 
   /// Reveal a vibe file row's file in the system file manager (Finder on
   /// macOS, Explorer on Windows, the default manager on Linux). Wired to
@@ -1819,8 +1930,7 @@ class _ChatPanelState extends State<ChatPanel> {
       // Full candidate set for the search/archive sections: the same
       // loader the `#` mention picker uses (live lists + archived
       // rows, deduped, live winning).
-      onLoadCandidates: () =>
-          _sessionController.loadSessionMentionCandidates(),
+      onLoadCandidates: () => _sessionController.loadSessionMentionCandidates(),
       onDeleteSession: (id) async {
         await _sessionController.deleteSession(id);
         setState(() {});
@@ -1832,7 +1942,7 @@ class _ChatPanelState extends State<ChatPanel> {
       // Archived-aware open: reuses the ses:// link-tap path
       // (unarchive → sidebar refresh → switch, error toast on
       // failure) and closes the manager on success only.
-            onOpenSession: (id) async {
+      onOpenSession: (id) async {
         final current = _sessionController.currentSessionId;
         if (current == id) {
           setState(() {
@@ -1871,9 +1981,7 @@ class _ChatPanelState extends State<ChatPanel> {
       refresh: _refresh,
     );
     if (popover != null) {
-      overlays.add(
-        Positioned(bottom: 0, left: 0, right: 0, child: popover),
-      );
+      overlays.add(Positioned(bottom: 0, left: 0, right: 0, child: popover));
     }
 
     overlays.add(
@@ -1907,6 +2015,9 @@ class _ChatPanelState extends State<ChatPanel> {
         ],
         child: LayoutBuilder(
           builder: (context, constraints) {
+            if (_showSetup && component.localeController != null) {
+              return _buildSetup();
+            }
             // Home is an independent full screen, not an overlay: when
             // it's open, the chat interface (history, toolbar, input,
             // sidebar) is not built at all. Nothing else to lay out, no
@@ -1954,8 +2065,8 @@ class _ChatPanelState extends State<ChatPanel> {
             // plan pane never grows wider than the chat pane.
             final bareSidebarWidth = showInfoPanel
                 ? (kSidebarWidthMin +
-                        0.3 * (constraints.maxWidth - kSidebarShowThreshold))
-                    .clamp(kSidebarWidthMin, kSidebarWidthMax)
+                          0.3 * (constraints.maxWidth - kSidebarShowThreshold))
+                      .clamp(kSidebarWidthMin, kSidebarWidthMax)
                 : null;
             final layout = resolvePlanSplit(
               constraints.maxWidth,
@@ -2014,19 +2125,31 @@ class _ChatPanelState extends State<ChatPanel> {
                         Positioned(
                           top: 0,
                           right: kScrollbarClearance,
-                          child: Button(
-                            label: rt.chatDisplayMode == ChatDisplayMode.vibe
-                                ? _strings.t('chat.vibe.vibe')
-                                : _strings.t('chat.vibe.verbose'),
-                            onPressed: () {
-                              final newMode =
-                                  rt.chatDisplayMode == ChatDisplayMode.vibe
-                                  ? ChatDisplayMode.verbose
-                                  : ChatDisplayMode.vibe;
-                              rt.chatDisplayMode = newMode;
-                              _sessionController.persistChatDisplayMode(rt);
-                              setState(() {});
-                            },
+                          child: Row(
+                            children: [
+                              Text(
+                                cruxVersionLabel,
+                                style: TextStyle(
+                                  color: CruxTheme.of(context).textMuted,
+                                ),
+                              ),
+                              const SizedBox(width: 1),
+                              Button(
+                                label:
+                                    rt.chatDisplayMode == ChatDisplayMode.vibe
+                                    ? _strings.t('chat.vibe.vibe')
+                                    : _strings.t('chat.vibe.verbose'),
+                                onPressed: () {
+                                  final newMode =
+                                      rt.chatDisplayMode == ChatDisplayMode.vibe
+                                      ? ChatDisplayMode.verbose
+                                      : ChatDisplayMode.vibe;
+                                  rt.chatDisplayMode = newMode;
+                                  _sessionController.persistChatDisplayMode(rt);
+                                  setState(() {});
+                                },
+                              ),
+                            ],
                           ),
                         ),
                       ...overlays,
@@ -2234,9 +2357,7 @@ class _ChatPanelState extends State<ChatPanel> {
               final panelWidth = layout.sidebarWidth;
 
               final planActive = _planModeController.active;
-              final planPaneWidth = planActive
-                  ? layout.planPaneWidth
-                  : 0.0;
+              final planPaneWidth = planActive ? layout.planPaneWidth : 0.0;
 
               final body = Row(
                 children: [
@@ -2274,6 +2395,7 @@ class _ChatPanelState extends State<ChatPanel> {
                       onCreateChat: _sessionController.createChatSession,
                       onCreateSession: _createNewSession,
                       gitStatusService: _gitStatusService,
+                      onGitPressed: _openGitReviewFullpane,
                       plugins: component.pluginRegistry?.sidebarPlugins,
                       strings: _strings,
                       onSessionTitleTap: () {
@@ -2401,10 +2523,7 @@ class _SkillFullpaneContentState extends State<_SkillFullpaneContent> {
                 skill.description,
                 style: TextStyle(color: theme.onSurfaceVariant),
               ),
-              Text(
-                skill.location,
-                style: TextStyle(color: theme.onSurfaceDim),
-              ),
+              Text(skill.location, style: TextStyle(color: theme.onSurfaceDim)),
             ],
           ),
         ),
@@ -2417,8 +2536,7 @@ class _SkillFullpaneContentState extends State<_SkillFullpaneContent> {
             child: SingleChildScrollView(
               controller: _scrollController,
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+                padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
                 child: HighlightedMarkdownText(skill.content),
               ),
             ),

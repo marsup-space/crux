@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'package:path/path.dart' as p;
 
 import 'bundled_directory.dart' show PackageUriResolver;
+import 'user_data_directory.dart';
 
 String currentRuntimeTarget({Abi? abi}) {
   return switch (abi ?? Abi.current()) {
@@ -89,6 +90,10 @@ Future<List<Directory>> _candidateBinRoots({
     if (candidates.any((directory) => directory.path == normalized)) return;
     candidates.add(Directory(normalized));
   }
+
+  // First-run setup downloads missing tools here when a release directory is
+  // read-only. Keep it in the normal resolver path for every tool call.
+  addCandidate(p.join(resolveUserDataDirectory(), 'bin'));
 
   final override =
       thirdPartyBinOverride ?? Platform.environment['CRUX_THIRD_PARTY_BIN'];

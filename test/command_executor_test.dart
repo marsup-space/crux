@@ -2170,7 +2170,7 @@ stream_lerp = false
     });
   });
 
-  group('CommandExecutor — /home', () {
+  group('CommandExecutor — /home and /setup', () {
     late Directory tempDir;
     late ProviderService providerService;
     late SessionStore store;
@@ -2198,6 +2198,7 @@ stream_lerp = false
 
     CommandContext buildContext({
       VoidCallback? showHomeImpl,
+      VoidCallback? showSetupImpl,
       void Function(String, {ToastMode? mode})? showToastImpl,
     }) {
       return CommandContext(
@@ -2226,6 +2227,7 @@ stream_lerp = false
         sendBtwTurn: (_) async {},
         clearBtwTurns: (_) {},
         showHome: showHomeImpl,
+        showSetup: showSetupImpl,
       );
     }
 
@@ -2252,6 +2254,15 @@ stream_lerp = false
       );
       expect(lastToast, isNotNull);
       expect(lastMode, ToastMode.error);
+    });
+
+    test('/setup invokes the showSetup callback', () async {
+      var showSetupCalls = 0;
+      await CommandExecutor().execute(
+        '/setup',
+        buildContext(showSetupImpl: () => showSetupCalls++),
+      );
+      expect(showSetupCalls, 1);
     });
   });
 

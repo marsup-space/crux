@@ -5,6 +5,7 @@ import '../theme/crux_theme.dart';
 import '../tools/ask_tool.dart';
 import 'ask_answer_bubble.dart';
 import 'ui/button.dart';
+import 'ui/hoverable.dart';
 
 /// Interactive form that replaces the chat input box when the agent
 /// has called the `ask` tool. Renders one section per group with its
@@ -366,15 +367,16 @@ class _AskFormState extends State<AskForm> {
               // own mouse region — moves the region focus to the note.
               // Clicks that land on the text content itself are caught
               // by the TextField and reported via onFocusChange.
-              child: GestureDetector(
+              child: Hoverable(
                 onTap: () {
                   if (_focusRegion != _AskFocusRegion.note) {
                     setState(() => _focusRegion = _AskFocusRegion.note);
                   }
                 },
                 behavior: HitTestBehavior.translucent,
-                child: _NoteRegion(
+                builder: (context, hovered) => _NoteRegion(
                   active: _focusRegion == _AskFocusRegion.note,
+                  hovered: hovered,
                   controller: _noteController,
                   onKeyEvent: _handleNoteKey,
                   strings: component.strings,
@@ -475,16 +477,14 @@ class _AskFormState extends State<AskForm> {
           : (isPicked ? theme.buttonTextHover : theme.buttonText);
 
       rows.add(
-        GestureDetector(
+        Hoverable(
           onTap: () {
             _focusedOptionIndex = flatIdx;
             _focusRegion = _AskFocusRegion.options;
             _toggle(group, option);
           },
-          behavior: HitTestBehavior.opaque,
-          child: MouseRegion(
-            opaque: false,
-            onHover: (_) {
+          onHoverChanged: (hovered) {
+            if (hovered) {
               if (_focusedOptionIndex != flatIdx ||
                   _focusRegion != _AskFocusRegion.options) {
                 setState(() {
@@ -492,22 +492,19 @@ class _AskFormState extends State<AskForm> {
                   _focusRegion = _AskFocusRegion.options;
                 });
               }
-            },
-            child: Container(
-              decoration: BoxDecoration(color: cellColor),
-              padding: const EdgeInsets.symmetric(horizontal: 1),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('$marker ', style: TextStyle(color: textColor)),
-                  Expanded(
-                    child: Text(
-                      option.label,
-                      style: TextStyle(color: textColor),
-                    ),
-                  ),
-                ],
-              ),
+            }
+          },
+          builder: (context, hovered) => Container(
+            decoration: BoxDecoration(color: cellColor),
+            padding: const EdgeInsets.symmetric(horizontal: 1),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('$marker ', style: TextStyle(color: textColor)),
+                Expanded(
+                  child: Text(option.label, style: TextStyle(color: textColor)),
+                ),
+              ],
             ),
           ),
         ),
@@ -543,6 +540,7 @@ class _AskFormState extends State<AskForm> {
 /// stays stable across focus transitions.
 class _NoteRegion extends StatefulComponent {
   final bool active;
+  final bool hovered;
   final TextEditingController controller;
   final bool Function(KeyboardEvent) onKeyEvent;
 
@@ -551,8 +549,8 @@ class _NoteRegion extends StatefulComponent {
   /// reports it through `onFocusChange(true)`). The parent moves its
   /// region enum to `note` so the field's internal Focusable becomes
   /// the keyboard route target. Taps on the border/padding never reach
-  /// the render text field — those are caught by the outer
-  /// GestureDetector in [_AskFormState.build].
+  /// the render text field — those are caught by the outer shared
+  /// [Hoverable] in [_AskFormState.build].
   final VoidCallback onFocusRequest;
 
   /// Locale-aware strings threaded from the parent so the placeholder
@@ -561,6 +559,7 @@ class _NoteRegion extends StatefulComponent {
 
   const _NoteRegion({
     required this.active,
+    required this.hovered,
     required this.controller,
     required this.onKeyEvent,
     required this.onFocusRequest,
@@ -578,7 +577,7 @@ class _NoteRegionState extends State<_NoteRegion> {
     // The decoration border swaps to the theme's focus color when
     // active so the user gets a visual signal of where keyboard
     // input is going, mirroring the radio/checkbox focus highlight.
-    final borderColor = component.active
+    final borderColor = component.active || component.hovered
         ? theme.buttonTextFocused
         : theme.outline;
     return TextField(

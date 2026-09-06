@@ -10,6 +10,7 @@ import '../utils/terminal_symbols.dart';
 import 'tool_detail_utils.dart';
 import 'ui/fullpane.dart';
 import 'ui/highlight_service.dart';
+import 'ui/hoverable.dart';
 import 'ui/layout_metrics.dart';
 import 'vibe_box_data.dart';
 import 'vibe_file_diff.dart';
@@ -245,18 +246,21 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
   Component _pickerItem(ModFileEntry entry, int index, CruxThemeData theme) {
     final selected = index == _index;
     final name = p.basename(entry.path);
-    return GestureDetector(
+    return Hoverable(
       onTap: () => _selectFile(index),
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        decoration: selected
-            ? BoxDecoration(color: theme.wizardRowBgSelected)
-            : null,
+      builder: (context, hovered) => Container(
+        decoration: BoxDecoration(
+          color: selected
+              ? theme.wizardRowBgSelected
+              : hovered
+              ? theme.wizardRowBgHover
+              : theme.buttonBackground,
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 1),
         child: Text(
           name.isEmpty ? entry.path : name,
           style: TextStyle(
-            color: selected ? theme.foreground : theme.onSurfaceDim,
+            color: selected || hovered ? theme.foreground : theme.onSurfaceDim,
             fontWeight: selected ? FontWeight.bold : null,
           ),
         ),
@@ -843,5 +847,4 @@ class _SplitRow {
       right = null,
       isGap = true;
 }
-
 

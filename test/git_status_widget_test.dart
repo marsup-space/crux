@@ -11,6 +11,8 @@
 // the project widget, NOT on this widget — the widget focuses
 // on file-level state (line diff + per-bucket counts).
 import 'package:crux/src/components/git_status_widget.dart';
+import 'package:crux/src/i18n/app_locale.dart';
+import 'package:crux/src/i18n/strings.dart';
 import 'package:crux/src/services/git_status_service.dart';
 import 'package:nocterm/nocterm.dart' hide isEmpty, isNotEmpty;
 import 'package:test/test.dart';
@@ -74,7 +76,7 @@ void main() {
         // And only that — no diff row, no counts row.
         expect(tester.terminalState.findText('staged'), isEmpty);
         expect(tester.terminalState.findText('modified'), isEmpty);
-        expect(tester.terminalState.findText('+'), isEmpty);
+        expect(tester.terminalState.findText('0'), isEmpty);
       });
     });
 
@@ -147,27 +149,99 @@ void main() {
       });
     });
 
-    test('untracked label disambiguates the `?` glyph', () async {
-      // Regression: the previous design rendered `? 10` on its
-      // own, which read as a literal question mark. The label
-      // `untracked` next to the glyph removes the ambiguity.
-      await testNocterm('git status widget untracked label', (tester) async {
+    test(
+      'wraps translated counts before a narrow panel can overflow',
+      () async {
+        await testNocterm('git status widget narrow chinese layout', (
+          tester,
+        ) async {
+          final svc = _FakeService()
+            ..seedCurrent(
+              GitStatus(
+                isRepo: true,
+                branch: 'main',
+                modifiedFiles: 39,
+                deletedFiles: 1,
+                untrackedFiles: 8,
+                fetchedAt: DateTime(2024, 1, 1),
+              ),
+            );
+          await tester.pumpComponent(
+            Container(
+              width: 28,
+              height: 8,
+              child: GitStatusWidget(
+                service: svc,
+                strings: const Strings(AppLocale.zh),
+              ),
+            ),
+          );
+
+          final modified = tester.terminalState.findText('已修改').first;
+          final deleted = tester.terminalState.findText('已删除').first;
+          final untracked = tester.terminalState.findText('未跟踪').first;
+          expect(modified.y, deleted.y);
+          expect(untracked.y, greaterThan(deleted.y));
+          expect(untracked.x, 3); // one panel column + `8 `
+        }, size: const Size(28, 8));
+      },
+    );
+
+    test('keeps the second column aligned across rows', () async {
+      await testNocterm('git status widget two column alignment', (
+        tester,
+      ) async {
         final svc = _FakeService()
           ..seedCurrent(
             GitStatus(
               isRepo: true,
               branch: 'main',
-              untrackedFiles: 10,
+              conflictedFiles: 2,
+              stagedFiles: 3,
+              modifiedFiles: 39,
+              deletedFiles: 1,
               fetchedAt: DateTime(2024, 1, 1),
             ),
           );
         await tester.pumpComponent(
-          Container(width: 40, height: 8, child: GitStatusWidget(service: svc)),
+          Container(width: 36, height: 8, child: GitStatusWidget(service: svc)),
         );
-        expect(tester.terminalState.findText('untracked'), isNotEmpty);
-        expect(tester.terminalState.findText('10'), isNotEmpty);
-      });
+
+        final staged = tester.terminalState.findText('staged').first;
+        final deleted = tester.terminalState.findText('deleted').first;
+        expect(staged.y, lessThan(deleted.y));
+        expect(staged.x, deleted.x);
+      }, size: const Size(36, 8));
     });
+
+    test(
+      'untracked state uses an explicit label without a question mark',
+      () async {
+        // Regression: the previous design rendered `? 10`, which looked like
+        // missing information rather than a file state.
+        await testNocterm('git status widget untracked label', (tester) async {
+          final svc = _FakeService()
+            ..seedCurrent(
+              GitStatus(
+                isRepo: true,
+                branch: 'main',
+                untrackedFiles: 10,
+                fetchedAt: DateTime(2024, 1, 1),
+              ),
+            );
+          await tester.pumpComponent(
+            Container(
+              width: 40,
+              height: 8,
+              child: GitStatusWidget(service: svc),
+            ),
+          );
+          expect(tester.terminalState.findText('untracked'), isNotEmpty);
+          expect(tester.terminalState.findText('10'), isNotEmpty);
+          expect(tester.terminalState.findText('?'), isEmpty);
+        });
+      },
+    );
 
     test('conflict bucket renders bold and first', () async {
       // Conflicts are the most urgent state and should pop
@@ -284,7 +358,12 @@ void main() {
         await tester.pump();
 
         expect(tester.terminalState.findText('clean'), isEmpty);
+        // The target row appears immediately, while its number starts at the
+        // previous value and advances theatrically over 2.5 seconds.
         expect(tester.terminalState.findText('modified'), isNotEmpty);
+        expect(tester.terminalState.findText('5'), isEmpty);
+
+        await tester.pump(const Duration(milliseconds: 2500));
         expect(tester.terminalState.findText('5'), isNotEmpty);
       });
     });

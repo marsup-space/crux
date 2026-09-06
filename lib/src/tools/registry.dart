@@ -11,6 +11,7 @@ import 'edit_tool.dart';
 import 'file_read_tracker.dart';
 import 'glob_tool.dart';
 import 'grep_tool.dart';
+import 'git_prepare_commit_tool.dart';
 import 'notes_tool.dart';
 import 'powershell_tool.dart';
 import 'find_similar_code_tool.dart';
@@ -79,6 +80,7 @@ class ToolRegistry {
     dynamic lsp,
     PendingAskCubit? pendingAskCubit,
     PlanModeController? planModeController,
+    GitCommitReviewOpener? gitCommitReviewOpener,
   }) {
     // Tool registration order = order the LLM sees in the API tools list.
     // Tier 1 first so the model's first scan of the list lands on the
@@ -94,6 +96,9 @@ class ToolRegistry {
     register(EditTool(tracker: tracker, lsp: lsp));
     register(GrepTool());
     register(GlobTool());
+    if (gitCommitReviewOpener != null) {
+      register(GitPrepareCommitTool(onPrepared: gitCommitReviewOpener));
+    }
     register(SkillTool());
     register(PluginsTool());
     if (Platform.isWindows) {

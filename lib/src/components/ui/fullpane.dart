@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+
 import '../../theme/crux_theme.dart';
 import '../../i18n/strings.dart';
 import 'button.dart';
@@ -34,6 +35,13 @@ class Fullpane extends StatefulComponent {
   final VoidCallback onClose;
   final Component Function(BuildContext context) contentBuilder;
   final List<FullpaneShortcut> shortcuts;
+
+  /// Optional content pinned to the far right of the footer row. Useful for
+  /// legends that explain status glyphs without mixing them into shortcuts.
+  final Component? footerTrailing;
+
+  /// Optional clickable controls placed after the shortcut hints on the left.
+  final List<Component> footerActions;
   final KeyEventHandler? onKeyEvent;
   final Strings strings;
 
@@ -42,6 +50,8 @@ class Fullpane extends StatefulComponent {
     required this.onClose,
     required this.contentBuilder,
     this.shortcuts = const [],
+    this.footerActions = const [],
+    this.footerTrailing,
     this.onKeyEvent,
     this.strings = kEnglishStrings,
     super.key,
@@ -121,14 +131,14 @@ class _FullpaneState extends State<Fullpane> {
                           ),
                           const Spacer(),
                           Button(
-                            label: '✕ ${component.strings.t('chat.notes.close')}',
+                            label:
+                                '✕ ${component.strings.t('chat.notes.close')}',
                             onPressed: component.onClose,
                             color: CruxTheme.of(context).hintText,
                             hoverColor: CruxTheme.of(context).foreground,
                             bgColor: CruxTheme.of(context).surface,
-                            hoverBgColor: CruxTheme.of(
-                              context,
-                            ).buttonBackgroundHover,
+                            hoverBgColor: CruxTheme.of(context)
+                                .buttonBackgroundHover,
                           ),
                         ],
                       ),
@@ -138,7 +148,9 @@ class _FullpaneState extends State<Fullpane> {
                       Expanded(child: component.contentBuilder(context)),
 
                       // ── Shortcuts footer ──
-                      if (component.shortcuts.isNotEmpty) ...[
+                      if (component.shortcuts.isNotEmpty ||
+                          component.footerActions.isNotEmpty ||
+                          component.footerTrailing != null) ...[
                         Divider(
                           color: CruxTheme.of(context).outline,
                           height: 1,
@@ -171,6 +183,14 @@ class _FullpaneState extends State<Fullpane> {
           style: TextStyle(color: CruxTheme.of(context).onSurfaceVariant),
         ),
       );
+    }
+    for (final action in component.footerActions) {
+      items.add(const SizedBox(width: 1));
+      items.add(action);
+    }
+    if (component.footerTrailing != null) {
+      items.add(const Spacer());
+      items.add(component.footerTrailing!);
     }
     return Row(children: items);
   }

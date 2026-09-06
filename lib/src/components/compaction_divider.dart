@@ -1,4 +1,8 @@
+// ignore_for_file: implementation_imports
+
 import 'package:nocterm/nocterm.dart';
+import 'package:nocterm/src/utils/unicode_width.dart';
+
 import '../theme/crux_theme.dart';
 
 /// Inline divider rendered at the position of each `role: 'compaction'`
@@ -71,7 +75,8 @@ class _CompactionDividerState extends State<CompactionDivider> {
             ? constraints.maxWidth.toInt()
             : 0;
         final label = ' Compaction ';
-        final remaining = maxWidth - label.length;
+        final labelWidth = UnicodeWidth.stringWidth(label);
+        final remaining = maxWidth - labelWidth;
         if (remaining <= 0) {
           // Terminal too narrow to fit even the label. Drop
           // the dashes entirely so the label can take the
@@ -83,16 +88,15 @@ class _CompactionDividerState extends State<CompactionDivider> {
         // (which would look misaligned with the "left" edge
         // of the chat history).
         //
-        // Use ASCII `-` (U+002D) for the dash, not `─` (U+2500).
-        // Both are East Asian Width "Narrow" in Unicode, but many
-        // terminal fonts render `─` as 2 cells while nocterm's
-        // wcwidth reports 1 — that mismatch makes the math
-        // "this line fits in N cells" wrap in practice. ASCII `-`
-        // is rendered as 1 cell by every font the project
-        // supports.
-        final leftPad = remaining ~/ 2;
-        final rightPad = remaining - leftPad;
-        return Text('-' * leftPad + label + '-' * rightPad, style: style);
+        // Use the same continuous box-drawing rule as the relative-time
+        // divider (for example, `3 minutes ago`), rather than visibly
+        // segmented ASCII hyphens.
+        const rule = '─';
+        final ruleWidth = UnicodeWidth.stringWidth(rule);
+        if (ruleWidth == 0) return Text(label, style: style);
+        final leftPad = remaining ~/ (2 * ruleWidth);
+        final rightPad = (remaining - leftPad * ruleWidth) ~/ ruleWidth;
+        return Text(rule * leftPad + label + rule * rightPad, style: style);
       },
     );
 

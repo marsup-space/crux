@@ -129,6 +129,34 @@ void main() {
       });
     });
 
+    test(
+      'code block after a list item starts on its own full-width row',
+      () async {
+        await testNocterm('code block after list item', (tester) async {
+          const source = '''### 小提示
+
+- 不确定字体装完叫什么名？在 PowerShell 里跑这个查一下：
+  ```powershell
+  (New-Object -ComObject Shell.Application).Namespace(0x14).Items()
+  ```
+''';
+          await tester.pumpComponent(
+            Container(
+              width: 80,
+              height: 12,
+              child: const HighlightedMarkdownText(source),
+            ),
+          );
+
+          final prose = tester.terminalState.findText('不确定字体').single;
+          final header = tester.terminalState.findText('╭─ powershell').single;
+          expect(header.y, greaterThan(prose.y));
+          expect(header.x, 0);
+          expect(tester.terminalState.getCellAt(79, header.y)?.char, '╮');
+        }, size: const Size(80, 12));
+      },
+    );
+
     test('code block paints complete themed rows', () async {
       final theme = CruxThemeData.draculaFallback;
       await testNocterm('code block themed rows', (tester) async {

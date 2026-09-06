@@ -96,7 +96,6 @@ const Map<String, String> _en = {
   'home.title.notes': 'my notes',
   'home.title.activity': 'Activity',
   'home.title.codingPlan': 'Coding plan',
-  'home.title.setup': 'Quick Start',
   'home.title.settings': 'Settings',
   'home.title.git': 'Git',
 
@@ -106,6 +105,10 @@ const Map<String, String> _en = {
   'home.settings.view': 'view',
   'home.settings.language': 'language',
   'home.settings.replyLanguage': 'reply language',
+  'home.settings.openSetup': 'setup',
+
+  // ── Setup guide ──
+  'setup.header.exitHint': 'Esc exit setup',
 
   // ── Quick actions ──
   'home.qa.freshSession': 'start a fresh session',
@@ -163,15 +166,6 @@ const Map<String, String> _en = {
   'home.cp.window5h': '5h',
   'home.cp.window7d': '7d',
 
-  // ── Setup ──
-  'home.setup.providerKey': 'provider key',
-  'home.setup.auxModel': 'aux model',
-  'home.setup.webProvider': 'web provider',
-  'home.setup.workspace': 'workspace',
-  'home.setup.connected': 'connected',
-  'home.setup.configured': 'configured',
-  'home.setup.openProject': 'open crux in a project directory',
-
   // ── Git ──
   'home.git.clean': 'clean',
   'home.git.staged': 'staged',
@@ -189,18 +183,21 @@ const Map<String, String> _en = {
   'cmd.compact.desc': 'Compact the context window',
   'cmd.help.desc': 'Show the help sheet (commands, shortcuts, tips)',
   'cmd.home.desc': 'Open the home screen dashboard',
+  'cmd.setup.desc': 'Open the launch setup guide',
   'cmd.theme.desc': 'Change the UI theme',
-  'cmd.provider.desc': 'Connect a provider (usage: /provider <name> [<key>|remove])',
+  'cmd.provider.desc':
+      'Connect a provider (usage: /provider <name> [<key>|remove])',
   'cmd.webProvider.desc':
       'Configure a web provider: /web-provider (list) | '
-          '/web-provider <name> (status) | /web-provider <name> <key> | '
-          '/web-provider <name> remove',
+      '/web-provider <name> (status) | /web-provider <name> <key> | '
+      '/web-provider <name> remove',
   'cmd.think.desc': 'Toggle thinking mode (off|low|normal|adaptive|high|max)',
   'cmd.view.desc': 'Switch chat log display mode (verbose|vibe)',
   'cmd.plan.desc': 'Enter or leave plan mode (split plan doc + chat)',
   'cmd.temperature.desc':
       'Override sampling temperature for the session (clamped 0.0–1.0)',
-  'cmd.auxiliary.desc': 'Select the auxiliary model (for summaries, session names)',
+  'cmd.auxiliary.desc':
+      'Select the auxiliary model (for summaries, session names)',
   'cmd.tldr.desc': 'Generate TLDR for the last AI response',
   'cmd.project.desc': 'Switch to a different project directory',
   'cmd.debug.desc': 'Toggle debug commands on/off',
@@ -241,8 +238,8 @@ const Map<String, String> _en = {
       'Providers: {names}. Usage: /provider <name> [<key>|remove]',
   'toast.providerNotFound':
       'Provider "{name}" not found. Available: {names}. To add it, copy '
-          '~/.config/crux/providers/example.provider.toml to '
-          '~/.config/crux/providers/{name}.toml and edit it.',
+      '~/.config/crux/providers/example.provider.toml to '
+      '~/.config/crux/providers/{name}.toml and edit it.',
   'toast.providerStatus':
       '{name}  [{type}]  endpoint={endpoint}  key={key}  models={models}',
   'toast.keySet': 'set',
@@ -251,8 +248,7 @@ const Map<String, String> _en = {
   'toast.savedKey': 'Saved API key for {name}',
   'toast.providerSyncUnsupported':
       'Provider "{name}" does not support sync. Only openrouter-free does.',
-  'toast.providerSyncPreview':
-      'Stealth-model sync preview:\n{diff}\nRun /provider openrouter-free sync confirm to apply.',
+  'toast.providerSyncPreview': 'Stealth-model sync preview:\n{diff}\nRun /provider openrouter-free sync confirm to apply.',
   'toast.providerSyncNoPending':
       'No pending sync. Run /provider openrouter-free sync first.',
   'toast.providerSyncApplied':
@@ -260,16 +256,13 @@ const Map<String, String> _en = {
   'toast.providerSyncError': 'Provider sync failed: {error}',
   'sync.warnExpired':
       'EXPIRED: {model} expired {date} — remove it or expect 404s',
-  'sync.warnExpiringSoon':
-      '{model} expires {date} (within {days} days)',
-  'sync.warnVanished':
-      '{model} is no longer in OpenRouter\'s catalog',
+  'sync.warnExpiringSoon': '{model} expires {date} (within {days} days)',
+  'sync.warnVanished': '{model} is no longer in OpenRouter\'s catalog',
   'sync.remove': 'remove {model} (gone upstream)',
   'sync.add': 'add {model} (ctx {ctx})',
   'sync.keep': 'keep {model} (refreshed)',
   'sync.noChanges': '(no changes — already in sync)',
-  'toast.quitRunning':
-      'A session is running — click the model button to interrupt, Ctrl+C×2 exits',
+  'toast.quitRunning': 'A session is running — click the model button to interrupt, Ctrl+C×2 exits',
   'toast.quitUnavailable': 'Quit unavailable (no TUI bound)',
   'toast.renameUsage': 'Usage: /rename <new title>',
   'toast.titleUnchanged': 'Title unchanged',
@@ -337,8 +330,7 @@ const Map<String, String> _en = {
   'cmd.plan.sug.recent': 'recent plan',
   'cmd.plan.sug.byName': 'name contains "plan"',
   'toast.webNoProviders': 'No web providers registered.',
-  'toast.webUnknown':
-      'Unknown web provider "{id}".{known} Usage: /web-provider <name> <key>|remove',
+  'toast.webUnknown': 'Unknown web provider "{id}".{known} Usage: /web-provider <name> <key>|remove',
   'toast.webKnown': ' Known: {list}.',
   'toast.webRemovedKey': 'Removed {name} API key.',
   'toast.webSavedKey': 'Saved {name} API key.',
@@ -366,11 +358,9 @@ const Map<String, String> _en = {
 
   // ── Chat chrome ──
   'chat.input.placeholder': 'Type a message...',
-  'chat.input.placeholderImages':
-      'Type message to send with {n} image(s)...',
+  'chat.input.placeholderImages': 'Type message to send with {n} image(s)...',
   'chat.input.ctrlCQuit': 'Press Ctrl+C again to quit...',
-  'chat.input.queueHint':
-      'Enter message to queue — click the model button to interrupt, Ctrl+C×2 to quit',
+  'chat.input.queueHint': 'Enter message to queue — click the model button to interrupt, Ctrl+C×2 to quit',
   'chat.input.interrupted': 'Response was interrupted. Type a new message...',
   'chat.input.paste': 'paste',
   'chat.notes.title': 'my notes',
@@ -420,25 +410,19 @@ const Map<String, String> _en = {
       'Thinking mode: {label}\n(click to cycle through effort levels)',
   'chat.toolbar.throughput':
       'Generation throughput (tokens/sec) and time to first token',
-  'chat.toolbar.codingPlanHint':
-      'Coding-plan usage\n5h: short-window remaining\n1w: weekly remaining\nClick to refresh',
-  'chat.toolbar.creditHint':
-      'Credit balance\nHover for granted / topped-up breakdown\nClick to refresh',
+  'chat.toolbar.codingPlanHint': 'Coding-plan usage\n5h: short-window remaining\n1w: weekly remaining\nClick to refresh',
+  'chat.toolbar.creditHint': 'Credit balance\nHover for granted / topped-up breakdown\nClick to refresh',
   'chat.toolbar.syncModels': '⟳ sync',
-  'chat.toolbar.syncModelsHint':
-      'Sync the OpenRouter model list against its live catalog\n(stealth previews come and go — this refreshes them)',
-  'chat.toolbar.auxRunning':
-      'Auxiliary model: {model}\n(cannot be changed while the agent is responding)',
-  'chat.toolbar.auxIdle':
-      'Auxiliary model: {model}\n(used for /tldr summaries and title generation)',
+  'chat.toolbar.syncModelsHint': 'Sync the OpenRouter model list against its live catalog\n(stealth previews come and go — this refreshes them)',
+  'chat.toolbar.auxRunning': 'Auxiliary model: {model}\n(cannot be changed while the agent is responding)',
+  'chat.toolbar.auxIdle': 'Auxiliary model: {model}\n(used for /tldr summaries and title generation)',
   'chat.toolbar.clickRefresh': 'Click to refresh',
   'chat.toolbar.cacheHit': 'cache {pct}%',
   'chat.toolbar.stalled': 'quiet {secs}s',
   'chat.context.compact': 'Compact',
   'chat.context.skillsNone': 'Loaded skills : none',
   'chat.context.skills': 'Loaded skills : {names}',
-  'chat.context.compactUnavailable':
-      'Context window usage.\nCompaction unavailable while the agent is responding.',
+  'chat.context.compactUnavailable': 'Context window usage.\nCompaction unavailable while the agent is responding.',
   'chat.context.compactAvailable':
       'Context window usage.\nClick to compact the session history.',
   'chat.sessions.sessions': 'Sessions',
@@ -478,8 +462,56 @@ const Map<String, String> _en = {
   'chat.sidebar.git': 'git',
   'chat.sidebar.project': 'project',
   'chat.sidebar.aux': 'aux',
-  'chat.sidebar.auxHint':
-      'Auxiliary model\n(used for /tldr summaries and title generation — click to change)',
+  'chat.sidebar.auxHint': 'Auxiliary model\n(used for /tldr summaries and title generation — click to change)',
+
+  // ── Git review fullpane ──
+  'chat.gitReview.title': 'Git changes · {branch}',
+  'chat.gitReview.all': 'all',
+  'chat.gitReview.unstaged': 'unstaged',
+  'chat.gitReview.noChanges': 'no changes in this view',
+  'chat.gitReview.loading': 'loading changes…',
+  'chat.gitReview.file': 'file',
+  'chat.gitReview.chunk': 'chunk',
+  'chat.gitReview.refresh': 'refresh',
+  'chat.gitReview.generate': 'message',
+  'chat.gitReview.generateMessage': 'generate message',
+  'chat.gitReview.generating': 'generating…',
+  'chat.gitReview.copy': 'copy',
+  'chat.gitReview.stageFile': 'stage file',
+  'chat.gitReview.unstageFile': 'unstage file',
+  'chat.gitReview.stageChunk': 'stage chunk',
+  'chat.gitReview.unstageChunk': 'unstage chunk',
+  'chat.gitReview.resolveInChat': 'resolve in chat',
+  'chat.gitReview.before': 'BEFORE',
+  'chat.gitReview.after': 'AFTER',
+  'chat.gitReview.stagedChanges': 'Staged changes',
+  'chat.gitReview.unstagedChanges': 'Unstaged changes',
+  'chat.gitReview.changeNumber': 'Change {current} of {total}',
+  'chat.gitReview.previewUnavailable': 'Preview unavailable for this file',
+  'chat.gitReview.searchFiles': 'Search files…',
+  'chat.gitReview.noFilesMatch': 'No files match your search',
+  'chat.gitReview.collapseAll': 'Collapse all',
+  'chat.gitReview.expandAll': 'Expand all',
+  'chat.gitReview.legendModified': 'M modified',
+  'chat.gitReview.legendAdded': '+ new',
+  'chat.gitReview.legendDeleted': '- deleted',
+  'chat.gitReview.legendRenamed': 'R renamed',
+  'chat.gitReview.legendUnstaged': '○ unstaged',
+  'chat.gitReview.legendStaged': '● staged',
+  'chat.gitReview.legendPartial': '◐ partial',
+  'chat.gitReview.legendUntracked': '? new',
+  'chat.gitReview.legendConflict': '! conflict',
+  'chat.gitReview.diffTab': 'Changes',
+  'chat.gitReview.commitTab': 'Commit details',
+  'chat.gitReview.commitTitle': 'Commit title',
+  'chat.gitReview.commitDescription': 'Detailed description',
+  'chat.gitReview.noCommitTitle': 'Generate or provide a commit title first',
+  'chat.gitReview.noCommitDescription': 'No detailed description',
+  'chat.gitReview.stagedReady': '{count} staged files ready for review',
+  'chat.gitReview.reviewHint': 'Review the staged diff before committing.',
+  'chat.gitReview.commit': 'Commit',
+  'chat.gitReview.commitAndPush': 'Commit + Push',
+  'chat.gitReview.committing': 'Working…',
 
   // ── Tool detail pane ──
   'chat.tool.pretty': 'Pretty',
@@ -511,8 +543,7 @@ const Map<String, String> _en = {
   'chat.fullpane.placeholder': 'Fullpane placeholder content',
   'chat.compact.counterproductive':
       'Compaction is not worth it — no history to compact.',
-  'chat.compact.saveOnly':
-      'Compaction would save only {pct}% (≈{tokens} tokens) — below the 5% threshold. Skipping.',
+  'chat.compact.saveOnly': 'Compaction would save only {pct}% (≈{tokens} tokens) — below the 5% threshold. Skipping.',
   'chat.compact.failed': 'Compaction failed: {error}',
 
   // ── Run summary (exit box) ──
@@ -553,14 +584,13 @@ const Map<String, String> _en = {
   'cmd.d.monitor.desc': '[debug] Show recent aux shell-monitor runs',
   'cmd.d.providers.desc': '[debug] List all loaded providers and models',
   'cmd.d.tools.desc': '[debug] List all registered tools',
-  'cmd.d.paths.desc': '[debug] Print relevant file paths (DB, providers, project)',
+  'cmd.d.paths.desc':
+      '[debug] Print relevant file paths (DB, providers, project)',
   'cmd.d.env.desc': '[debug] Print environment info (Dart version, platform)',
-  'cmd.d.toast.desc':
-      '[debug] Display a toast — mode (info/error/status) is auto-detected from the message',
+  'cmd.d.toast.desc': '[debug] Display a toast — mode (info/error/status) is auto-detected from the message',
   'cmd.d.fullpane.desc':
       '[debug] Open the fullpane (near-full-screen modal) overlay',
-  'cmd.d.profiler.desc':
-      '[debug] Record per-frame timings: /d-profiler <secs> [path], /d-profiler stop',
+  'cmd.d.profiler.desc': '[debug] Record per-frame timings: /d-profiler <secs> [path], /d-profiler stop',
 
   // ── URL handling (chat history + chat panel) ──
   'toast.urlRefused': 'Refused to open url: {url}',
@@ -573,8 +603,7 @@ const Map<String, String> _en = {
   'chat.history.emptyWithKey': 'No messages yet.',
   'chat.history.emptyHint': 'Type / for commands, @ to mention files.',
   'chat.history.emptyNoKey': 'No provider configured yet.',
-  'chat.history.emptyNoKeyHint':
-      'Run /provider <name> <key> to connect a model — type / to see all commands.',
+  'chat.history.emptyNoKeyHint': 'Run /provider <name> <key> to connect a model — type / to see all commands.',
 
   // ── File manager / file system toasts ──
   'toast.dirNotFoundCwd': 'Directory not found: {path}',
@@ -585,15 +614,13 @@ const Map<String, String> _en = {
 
   // ── Orchestrator-level error / status toasts ──
   'toast.responseInterrupted': 'Response interrupted',
-  'toast.previousTurnStillFinishing':
-      'Previous response is still finishing — text restored, press Enter again to send.',
+  'toast.previousTurnStillFinishing': 'Previous response is still finishing — text restored, press Enter again to send.',
   'toast.failedStartResponse': 'Failed to start response: {error}',
   'toast.unhandledError': 'Unhandled error: {error}',
 
   // ── Manual compact toasts (orchestrator) ──
   'toast.compactNoSession': 'No active session',
-  'toast.compactWhileResponding':
-      'Cannot compact while AI is responding',
+  'toast.compactWhileResponding': 'Cannot compact while AI is responding',
   'toast.compactInProgress': 'Compacting context...',
   'toast.nothingToCompact': 'Nothing to compact',
   'toast.compactDone': 'Compacted — {n} messages (~{post} ← {pre} tokens)',
@@ -601,18 +628,14 @@ const Map<String, String> _en = {
       'Context was getting full — compacted (~{post} ← {pre} tokens)',
 
   // ── BTW (side-question) missing-key toasts ──
-  'toast.btwMissingKey':
-      'No API key for provider "{name}". Use /provider {name} to configure an API key, then try again.',
-  'toast.btwNoProvider':
-      'No configured provider serves model "{model}". Use /provider to configure a provider and API key, then try again.',
+  'toast.btwMissingKey': 'No API key for provider "{name}". Use /provider {name} to configure an API key, then try again.',
+  'toast.btwNoProvider': 'No configured provider serves model "{model}". Use /provider to configure a provider and API key, then try again.',
 
   // ── Clipboard / image-attach toasts ──
-  'toast.clipboardAttached':
-      '📎 Clipboard image attached ({kb} KB). Type your message and press Enter to send.',
+  'toast.clipboardAttached': '📎 Clipboard image attached ({kb} KB). Type your message and press Enter to send.',
   'toast.clipboardEmpty': 'Clipboard is empty or unavailable',
   'toast.clipboardReadFailed': 'Failed to read clipboard: {error}',
-  'toast.imageAttached':
-      '📎 Attached: {label} ({kb} KB). Type your message and press Enter to send.',
+  'toast.imageAttached': '📎 Attached: {label} ({kb} KB). Type your message and press Enter to send.',
   'toast.imageAttachFailed': 'Failed to attach image: {error}',
   'toast.droppedFileMissing': '⚠️ File(s) not found: {names}',
   'toast.droppedSummary': '📎 Dropped: {summary}',
@@ -704,8 +727,7 @@ const Map<String, String> _en = {
 
   // ── Toolbar fixed-temperature chip ──
   'toolbar.fixedTemp.label': 'T:{value} (fixed)',
-  'toolbar.fixedTemp.hint':
-      'Temperature: {value} (fixed by the provider — /temperature has no effect)',
+  'toolbar.fixedTemp.hint': 'Temperature: {value} (fixed by the provider — /temperature has no effect)',
 
   // ── Activity widget week labels ──
   'activity.weekLabel': 'W{n}  ',
@@ -767,7 +789,6 @@ const Map<String, String> _zh = {
   'home.title.notes': '我的笔记',
   'home.title.activity': '活跃度',
   'home.title.codingPlan': '用量计划',
-  'home.title.setup': '快速开始',
   'home.title.settings': '设置',
   'home.title.git': 'Git',
 
@@ -777,6 +798,10 @@ const Map<String, String> _zh = {
   'home.settings.view': '视图',
   'home.settings.language': '语言',
   'home.settings.replyLanguage': '回复语言',
+  'home.settings.openSetup': '设置向导',
+
+  // ── 设置向导 ──
+  'setup.header.exitHint': 'Esc 退出设置',
 
   // ── Quick actions ──
   'home.qa.freshSession': '开始新会话',
@@ -834,15 +859,6 @@ const Map<String, String> _zh = {
   'home.cp.window5h': '5时',
   'home.cp.window7d': '7天',
 
-  // ── Setup ──
-  'home.setup.providerKey': 'API 密钥',
-  'home.setup.auxModel': '辅助模型',
-  'home.setup.webProvider': '搜索服务',
-  'home.setup.workspace': '工作区',
-  'home.setup.connected': '已连接',
-  'home.setup.configured': '已配置',
-  'home.setup.openProject': '在项目目录中打开 crux',
-
   // ── Git ──
   'home.git.clean': '干净',
   'home.git.staged': '已暂存',
@@ -860,11 +876,12 @@ const Map<String, String> _zh = {
   'cmd.compact.desc': '压缩上下文窗口',
   'cmd.help.desc': '显示帮助（命令、快捷键、技巧）',
   'cmd.home.desc': '打开主页仪表盘',
+  'cmd.setup.desc': '打开启动设置向导',
   'cmd.theme.desc': '更换界面主题',
   'cmd.provider.desc': '接入模型提供商（用法：/provider <name> [<key>|remove]）',
   'cmd.webProvider.desc':
       '配置搜索服务：/web-provider (list) | /web-provider <name> (status) | '
-          '/web-provider <name> <key> | /web-provider <name> remove',
+      '/web-provider <name> <key> | /web-provider <name> remove',
   'cmd.think.desc': '切换思考模式（off|low|normal|adaptive|high|max）',
   'cmd.view.desc': '切换对话日志显示模式（verbose|vibe）',
   'cmd.temperature.desc': '覆盖本次会话采样温度（限制 0.0–1.0）',
@@ -907,8 +924,8 @@ const Map<String, String> _zh = {
   'toast.providerList': '提供商：{names}。用法：/provider <name> [<key>|remove]',
   'toast.providerNotFound':
       '未找到提供商 "{name}"。可用：{names}。要添加它，请复制 '
-          '~/.config/crux/providers/example.provider.toml 到 '
-          '~/.config/crux/providers/{name}.toml 并编辑。',
+      '~/.config/crux/providers/example.provider.toml 到 '
+      '~/.config/crux/providers/{name}.toml 并编辑。',
   'toast.providerStatus':
       '{name}  [{type}]  endpoint={endpoint}  key={key}  models={models}',
   'toast.keySet': '已设置',
@@ -918,7 +935,8 @@ const Map<String, String> _zh = {
   'toast.providerSyncUnsupported': '提供商 "{name}" 不支持同步，仅 openrouter-free 支持。',
   'toast.providerSyncPreview':
       'stealth 模型同步预览：\n{diff}\n运行 /provider openrouter-free sync confirm 应用。',
-  'toast.providerSyncNoPending': '没有待应用的同步。请先运行 /provider openrouter-free sync。',
+  'toast.providerSyncNoPending':
+      '没有待应用的同步。请先运行 /provider openrouter-free sync。',
   'toast.providerSyncApplied': '已同步 stealth 模型（+{added} −{removed}）→ {path}',
   'toast.providerSyncError': '提供商同步失败：{error}',
   'sync.warnExpired': '已过期：{model} 于 {date} 过期——请移除，否则会 404',
@@ -955,7 +973,8 @@ const Map<String, String> _zh = {
   'toast.thinkMax': '思考模式：最高',
   'toast.thinkUsage': '用法：/think {levels}（当前：{current}）',
   'toast.tldrNoResponse': '没有可总结的 AI 回复',
-  'toast.tldrUnknownLevel': '未知 /tldr 级别 "{level}"。请用 concise、default 或 detailed。',
+  'toast.tldrUnknownLevel':
+      '未知 /tldr 级别 "{level}"。请用 concise、default 或 detailed。',
   'toast.sessionNotFound': '未找到会话 #{id}',
   'toast.notArchived': '会话 #{id} 未归档',
   'toast.unarchived': '已取消归档 "{title}"',
@@ -1081,10 +1100,8 @@ const Map<String, String> _zh = {
   'chat.context.compact': '压缩',
   'chat.context.skillsNone': '已加载技能：无',
   'chat.context.skills': '已加载技能：{names}',
-  'chat.context.compactUnavailable':
-      '上下文窗口占用。\n回复过程中无法压缩。',
-  'chat.context.compactAvailable':
-      '上下文窗口占用。\n点击压缩会话历史。',
+  'chat.context.compactUnavailable': '上下文窗口占用。\n回复过程中无法压缩。',
+  'chat.context.compactAvailable': '上下文窗口占用。\n点击压缩会话历史。',
   'chat.sessions.sessions': '会话',
   'chat.sessions.chats': '对话',
   'chat.sessions.pinned': '置顶',
@@ -1122,6 +1139,55 @@ const Map<String, String> _zh = {
   'chat.sidebar.project': '项目',
   'chat.sidebar.aux': '辅助',
   'chat.sidebar.auxHint': '辅助模型\n（用于 /tldr 摘要和标题生成——点击更改）',
+
+  // ── Git 审查全屏面板 ──
+  'chat.gitReview.title': 'Git 改动 · {branch}',
+  'chat.gitReview.all': '全部',
+  'chat.gitReview.unstaged': '未暂存',
+  'chat.gitReview.noChanges': '当前视图没有改动',
+  'chat.gitReview.loading': '正在加载改动…',
+  'chat.gitReview.file': '文件',
+  'chat.gitReview.chunk': '区块',
+  'chat.gitReview.refresh': '刷新',
+  'chat.gitReview.generate': '提交信息',
+  'chat.gitReview.generateMessage': '生成提交信息',
+  'chat.gitReview.generating': '正在生成…',
+  'chat.gitReview.copy': '复制',
+  'chat.gitReview.stageFile': '暂存文件',
+  'chat.gitReview.unstageFile': '取消暂存文件',
+  'chat.gitReview.stageChunk': '暂存区块',
+  'chat.gitReview.unstageChunk': '取消暂存区块',
+  'chat.gitReview.resolveInChat': '回到对话中解决冲突',
+  'chat.gitReview.before': '改动前',
+  'chat.gitReview.after': '改动后',
+  'chat.gitReview.stagedChanges': '已暂存的改动',
+  'chat.gitReview.unstagedChanges': '未暂存的改动',
+  'chat.gitReview.changeNumber': '改动 {current} / {total}',
+  'chat.gitReview.previewUnavailable': '暂不支持预览此文件',
+  'chat.gitReview.searchFiles': '搜索文件…',
+  'chat.gitReview.noFilesMatch': '没有匹配的文件',
+  'chat.gitReview.collapseAll': '全部折叠',
+  'chat.gitReview.expandAll': '全部展开',
+  'chat.gitReview.legendModified': 'M 已修改',
+  'chat.gitReview.legendAdded': '+ 新文件',
+  'chat.gitReview.legendDeleted': '- 已删除',
+  'chat.gitReview.legendRenamed': 'R 已重命名',
+  'chat.gitReview.legendUnstaged': '○ 未暂存',
+  'chat.gitReview.legendStaged': '● 已暂存',
+  'chat.gitReview.legendPartial': '◐ 部分暂存',
+  'chat.gitReview.legendUntracked': '? 新文件',
+  'chat.gitReview.legendConflict': '! 冲突',
+  'chat.gitReview.diffTab': '改动内容',
+  'chat.gitReview.commitTab': '提交信息',
+  'chat.gitReview.commitTitle': '提交标题',
+  'chat.gitReview.commitDescription': '详细说明',
+  'chat.gitReview.noCommitTitle': '请先生成或提供提交标题',
+  'chat.gitReview.noCommitDescription': '没有详细说明',
+  'chat.gitReview.stagedReady': '已暂存 {count} 个文件，等待确认',
+  'chat.gitReview.reviewHint': '提交前请先确认已暂存的改动。',
+  'chat.gitReview.commit': '提交',
+  'chat.gitReview.commitAndPush': '提交并推送',
+  'chat.gitReview.committing': '正在执行…',
 
   // ── Tool detail pane ──
   'chat.tool.pretty': '美观',
@@ -1193,11 +1259,9 @@ const Map<String, String> _zh = {
   'cmd.d.tools.desc': '[调试] 列出所有已注册的工具',
   'cmd.d.paths.desc': '[调试] 打印相关文件路径（数据库、提供商、项目）',
   'cmd.d.env.desc': '[调试] 打印环境信息（Dart 版本、平台）',
-  'cmd.d.toast.desc':
-      '[调试] 显示一条 toast——根据消息内容自动判断 info/error/status',
+  'cmd.d.toast.desc': '[调试] 显示一条 toast——根据消息内容自动判断 info/error/status',
   'cmd.d.fullpane.desc': '[调试] 打开 fullpane（近全屏模态）覆盖层',
-  'cmd.d.profiler.desc':
-      '[调试] 记录逐帧耗时：/d-profiler <秒数> [路径]，/d-profiler stop',
+  'cmd.d.profiler.desc': '[调试] 记录逐帧耗时：/d-profiler <秒数> [路径]，/d-profiler stop',
 
   // ── URL 处理（chat 历史 + chat 面板） ──
   'toast.urlRefused': '拒绝打开链接：{url}',
@@ -1210,8 +1274,7 @@ const Map<String, String> _zh = {
   'chat.history.emptyWithKey': '暂无消息。',
   'chat.history.emptyHint': '输入 / 调用命令，输入 @ 引用文件。',
   'chat.history.emptyNoKey': '尚未配置任何提供商。',
-  'chat.history.emptyNoKeyHint':
-      '运行 /provider <名称> <密钥> 接入模型——输入 / 查看所有命令。',
+  'chat.history.emptyNoKeyHint': '运行 /provider <名称> <密钥> 接入模型——输入 / 查看所有命令。',
 
   // ── 文件管理器 / 文件系统 toast ──
   'toast.dirNotFoundCwd': '目录不存在：{path}',
@@ -1222,8 +1285,7 @@ const Map<String, String> _zh = {
 
   // ── 编排层错误 / 状态 toast ──
   'toast.responseInterrupted': '回复已中断',
-  'toast.previousTurnStillFinishing':
-      '上一条回复还在收尾——文本已还原，请再按一次回车发送。',
+  'toast.previousTurnStillFinishing': '上一条回复还在收尾——文本已还原，请再按一次回车发送。',
   'toast.failedStartResponse': '启动回复失败：{error}',
   'toast.unhandledError': '未处理错误：{error}',
 
@@ -1233,22 +1295,17 @@ const Map<String, String> _zh = {
   'toast.compactInProgress': '正在压缩上下文…',
   'toast.nothingToCompact': '没有可压缩的内容',
   'toast.compactDone': '已压缩 {n} 条消息（约 {post} ← {pre} token）',
-  'toast.autoCompactDone':
-      '上下文即将溢出——已自动压缩（约 {post} ← {pre} token）',
+  'toast.autoCompactDone': '上下文即将溢出——已自动压缩（约 {post} ← {pre} token）',
 
   // ── BTW（侧问）缺少密钥 toast ──
-  'toast.btwMissingKey':
-      '提供商 "{name}" 未配置 API 密钥。请用 /provider {name} 配置后重试。',
-  'toast.btwNoProvider':
-      '没有提供商能为模型 "{model}" 提供服务。请用 /provider 配置提供商和密钥后重试。',
+  'toast.btwMissingKey': '提供商 "{name}" 未配置 API 密钥。请用 /provider {name} 配置后重试。',
+  'toast.btwNoProvider': '没有提供商能为模型 "{model}" 提供服务。请用 /provider 配置提供商和密钥后重试。',
 
   // ── 剪贴板 / 图片附件 toast ──
-  'toast.clipboardAttached':
-      '📎 已附加剪贴板图片（{kb} KB）。输入消息后回车即可发送。',
+  'toast.clipboardAttached': '📎 已附加剪贴板图片（{kb} KB）。输入消息后回车即可发送。',
   'toast.clipboardEmpty': '剪贴板为空或不可用',
   'toast.clipboardReadFailed': '读取剪贴板失败：{error}',
-  'toast.imageAttached':
-      '📎 已附加：{label}（{kb} KB）。输入消息后回车即可发送。',
+  'toast.imageAttached': '📎 已附加：{label}（{kb} KB）。输入消息后回车即可发送。',
   'toast.imageAttachFailed': '附加图片失败：{error}',
   'toast.droppedFileMissing': '⚠️ 找不到以下文件：{names}',
   'toast.droppedSummary': '📎 已拖入：{summary}',
@@ -1339,8 +1396,7 @@ const Map<String, String> _zh = {
 
   // ── 工具栏固定温度 chip ──
   'toolbar.fixedTemp.label': 'T:{value}（固定）',
-  'toolbar.fixedTemp.hint':
-      '温度：{value}（由提供商固定——/temperature 不生效）',
+  'toolbar.fixedTemp.hint': '温度：{value}（由提供商固定——/temperature 不生效）',
 
   // ── 活跃度 widget 周标签 ──
   'activity.weekLabel': 'W{n}  ',
