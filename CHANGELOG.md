@@ -8,6 +8,43 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-09-06
+
+40864247
+
+### Features
+
+- **Generative UI surfaces** (`48a386bf`) — agents can create compact,
+  interactive terminal-native surfaces directly in chat or prose: a typed A2UI
+  catalog covers cards, forms, buttons, choice pickers, tables, progress bars,
+  lists, metrics and status badges; data bindings and `surface_update` support
+  live refresh; submitted forms persist as read-only history and Vibe renders
+  tool-created and inline `<a2ui>` surfaces.
+
+- **Reusable dashboard surfaces** (`e1286caa`) — the same surface declaration
+  model now powers app-owned home and plugin content, including responsive
+  dashboard primitives, usage bars, compact list widgets and the gold tracker.
+
+- **ChatGPT Codex OAuth and setup flow** (`f94d080d`) — Crux can authenticate
+  with ChatGPT device-code OAuth, adds guided setup, and includes a reviewed
+  Git commit flow.
+
+### Fixes
+
+- **Surface interaction and layout reliability** (`fa318576`) — clickable
+  `ListItem` rows now dispatch their declared actions (including Home quick
+  actions); provider-mangled payloads, history restoration, focus release,
+  inline parsing, narrow cards and CJK table/progress-bar layout are hardened.
+
+- **Release builds on Windows** (`5becef76`) — the grammar builder now uses
+  MSYS2 MinGW and links the ICU Unicode runtime required by Tree-sitter, so the
+  Windows release bundle builds alongside macOS and Linux.
+
+- **Chat, diagrams and tools** (`5e75f339`) — interrupted HTTP streams release
+  their lease promptly, diagrams retain their highlighted edges, clipboard
+  images remain available while loading, shell output respects its budget, and
+  responsive input/home layout regressions are fixed.
+
 ## [0.56.0] - 2026-09-03
 
 22125675
