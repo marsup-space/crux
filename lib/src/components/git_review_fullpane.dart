@@ -277,9 +277,12 @@ class _GitReviewFullpaneState extends State<GitReviewFullpane> {
     if (files.isEmpty) return;
     final next = index.clamp(0, files.length - 1);
     final path = files[next].path;
-    if (next == _fileIndex && path == _selectedPath) return;
+    final switchToDiff = _paneMode == _GitReviewPaneMode.commit;
+    final selectionChanged = next != _fileIndex || path != _selectedPath;
+    if (!selectionChanged && !switchToDiff) return;
     final rowIndex = _treeRows.indexWhere((row) => row.file?.path == path);
     setState(() {
+      _paneMode = _GitReviewPaneMode.diff;
       _fileIndex = next;
       _selectedPath = path;
       _hunkIndex = 0;
@@ -288,7 +291,9 @@ class _GitReviewFullpaneState extends State<GitReviewFullpane> {
         itemExtent: 1,
       );
     });
-    unawaited(_loadSelectedPatches());
+    if (selectionChanged || _patches.isEmpty) {
+      unawaited(_loadSelectedPatches());
+    }
   }
 
   void _setScope(GitReviewScope scope) {

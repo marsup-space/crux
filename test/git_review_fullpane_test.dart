@@ -289,11 +289,16 @@ void main() {
         expect(text, contains('Commit + Push'));
         expect(text, isNot(contains('Staged changes')));
 
-        final changes = tester.terminalState.findText('Changes').single;
-        await tester.tap(changes.x + 1, changes.y);
-        await tester.pump();
+        // Clicking the already-selected file is an explicit request to inspect
+        // it, so it must leave commit details and return to the staged diff.
+        final selectedFile = tester.terminalState
+            .findText('example.dart')
+            .single;
+        await tester.tap(selectedFile.x + 1, selectedFile.y);
+        await _pumpAsync(tester);
         text = tester.terminalState.getText();
         expect(text, contains('Staged changes'));
+        expect(text, isNot(contains('Commit title')));
 
         final details = tester.terminalState.findText('Commit details').single;
         await tester.tap(details.x + 1, details.y);
