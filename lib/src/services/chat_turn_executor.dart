@@ -25,6 +25,7 @@ import '../utils/partial_json_field_extractor.dart';
 import '../utils/sampling.dart';
 import '../utils/token_estimate.dart';
 import 'auxiliary_service.dart';
+import 'chat_stream_metrics.dart';
 import 'install_slug.dart';
 import 'llm_client.dart';
 import 'llm_error.dart';
@@ -614,8 +615,6 @@ class ChatTurnExecutor {
     DateTime? roundLastReasoningTime;
     DateTime? roundLastDeltaTime;
 
-    var firstTokenEver = true;
-
     void stopActiveRound({bool accumulate = false}) {
       if (accumulate &&
           runtime.roundStreaming &&
@@ -1019,11 +1018,10 @@ class ChatTurnExecutor {
               );
             }
 
-            if (chunk.textDelta != null ||
-                chunk.reasoningContent != null ||
-                chunk.toolUse != null) {
+            if (isModelOutputChunk(chunk)) {
               final now = DateTime.now();
               runtime.lastChunkTime = now;
+              recordFirstModelOutput(runtime, chunk, now: now);
               if (runtime.roundFirstTokenTime == null) {
                 runtime.roundFirstTokenTime = now;
                 roundFirstDeltaTime = now;
@@ -1070,17 +1068,7 @@ class ChatTurnExecutor {
                   break;
                 }
               }
-              if (firstTokenEver &&
-                  (chunk.textDelta != null || chunk.reasoningContent != null)) {
-                final now = DateTime.now();
-                final elapsed =
-                    now.difference(runtime.responseStartTime!).inMicroseconds /
-                    1000.0;
-                runtime.ttftMs = elapsed;
-                runtime.ttftReceived = true;
-                runtime.firstTokenTime = now;
-                firstTokenEver = false;
-              }
+
               if (chunk.textDelta != null) {
                 roundTextBuffer.write(chunk.textDelta);
                 checkRepetition(chunk.textDelta!);
