@@ -67,7 +67,9 @@ jobs:
         with:
           msystem: UCRT64
           update: true
-          install: mingw-w64-ucrt-x86_64-gcc
+          # tree-sitter v0.26's Unicode implementation includes ICU headers
+          # on Windows; install the UCRT64 headers/libraries alongside GCC.
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-icu
           path-type: inherit
 
       - name: Cache pub packages
