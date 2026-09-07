@@ -42,15 +42,20 @@ CodingPlanUsage parseCodexCodingPlanUsage(
     addWindow(map);
     addWindow(map['primary']);
     addWindow(map['secondary']);
+    addWindow(map['primary_window']);
+    addWindow(map['secondary_window']);
     for (final entry in map.values) {
       if (entry is Map) {
         final nested = Map<String, dynamic>.from(entry);
         addWindow(nested['primary']);
         addWindow(nested['secondary']);
+        addWindow(nested['primary_window']);
+        addWindow(nested['secondary_window']);
       }
     }
   }
 
+  collect(root['rate_limit']);
   collect(root['rate_limits']);
   collect(root['rateLimits']);
   collect(root['rateLimitsByLimitId']);
@@ -67,7 +72,10 @@ CodingPlanUsage parseCodexCodingPlanUsage(
         window['window_minutes'] ??
         window['windowMinutes'] ??
         window['windowDurationMins'];
-    return value is num ? value.round() : 0;
+    if (value is num) return value.round();
+    final seconds =
+        window['limit_window_seconds'] ?? window['limitWindowSeconds'];
+    return seconds is num ? (seconds / 60).round() : 0;
   }
 
   // The short window is normally 300 minutes and the long one is normally a
@@ -102,12 +110,19 @@ CodingPlanUsage parseCodexCodingPlanUsage(
       (100 - ((window['used_percent'] ?? window['usedPercent']) as num).round())
           .clamp(0, 100);
   Duration? reset(Map<String, dynamic> window) {
-    final seconds = window['resets_at'] ?? window['resetsAt'];
-    if (seconds is! num) return null;
-    final at = DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
-    return at.difference(fetchedAt).isNegative
-        ? Duration.zero
-        : at.difference(fetchedAt);
+    final seconds =
+        window['resets_at'] ??
+        window['resetsAt'] ??
+        window['reset_at'] ??
+        window['resetAt'];
+    if (seconds is num) {
+      final at = DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
+      return at.difference(fetchedAt).isNegative
+          ? Duration.zero
+          : at.difference(fetchedAt);
+    }
+    final after = window['reset_after_seconds'] ?? window['resetAfterSeconds'];
+    return after is num ? Duration(seconds: after.round()) : null;
   }
 
   return CodingPlanUsage(

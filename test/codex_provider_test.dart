@@ -53,6 +53,31 @@ void main() {
       expect(usage.hasWeeklyWindow, isTrue);
     });
 
+    test('parses the current wham usage response shape', () {
+      final usage = parseCodexCodingPlanUsage({
+        'rate_limit': {
+          'allowed': true,
+          'primary_window': {
+            'used_percent': 18,
+            'limit_window_seconds': 18000,
+            'reset_after_seconds': 3600,
+          },
+          'secondary_window': {
+            'used_percent': 68,
+            'limit_window_seconds': 604800,
+            'reset_at': 7200,
+          },
+        },
+      }, now: DateTime.fromMillisecondsSinceEpoch(0));
+
+      expect(usage.intervalRemainingPct, 82);
+      expect(usage.weeklyRemainingPct, 32);
+      expect(usage.intervalRemains, const Duration(hours: 1));
+      expect(usage.weeklyRemains, const Duration(hours: 2));
+      expect(usage.hasIntervalWindow, isTrue);
+      expect(usage.hasWeeklyWindow, isTrue);
+    });
+
     test('does not relabel a weekly-only rate limit as a five-hour limit', () {
       final usage = parseCodexCodingPlanUsage({
         'rateLimitsByLimitId': {
