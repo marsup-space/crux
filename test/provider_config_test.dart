@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:test/test.dart';
 import 'package:crux/src/models/provider_config.dart';
 import 'package:crux/src/services/provider_config_loader.dart';
@@ -234,14 +235,11 @@ void main() {
       expect(r.wire, WireFamily.openaiCompatible);
     });
 
-    test(
-      'anthropic_compatible → AnthropicCompatibleProvider + anthropicCompatible',
-      () {
-        final r = resolveProvider('anthropic_compatible');
-        expect(r.provider, isA<AnthropicCompatibleProvider>());
-        expect(r.wire, WireFamily.anthropicCompatible);
-      },
-    );
+    test('anthropic_compatible → AnthropicCompatibleProvider + anthropicCompatible', () {
+      final r = resolveProvider('anthropic_compatible');
+      expect(r.provider, isA<AnthropicCompatibleProvider>());
+      expect(r.wire, WireFamily.anthropicCompatible);
+    });
 
     test('deepseek → DeepSeekProvider + responsesApi wire', () {
       final r = resolveProvider('deepseek');
@@ -438,9 +436,8 @@ id = "gpt-4o"
 name = "GPT-4o"
 context_size = 128000
 ''');
-      await File(
-        '${tempDir.path}/example.provider.toml',
-      ).writeAsString('reference template, must be ignored');
+      await File('${tempDir.path}/example.provider.toml')
+          .writeAsString('reference template, must be ignored');
       await loader.loadAll();
       expect(loader.providerByName('openai'), isNotNull);
 
@@ -1146,6 +1143,11 @@ context_size = 8192
         ]),
       );
       for (final model in codex.models) {
+        expect(
+          model.contextSize,
+          256000,
+          reason: '${model.id} must match Codex\'s 256k context window',
+        );
         expect(
           model.streamLerp,
           isTrue,
