@@ -15,6 +15,7 @@ import 'package:crux/src/theme/crux_theme.dart';
 import 'package:crux/src/theme/theme_config_store.dart';
 import 'package:crux/src/theme/theme_controller.dart';
 import 'package:crux/src/theme/theme_registry.dart';
+import 'package:crux/src/version.dart';
 
 void main() {
   late Directory tempDir;
@@ -95,7 +96,7 @@ void main() {
       );
       // Home's hero (version line) confirms the screen is up.
       expect(
-        tester.terminalState.findText('v0.').isNotEmpty,
+        tester.terminalState.findText('v$kCruxVersion').isNotEmpty,
         isTrue,
         reason: 'home hero should render the version label',
       );
