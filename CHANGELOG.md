@@ -8,6 +8,22 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [1.0.0-rc.2] - 2026-09-07
+
+1666787e
+
+### Fixes
+
+- **Codex coding-plan usage** (`ee27d511`) — support the current
+  `/backend-api/wham/usage` response shape, including singular `rate_limit`,
+  `primary_window` / `secondary_window`, second-based window lengths, and the
+  latest reset-time fields, restoring the five-hour and weekly usage readout.
+
+- **Release version assertion** (`1666787e`) — make the home-screen release
+  gate assert the generated Crux version instead of a stale `v0.` prefix, so
+  candidate releases continue to pass the full suite after the 1.0 version
+  transition.
+
 ## [1.0.0-rc.1] - 2026-09-06
 
 40864247

@@ -54,7 +54,7 @@ curl -fsSL .../install.sh | bash -s -- --no-modify-path
 
 环境变量（与参数等效，CI / Docker 场景常用）：
 
-- `CRUX_VERSION=v1.0.0-rc.1` 锁定版本（默认 `latest`）
+- `CRUX_VERSION=v1.0.0-rc.2` 锁定版本（默认 `latest`）
 - `CRUX_INSTALL_DIR=...` 改安装目录（默认 `~/.crux/bin`）
 - `CRUX_REPO=marsup-space/crux` 改源仓库
 - `CRUX_NO_PATH_UPDATE=1` 跳过自动改 PATH（CI、Docker 场景）
@@ -314,7 +314,7 @@ curl -fsSL .../install.sh | bash -s -- --no-modify-path
 
 Environment variables (equivalent to flags; common in CI / Docker):
 
-- `CRUX_VERSION=v1.0.0-rc.1` — pin a version (default: `latest`)
+- `CRUX_VERSION=v1.0.0-rc.2` — pin a version (default: `latest`)
 - `CRUX_INSTALL_DIR=...` — override the install directory (default `~/.crux/bin`)
 - `CRUX_REPO=marsup-space/crux` — change the source repository
 - `CRUX_NO_PATH_UPDATE=1` — skip the automatic PATH modification (useful for CI / Docker)
