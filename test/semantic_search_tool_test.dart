@@ -44,7 +44,7 @@ void main() {
     test(
       'finds semantic matches across a repo',
       () async {
-        final repo = '/Users/developer/Projects/crux/.research/semble';
+        final repo = '${Directory.current.path}/.research/semble';
         if (!Directory(repo).existsSync()) {
           markTestSkipped('semble source not available at $repo');
           return;
@@ -97,7 +97,7 @@ void main() {
     test(
       'respects .gitignore: files inside gitignored dirs are not indexed',
       () async {
-        final repo = '/Users/developer/Projects/crux';
+        final repo = Directory.current.path;
         if (!Directory(repo).existsSync()) {
           markTestSkipped('crux repo not available at $repo');
           return;

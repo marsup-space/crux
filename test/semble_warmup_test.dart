@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:test/test.dart';
 import 'package:crux/src/tools/semble_warmup.dart';
 
@@ -13,7 +15,7 @@ void main() {
         // Use a path that will make warmup do real work (a small repo),
         // but the assertion is that start() itself returns in well under
         // a second. We then await so the test cleans up.
-        final repo = '/Users/developer/Projects/crux/.research/semble';
+        final repo = '${Directory.current.path}/.research/semble';
 
         final t0 = DateTime.now();
         final future = SembleWarmup.instance.start(repo);
@@ -94,7 +96,7 @@ void main() {
       () async {
         // Use a real repo so refresh actually does work. The point is
         // that refresh() itself returns in <500ms.
-        final repo = '/Users/developer/Projects/crux/.research/semble';
+        final repo = '${Directory.current.path}/.research/semble';
 
         final t0 = DateTime.now();
         SembleWarmup.instance.refresh(repo);

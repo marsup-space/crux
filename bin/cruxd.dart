@@ -1,4 +1,4 @@
-// cruxd — the Crux sidecar daemon (plan: crux daemon.md).
+// cruxd — the Crux sidecar daemon.
 //
 // Usage:
 //   cruxd serve          run the daemon (spawned by Crux instances on

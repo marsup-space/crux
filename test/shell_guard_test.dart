@@ -113,7 +113,7 @@ void main() {
       // operation (grep). Flagged as grep because grep is the
       // primary tool the LLM picked.
       const cases = <String>[
-        'cd /Users/developer/Projects/crux && grep -rn "TODO" lib/',
+        'cd /Users/alice/Projects/crux && grep -rn "TODO" lib/',
         'cd /path && grep "auth" src/',
         'cd /path && rg "TODO" lib/',
       ];
@@ -130,7 +130,7 @@ void main() {
       // first segment being `cd` (a shell-script verb). The grep
       // is one step in a larger workflow and should NOT trigger
       // the guard.
-      final cmd = '''cd /Users/developer/Projects/crux
+      final cmd = '''cd /Users/alice/Projects/crux
 echo "=== Final check: any remaining semble_search references? ==="
 grep -rn "semble_search\\|SembleSearchTool" lib test --include=*.dart 2>/dev/null
 echo "(should be empty)"''';

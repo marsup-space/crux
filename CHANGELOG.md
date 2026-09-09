@@ -1780,7 +1780,7 @@ d93b665
   single-round, multi-round, mixed `tool_call + content`,
   auto-emit-pending, system-role filtering) and
   `test/vibe_box_test.dart` (VibeBox rendering shape +
-  active styling). The design doc is `docs/design-vibe-mode.md`.
+  active styling).
 
 - **Cross-session file write attribution in read +
   edit/write guard** (`1da2322`) — when the read-before-write
@@ -1878,11 +1878,7 @@ d93b665
   `test/chat_log_builder_test.dart` verifying the
   `[UNKNOWN TOOL]` body is dropped from the compacted
   log the same way the existing early-abort filter drops
-  file-guard bodies. `docs/design-streaming-guards.md`
-  reason-taxonomy table gains the unknown-tool row;
-  Non-Goals clarifies that file-guard checks stay
-  edit/write-only while the unknown-tool check is a
-  separate concern that applies broadly.
+  file-guard bodies.
 
 - **Project-committed skills via `.claude/skills/` and
   `.agents/skills/`** (`da4530e`) — extends the 0.12.0
@@ -2221,8 +2217,7 @@ a04290e
   instead of dropping the whole entry — so text after the token
   survives. Four regression tests added under
   `applyQuickReplyTokens — code spans inside the LABEL` in
-  `test/utils/quick_reply_parser_test.dart`. See
-  `docs/quick-reply-label-rendering-bug.md` for the full postmortem.
+  `test/utils/quick_reply_parser_test.dart`.
 
 ## [0.11.6] - 2026-07-07
 
@@ -2773,8 +2768,7 @@ e0e541d
   idle / 60 min max. `LlmClient.streamChat` reads the values
   off the `ProviderConfig`; the max-duration error message now
   uses a `_formatMaxDuration` helper so overridden values (e.g.
-  25 min, 30 s) render readably. See
-  `docs/llm-error-mapping.md` for the field reference.
+  25 min, 30 s) render readably.
 
 ### Fixes
 
@@ -2823,7 +2817,7 @@ e0e541d
   you never have to type out an answer the agent already wrote for
   you. The parser was rewritten so buttons whose labels contain
   inline code (e.g. `ask://run-test{run `npm test`}`) render
-  correctly. See `docs/design-quick-reply.md` for the full spec.
+  correctly.
 
 - **Compaction that pays off the longer you use Crux** (`554914a`) —
   long sessions no longer get worse over time. Crux now rebuilds
@@ -2862,8 +2856,7 @@ e0e541d
   language (rateLimit, auth, contextLength, overloaded, serverError,
   timeout, network, …), so "rate limited" reads as "rate limited"
   no matter which model you're on — and Crux can act on it
-  (e.g., suggest `/compact` for context-length errors). See
-  `docs/llm-error-mapping.md` for the cross-vendor reference.
+  (e.g., suggest `/compact` for context-length errors).
 
 - **Markdown links that look like links** (`77f3667`) — `[label](url)`
   now renders as just the label (no more "(url)" suffix cluttering

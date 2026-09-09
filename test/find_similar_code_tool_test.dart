@@ -55,7 +55,7 @@ void main() {
     test(
       'finds chunks similar to a known location in a repo',
       () async {
-        final repo = '/Users/developer/Projects/crux/.research/semble';
+        final repo = '${Directory.current.path}/.research/semble';
         if (!Directory(repo).existsSync()) {
           markTestSkipped('semble source not available at $repo');
           return;
@@ -81,7 +81,7 @@ void main() {
     test(
       'returns clean error when anchor line is out of range',
       () async {
-        final repo = '/Users/developer/Projects/crux/.research/semble';
+        final repo = '${Directory.current.path}/.research/semble';
         if (!Directory(repo).existsSync()) {
           markTestSkipped('semble source not available at $repo');
           return;

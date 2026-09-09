@@ -46,7 +46,7 @@ void main() {
     await store.messageStore.addMessage(
       sessionA,
       role: 'user',
-      content: 'the lsp hangs on /Users/developer',
+      content: 'the lsp hangs on /Users/alice',
     );
     await store.messageStore.addMessage(
       sessionA,
@@ -68,7 +68,7 @@ void main() {
     await store.messageStore.addMessage(
       sessionA,
       role: 'tool',
-      content: 'developer 12345 ... dart --observe bin/crux.dart',
+      content: 'alice 12345 ... dart --observe bin/crux.dart',
       toolCallId: 'toolu_1',
     );
 
@@ -227,7 +227,7 @@ void main() {
       'sessionId': sessionA,
       'limit': 10,
     }, ctxOf(sessionB));
-    expect(result.output, contains('the lsp hangs on /Users/developer'));
+    expect(result.output, contains('the lsp hangs on /Users/alice'));
     expect(result.output, contains('Let me check the language server status'));
     expect(result.output, contains('tool_calls:'));
     expect(result.output, contains('bash'));
@@ -246,7 +246,7 @@ void main() {
       'sessionId': sessionA,
       'role': 'tool',
     }, ctxOf(sessionB));
-    expect(result.output, contains('developer 12345'));
+    expect(result.output, contains('alice 12345'));
     expect(result.output, isNot(contains('the lsp hangs')));
   });
 
@@ -257,7 +257,7 @@ void main() {
       //   1: user "the lsp hangs..."
       //   2: assistant "Let me check the language server status."
       //   3: tool_call bash with "ps aux | grep dart"
-      //   4: tool result "developer 12345 ... dart --observe bin/crux.dart"
+      //   4: tool result "alice 12345 ... dart --observe bin/crux.dart"
       // With limit=2 we expect the LATEST two (ids 3 and 4), not the
       // first two (ids 1 and 2). This locks in the "tail of the
       // session" semantic.
@@ -269,11 +269,11 @@ void main() {
       expect(tail.metadata['returned'], 2);
       expect(tail.metadata['total'], 4);
       // The earliest two must NOT be present.
-      expect(tail.output, isNot(contains('the lsp hangs on /Users/developer')));
+      expect(tail.output, isNot(contains('the lsp hangs on /Users/alice')));
       expect(tail.output, isNot(contains('language server status')));
       // The latest two MUST be present.
       expect(tail.output, contains('ps aux | grep dart'));
-      expect(tail.output, contains('developer 12345'));
+      expect(tail.output, contains('alice 12345'));
       // And the footer should point the caller at the next page
       // (the oldest id on this page = the cursor to walk back from).
       expect(tail.output, contains('beforeId=3'));
@@ -293,7 +293,7 @@ void main() {
       'limit': 10,
     }, ctxOf(sessionB));
     expect(head.metadata['returned'], 2);
-    expect(head.output, contains('the lsp hangs on /Users/developer'));
+    expect(head.output, contains('the lsp hangs on /Users/alice'));
     expect(head.output, contains('Let me check the language server status'));
     expect(head.output, isNot(contains('ps aux | grep dart')));
     // Nothing more to show below the cursor, so no pagination hint.
@@ -402,7 +402,7 @@ void main() {
       }, ctxOf(sessionB));
       expect(result.metadata['totalMessages'], 7);
       // The two oldest must NOT be present.
-      expect(result.output, isNot(contains('the lsp hangs on /Users/developer')));
+      expect(result.output, isNot(contains('the lsp hangs on /Users/alice')));
       expect(result.output, isNot(contains('language server status')));
       // The two latest MUST be present.
       expect(result.output, contains('tail reply 1'));

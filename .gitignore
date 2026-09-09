@@ -28,9 +28,14 @@ design/
 
 # Local scratch output
 .worktrees/
-warmup.log
+*.log
 # `script` command default transcript (created when run without a filename)
 typescript
+/tmp/
+
+# Local release builds. Published binaries are produced by the release workflow.
+/bin/*.dill
+/bin/*.exe
 
 # GitNexus agent runtime artifacts (auto-generated context for AI agents)
 # The agent (Crux/Claude/Codex/...) reads/writes these locally; they must

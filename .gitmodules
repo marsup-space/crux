@@ -1,12 +1,12 @@
 [submodule "nocterm"]
 	path = nocterm
-	url = git@github.com:marsup-space/nocterm.git
+	url = https://github.com/marsup-space/nocterm.git
 [submodule "textmate_highlight"]
 	path = textmate_highlight
-	url = git@github.com:marsup-space/textmate_highlight.git
+	url = https://github.com/marsup-space/textmate_highlight.git
 [submodule "dart-jieba"]
 	path = dart-jieba
-	url = git@github.com:marsup-space/dart-jieba.git
+	url = https://github.com/marsup-space/dart-jieba.git
 [submodule "semble-dart"]
 	path = semble-dart
-	url = git@github.com:marsup-space/semble-dart.git
+	url = https://github.com/marsup-space/semble-dart.git
