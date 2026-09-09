@@ -680,9 +680,8 @@ class _StreamingBubbleState extends State<StreamingBubble> {
   /// can't use `jsonDecode`. Instead, we do a simple regex search
   /// for `"intent":"..."` or `"intent": "..."`.
   String? _tryExtractIntent(String partialJson) {
-    final match = RegExp(
-      r'"intent"\s*:\s*"((?:[^"\\]|\\.)*)"',
-    ).firstMatch(partialJson);
+    final match = RegExp(r'"intent"\s*:\s*"((?:[^"\\]|\\.)*)"')
+        .firstMatch(partialJson);
     if (match == null) return null;
     final raw = match.group(1);
     if (raw == null || raw.isEmpty) return null;

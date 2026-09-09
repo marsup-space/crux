@@ -362,7 +362,10 @@ class ChatTurnOrchestrator {
               rt.turnsSinceLastCompact = 0;
             } catch (e) {
               rt.turnsSinceLastCompact = 1;
-              _showToast(_strings.t('chat.compact.failed', {'error': '$e'}), mode: ToastMode.error);
+              _showToast(
+                _strings.t('chat.compact.failed', {'error': '$e'}),
+                mode: ToastMode.error,
+              );
               _refresh();
               return;
             }
@@ -812,8 +815,8 @@ class ChatTurnOrchestrator {
                   role: 'stream_error',
                   content: error.toUserMessage(),
                   error: error.toJson(),
-                  model: session?.model ??
-                      _sessionController.currentSession.model,
+                  model:
+                      session?.model ?? _sessionController.currentSession.model,
                   tokensIn: promptTokens,
                   tokensOut: completionTokens,
                   reasoningTokens: reasoningTokens,
@@ -841,9 +844,8 @@ class ChatTurnOrchestrator {
                         sessionId,
                         tokensIn: session.tokensIn + promptTokens,
                         tokensOut: session.tokensOut + completionTokens,
-                        contextTokens: promptTokens +
-                            completionTokens -
-                            reasoningTokens,
+                        contextTokens:
+                            promptTokens + completionTokens - reasoningTokens,
                       ),
                     );
                     session.tokensIn += promptTokens;
@@ -889,8 +891,8 @@ class ChatTurnOrchestrator {
                 sessionId,
                 role: 'stream_error',
                 content: '$e',
-                model: session?.model ??
-                    _sessionController.currentSession.model,
+                model:
+                    session?.model ?? _sessionController.currentSession.model,
                 tokensIn: promptTokens,
                 tokensOut: completionTokens,
                 reasoningTokens: reasoningTokens,
@@ -910,9 +912,8 @@ class ChatTurnOrchestrator {
                       sessionId,
                       tokensIn: session.tokensIn + promptTokens,
                       tokensOut: session.tokensOut + completionTokens,
-                      contextTokens: promptTokens +
-                          completionTokens -
-                          reasoningTokens,
+                      contextTokens:
+                          promptTokens + completionTokens - reasoningTokens,
                     ),
                   );
                   session.tokensIn += promptTokens;
@@ -973,7 +974,10 @@ class ChatTurnOrchestrator {
         reason: CompactionReason.manual,
       );
       if (result == null) {
-        _showToast(_strings.t('toast.nothingToCompact'), mode: ToastMode.status);
+        _showToast(
+          _strings.t('toast.nothingToCompact'),
+          mode: ToastMode.status,
+        );
         return;
       }
       // ContextBar reads MetricsCubit, while the compaction service updates
@@ -990,8 +994,7 @@ class ChatTurnOrchestrator {
       }
       _showToast(
         _strings.t('toast.compactDone', {
-          'n':
-              '${result.sourceEndMessageId - result.sourceStartMessageId + 1}',
+          'n': '${result.sourceEndMessageId - result.sourceStartMessageId + 1}',
           'post': '${result.postEstimateTokens}',
           'pre': '${result.preTokens}',
         }),
@@ -1000,7 +1003,10 @@ class ChatTurnOrchestrator {
       await _sessionController.loadMessages(sessionId);
       _refresh();
     } catch (e) {
-      _showToast(_strings.t('chat.compact.failed', {'error': '$e'}), mode: ToastMode.error);
+      _showToast(
+        _strings.t('chat.compact.failed', {'error': '$e'}),
+        mode: ToastMode.error,
+      );
     }
   }
 

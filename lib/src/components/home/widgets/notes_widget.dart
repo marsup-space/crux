@@ -142,11 +142,15 @@ class _NotesHomeViewState extends State<_NotesHomeView> {
               todos.isEmpty
                   ? component.strings.t('home.notes.noTodos')
                   : component.strings.t(
-                      todos.length == 1 ? 'home.notes.todo' : 'home.notes.todos',
+                      todos.length == 1
+                          ? 'home.notes.todo'
+                          : 'home.notes.todos',
                       {'n': '${todos.length}'},
                     ),
               style: TextStyle(
-                color: todos.isEmpty ? theme.onSurfaceDim : theme.onSurfaceVariant,
+                color: todos.isEmpty
+                    ? theme.onSurfaceDim
+                    : theme.onSurfaceVariant,
               ),
             ),
             const Spacer(),
@@ -170,9 +174,7 @@ class _NotesHomeViewState extends State<_NotesHomeView> {
             // reflects the change (and the shared component keeps the
             // checked row visible for the undo window).
             unawaited(
-              done
-                  ? service.markTodoDone(line)
-                  : service.markTodoOpen(line),
+              done ? service.markTodoDone(line) : service.markTodoOpen(line),
             );
           },
           color: theme.onSurfaceVariant,

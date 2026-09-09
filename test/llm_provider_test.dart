@@ -80,25 +80,22 @@ void main() {
     });
 
     group('system message handling', () {
-      test(
-        'promotes a system message to the top-level `system` array with cache_control',
-        () {
-          final body = provider.buildRequestBody(
-            'claude-sonnet-4-6',
-            systemAndUser,
-            thinkingMode: 'enabled',
-            reasoningEffort: 'normal',
-          );
-          final system = body['system'] as List;
-          expect(system, hasLength(1));
-          expect(system.first['type'], 'text');
-          expect(system.first['text'], 'be brief');
-          expect(system.first['cache_control'], {'type': 'ephemeral'});
-          final chat = body['messages'] as List;
-          expect(chat, hasLength(1));
-          expect(chat.first['role'], 'user');
-        },
-      );
+      test('promotes a system message to the top-level `system` array with cache_control', () {
+        final body = provider.buildRequestBody(
+          'claude-sonnet-4-6',
+          systemAndUser,
+          thinkingMode: 'enabled',
+          reasoningEffort: 'normal',
+        );
+        final system = body['system'] as List;
+        expect(system, hasLength(1));
+        expect(system.first['type'], 'text');
+        expect(system.first['text'], 'be brief');
+        expect(system.first['cache_control'], {'type': 'ephemeral'});
+        final chat = body['messages'] as List;
+        expect(chat, hasLength(1));
+        expect(chat.first['role'], 'user');
+      });
     });
 
     group('prompt cache breakpoints', () {
@@ -821,20 +818,17 @@ void main() {
         );
       });
 
-      test(
-        'returns the original list reference when no empty assistant '
-        'messages are present',
-        () {
-          final messages = [
-            {'role': 'user', 'content': 'hi'},
-            {'role': 'assistant', 'content': 'hello'},
-          ];
-          expect(
-            identical(provider.sanitizeMessages(messages), messages),
-            isTrue,
-          );
-        },
-      );
+      test('returns the original list reference when no empty assistant '
+          'messages are present', () {
+        final messages = [
+          {'role': 'user', 'content': 'hi'},
+          {'role': 'assistant', 'content': 'hello'},
+        ];
+        expect(
+          identical(provider.sanitizeMessages(messages), messages),
+          isTrue,
+        );
+      });
     },
   );
 
@@ -935,11 +929,10 @@ void main() {
       // The thinking and text blocks are preserved; tool_use is gone.
       expect(out[1]['role'], 'assistant');
       final keptContent = (out[1]['content'] as List).cast<Map>();
-      expect(
-        keptContent.map((b) => b['type']),
-        ['thinking', 'text'],
-        reason: 'thinking + text survive, tool_use dropped',
-      );
+      expect(keptContent.map((b) => b['type']), [
+        'thinking',
+        'text',
+      ], reason: 'thinking + text survive, tool_use dropped');
       // The interrupting user message is preserved verbatim.
       expect(out[2]['content'], 'try again');
     });
@@ -1148,11 +1141,10 @@ void main() {
       final origContent = (originalAssistant['content'] as List)
           .cast<Map<String, dynamic>>();
       expect(origContent, hasLength(2));
-      expect(
-        origContent.map((b) => b['type']),
-        ['thinking', 'tool_use'],
-        reason: 'original must not be mutated in place',
-      );
+      expect(origContent.map((b) => b['type']), [
+        'thinking',
+        'tool_use',
+      ], reason: 'original must not be mutated in place');
     });
   });
 
@@ -1617,24 +1609,21 @@ void main() {
       // Regression for deepseek-v4-flash-vision-exp support: the
       // OpenAI-IR blocks produced by wire_format.dart must become
       // Responses-API `input_image` parts.
-      final body = provider.buildRequestBody(
-        'deepseek-v4-flash-vision-exp',
-        [
-          {
-            'role': 'user',
-            'content': [
-              {'type': 'text', 'text': 'What is this?'},
-              {
-                'type': 'image_url',
-                'image_url': {
-                  'url': 'data:image/png;base64,ABC123',
-                  'detail': 'low',
-                },
+      final body = provider.buildRequestBody('deepseek-v4-flash-vision-exp', [
+        {
+          'role': 'user',
+          'content': [
+            {'type': 'text', 'text': 'What is this?'},
+            {
+              'type': 'image_url',
+              'image_url': {
+                'url': 'data:image/png;base64,ABC123',
+                'detail': 'low',
               },
-            ],
-          },
-        ],
-      );
+            },
+          ],
+        },
+      ]);
       final input = body['input'] as List;
       expect(input, hasLength(1));
       expect(input[0], {
@@ -1651,28 +1640,19 @@ void main() {
     });
 
     test('converts legacy string image_url to input_image', () {
-      final body = provider.buildRequestBody(
-        'deepseek-v4-flash-vision-exp',
-        [
-          {
-            'role': 'user',
-            'content': [
-              {
-                'type': 'image_url',
-                'image_url': 'data:image/jpeg;base64,XYZ789',
-              },
-            ],
-          },
-        ],
-      );
+      final body = provider.buildRequestBody('deepseek-v4-flash-vision-exp', [
+        {
+          'role': 'user',
+          'content': [
+            {'type': 'image_url', 'image_url': 'data:image/jpeg;base64,XYZ789'},
+          ],
+        },
+      ]);
       final input = body['input'] as List;
       expect(input[0], {
         'role': 'user',
         'content': [
-          {
-            'type': 'input_image',
-            'image_url': 'data:image/jpeg;base64,XYZ789',
-          },
+          {'type': 'input_image', 'image_url': 'data:image/jpeg;base64,XYZ789'},
         ],
       });
     });
@@ -1783,18 +1763,14 @@ void main() {
             );
             final expected = base.mapEffort(effort);
             // All efforts always produce output_config.effort.
-            expect(
-              body['output_config'],
-              {'effort': expected},
-              reason: 'effort=$effort should map to wire $expected',
-            );
+            expect(body['output_config'], {
+              'effort': expected,
+            }, reason: 'effort=$effort should map to wire $expected');
             // normal → adaptive, others → enabled + budget.
             if (effort == 'normal') {
-              expect(
-                body['thinking'],
-                {'type': 'adaptive'},
-                reason: 'effort=normal should use adaptive thinking',
-              );
+              expect(body['thinking'], {
+                'type': 'adaptive',
+              }, reason: 'effort=normal should use adaptive thinking');
             } else {
               expect(
                 body['thinking']['type'],
@@ -1904,32 +1880,29 @@ void main() {
       expect(content.last['cache_control'], {'type': 'ephemeral'});
     });
 
-    test(
-      'reasoningPresetsFor M3 maps normal → adaptive, others stay identity',
-      () {
-        // Adaptive is an M3-only feature. The UI shows the
-        // `adaptive` label (renamed from `normal`) only when the
-        // active model is M3. The labels come from minimax.toml's
-        // [models.reasoning_labels] — not hardcoded.
-        const m3ModelLabels = {
-          'low': 'disabled',
-          'normal': 'adaptive',
-          'high': 'disabled',
-          'max': 'disabled',
-        };
-        final presets = provider.reasoningPresetsFor(
-          'MiniMax-M3',
-          modelLabels: m3ModelLabels,
-        );
-        // low/high/max are disabled — only normal (as "adaptive") and off remain.
-        final normal = presets.firstWhere((p) => p.internalValue == 'normal');
-        expect(normal.displayLabel, 'adaptive');
-        // Disabled entries are removed from the list.
-        expect(presets.where((p) => p.internalValue == 'low'), isEmpty);
-        expect(presets.where((p) => p.internalValue == 'high'), isEmpty);
-        expect(presets.where((p) => p.internalValue == 'max'), isEmpty);
-      },
-    );
+    test('reasoningPresetsFor M3 maps normal → adaptive, others stay identity', () {
+      // Adaptive is an M3-only feature. The UI shows the
+      // `adaptive` label (renamed from `normal`) only when the
+      // active model is M3. The labels come from minimax.toml's
+      // [models.reasoning_labels] — not hardcoded.
+      const m3ModelLabels = {
+        'low': 'disabled',
+        'normal': 'adaptive',
+        'high': 'disabled',
+        'max': 'disabled',
+      };
+      final presets = provider.reasoningPresetsFor(
+        'MiniMax-M3',
+        modelLabels: m3ModelLabels,
+      );
+      // low/high/max are disabled — only normal (as "adaptive") and off remain.
+      final normal = presets.firstWhere((p) => p.internalValue == 'normal');
+      expect(normal.displayLabel, 'adaptive');
+      // Disabled entries are removed from the list.
+      expect(presets.where((p) => p.internalValue == 'low'), isEmpty);
+      expect(presets.where((p) => p.internalValue == 'high'), isEmpty);
+      expect(presets.where((p) => p.internalValue == 'max'), isEmpty);
+    });
 
     test(
       'reasoningPresetsFor M2.x shows normal → normal (no adaptive label)',

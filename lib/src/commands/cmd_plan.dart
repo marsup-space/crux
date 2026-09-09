@@ -41,7 +41,10 @@ Future<void> executePlan(List<String> parts, CommandContext ctx) async {
   final sub = parts.length > 1 ? parts[1].toLowerCase() : null;
   if (sub == 'approve' || sub == 'unapprove') {
     if (!controller.active) {
-      ctx.showToast(ctx.strings.t('cmd.plan.unavailable'), mode: ToastMode.error);
+      ctx.showToast(
+        ctx.strings.t('cmd.plan.unavailable'),
+        mode: ToastMode.error,
+      );
       return;
     }
     if (sub == 'approve') {

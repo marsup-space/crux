@@ -10,5 +10,6 @@ Future<void> executeSession(List<String> parts, CommandContext ctx) async {
       ctx.showToast(ctx.strings.t('toast.sessionUsage'));
     }
   } else {
-      ctx.showToast(ctx.strings.t('toast.sessionUsage')); }
+    ctx.showToast(ctx.strings.t('toast.sessionUsage'));
+  }
 }

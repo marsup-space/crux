@@ -182,9 +182,8 @@ Future<void> _fetchTarget({
     if (archiveFile == null) {
       throw StateError('Archive is missing license file $license');
     }
-    await File(
-      p.join(licenseDirectory.path, license),
-    ).writeAsBytes(archiveFile.content, flush: true);
+    await File(p.join(licenseDirectory.path, license))
+        .writeAsBytes(archiveFile.content, flush: true);
   }
   stdout.writeln('Installed $toolName $target');
 }

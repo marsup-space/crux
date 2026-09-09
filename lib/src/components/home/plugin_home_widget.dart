@@ -37,11 +37,10 @@ class PluginHomeWidgets {
   static List<HomeWidget> build(
     List<Plugin> plugins,
     PluginHost Function() hostOf,
-  ) =>
-      [
-        for (final plugin in plugins)
-          PluginHomeWidget(plugin: plugin, hostOf: hostOf),
-      ];
+  ) => [
+    for (final plugin in plugins)
+      PluginHomeWidget(plugin: plugin, hostOf: hostOf),
+  ];
 }
 
 /// One plugin's box in the home grid.

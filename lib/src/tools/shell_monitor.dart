@@ -488,8 +488,7 @@ String _formatBytes(int bytes) {
 /// `_streamAuxiliaryCall` already accepts (role/content maps).
 /// [abort] lets the evaluator cancel the underlying HTTP stream if
 /// the user interrupts mid-check.
-typedef ShellMonitorEvaluator =
-    Future<ShellMonitorVerdict> Function(
-      List<Map<String, dynamic>> messages, {
-      required AbortSignal abort,
-    });
+typedef ShellMonitorEvaluator = Future<ShellMonitorVerdict> Function(
+  List<Map<String, dynamic>> messages, {
+  required AbortSignal abort,
+});

@@ -68,9 +68,8 @@ class InputOverlay {
     required this.refresh,
     required this.onStateChanged,
     this.activePlanName,
-    Strings strings = kEnglishStrings,
-  })  : strings = strings,
-        _fileSearcher = FileSearcher(rootPath: projectPath);
+    this.strings = kEnglishStrings,
+  }) : _fileSearcher = FileSearcher(rootPath: projectPath);
 
   void dispose() {
     _atMentionDebouncer?.cancel();
@@ -329,8 +328,8 @@ class InputOverlay {
             description: base == active
                 ? strings.t('cmd.plan.sug.active')
                 : (isKnown
-                    ? strings.t('cmd.plan.sug.recent')
-                    : strings.t('cmd.plan.sug.byName')),
+                      ? strings.t('cmd.plan.sug.recent')
+                      : strings.t('cmd.plan.sug.byName')),
           );
           if (base == active) {
             activeSuggestion = suggestion;
@@ -355,10 +354,7 @@ class InputOverlay {
         if (tb != null) return 1;
         return a.value.compareTo(b.value);
       });
-      suggestions = [
-        ?activeSuggestion,
-        ...found,
-      ];
+      suggestions = [?activeSuggestion, ...found];
     } else {
       suggestions = command.suggestionsPerParam[paramIndex];
     }
@@ -587,11 +583,17 @@ class InputOverlay {
     } else if (ageMs < 60 * 1000) {
       relative = strings.t('chat.time.justNow');
     } else if (ageMs < 60 * 60 * 1000) {
-      relative = strings.t('chat.time.minutesAgo', {'n': '${ageMs ~/ (60 * 1000)}'});
+      relative = strings.t('chat.time.minutesAgo', {
+        'n': '${ageMs ~/ (60 * 1000)}',
+      });
     } else if (ageMs < 24 * 60 * 60 * 1000) {
-      relative = strings.t('chat.time.hoursAgo', {'n': '${ageMs ~/ (60 * 60 * 1000)}'});
+      relative = strings.t('chat.time.hoursAgo', {
+        'n': '${ageMs ~/ (60 * 60 * 1000)}',
+      });
     } else if (ageMs < 7 * 24 * 60 * 60 * 1000) {
-      relative = strings.t('chat.time.daysAgo', {'n': '${ageMs ~/ (24 * 60 * 60 * 1000)}'});
+      relative = strings.t('chat.time.daysAgo', {
+        'n': '${ageMs ~/ (24 * 60 * 60 * 1000)}',
+      });
     } else {
       relative = null;
     }

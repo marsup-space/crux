@@ -11,7 +11,11 @@ import '../components/ui/highlighted_markdown_text.dart';
 import '../components/ui/highlight_service.dart';
 import '../components/ui/markdown_isolate.dart' show MarkdownThemeFields;
 import '../diagram/diagram.dart'
-    show DiagramRenderOptions, DiagramRenderResult, isDiagramLanguage, renderDiagram;
+    show
+        DiagramRenderOptions,
+        DiagramRenderResult,
+        isDiagramLanguage,
+        renderDiagram;
 import '../diagram/diagram_model.dart' show DiagramParseException;
 import '../i18n/strings.dart';
 import '../models/plan_selection.dart' as model;
@@ -105,11 +109,7 @@ PlanParseResult parsePlanDocument(
 ///     `sourceLinesToRenderedRows` attributes blank rows to the block's
 ///     trailing source lines instead of to nothing.
 class _PlanVisitor {
-  _PlanVisitor(
-    this.theme, {
-    this.maxWidth,
-    this.strings = kEnglishStrings,
-  });
+  _PlanVisitor(this.theme, {this.maxWidth, this.strings = kEnglishStrings});
 
   final MarkdownThemeFields theme;
   final int? maxWidth;
@@ -140,8 +140,9 @@ class _PlanVisitor {
     final nodes = document.parse(text);
     _visitBlocks(nodes);
     final rendered = _flat.toString();
-    final rowCount =
-        rendered.isEmpty ? 0 : '\n'.allMatches(rendered).length + 1;
+    final rowCount = rendered.isEmpty
+        ? 0
+        : '\n'.allMatches(rendered).length + 1;
     return PlanParseResult(
       spans: _spans,
       sourceMap: model.SourceMap(
@@ -170,13 +171,15 @@ class _PlanVisitor {
     final start = _renderedOffset;
     _spans.add(TextSpan(text: text, style: style));
     _flat.write(text);
-    _mapSpans.add(model.SourceSpan(
-      renderedStart: start,
-      renderedEnd: start + text.length,
-      sourceStart: sourceStart,
-      sourceEnd: sourceEnd,
-      newlines: _nl(text),
-    ));
+    _mapSpans.add(
+      model.SourceSpan(
+        renderedStart: start,
+        renderedEnd: start + text.length,
+        sourceStart: sourceStart,
+        sourceEnd: sourceEnd,
+        newlines: _nl(text),
+      ),
+    );
   }
 
   /// Emit rendered [text] that corresponds to no real source range
@@ -188,14 +191,16 @@ class _PlanVisitor {
     final start = _renderedOffset;
     _spans.add(TextSpan(text: text, style: style));
     _flat.write(text);
-    _mapSpans.add(model.SourceSpan(
-      renderedStart: start,
-      renderedEnd: start + text.length,
-      sourceStart: anchor,
-      sourceEnd: anchor,
-      isMarker: true,
-      newlines: _nl(text),
-    ));
+    _mapSpans.add(
+      model.SourceSpan(
+        renderedStart: start,
+        renderedEnd: start + text.length,
+        sourceStart: anchor,
+        sourceEnd: anchor,
+        isMarker: true,
+        newlines: _nl(text),
+      ),
+    );
   }
 
   /// Emit a rendered marker (`- ` bullet, `1. ` number, `╭─` header…)
@@ -211,14 +216,16 @@ class _PlanVisitor {
     final start = _renderedOffset;
     _spans.add(TextSpan(text: text, style: style));
     _flat.write(text);
-    _mapSpans.add(model.SourceSpan(
-      renderedStart: start,
-      renderedEnd: start + text.length,
-      sourceStart: source?.start.offset ?? fallbackAnchor,
-      sourceEnd: source?.end.offset ?? fallbackAnchor,
-      isMarker: true,
-      newlines: _nl(text),
-    ));
+    _mapSpans.add(
+      model.SourceSpan(
+        renderedStart: start,
+        renderedEnd: start + text.length,
+        sourceStart: source?.start.offset ?? fallbackAnchor,
+        sourceEnd: source?.end.offset ?? fallbackAnchor,
+        isMarker: true,
+        newlines: _nl(text),
+      ),
+    );
   }
 
   static int _nl(String text) => '\n'.allMatches(text).length;
@@ -237,13 +244,15 @@ class _PlanVisitor {
   /// Record a markdown marker that occupies no rendered width.
   void _recordHiddenMarker(src.SourceSpan? marker) {
     if (marker == null) return;
-    _mapSpans.add(model.SourceSpan(
-      renderedStart: _renderedOffset,
-      renderedEnd: _renderedOffset,
-      sourceStart: marker.start.offset,
-      sourceEnd: marker.end.offset,
-      isMarker: true,
-    ));
+    _mapSpans.add(
+      model.SourceSpan(
+        renderedStart: _renderedOffset,
+        renderedEnd: _renderedOffset,
+        sourceStart: marker.start.offset,
+        sourceEnd: marker.end.offset,
+        isMarker: true,
+      ),
+    );
   }
 
   // ── Block-level walk ───────────────────────────────────────────────
@@ -258,8 +267,12 @@ class _PlanVisitor {
     if (node is! dm.Element) {
       // Bare text at top level (rare): emit as paragraph content.
       if (node is dm.Text) {
-        _emit(node.textContent, styleSheet.paragraphStyle, node.start.offset,
-            node.end.offset);
+        _emit(
+          node.textContent,
+          styleSheet.paragraphStyle,
+          node.start.offset,
+          node.end.offset,
+        );
         _emitBlockGap(node);
       }
       return;
@@ -289,19 +302,25 @@ class _PlanVisitor {
         // Reference definitions don't render in the chat renderer
         // either; skip but keep a marker so source lookups don't
         // jump across it silently.
-        _mapSpans.add(model.SourceSpan(
-          renderedStart: _renderedOffset,
-          renderedEnd: _renderedOffset,
-          sourceStart: node.start.offset,
-          sourceEnd: node.end.offset,
-          isMarker: true,
-        ));
+        _mapSpans.add(
+          model.SourceSpan(
+            renderedStart: _renderedOffset,
+            renderedEnd: _renderedOffset,
+            sourceStart: node.start.offset,
+            sourceEnd: node.end.offset,
+            isMarker: true,
+          ),
+        );
       default:
         // htmlBlock, footnoteReference, etc. — render text verbatim.
         final content = node.textContent;
         if (content.isNotEmpty) {
-          _emit(content, styleSheet.paragraphStyle, node.start.offset,
-              node.end.offset);
+          _emit(
+            content,
+            styleSheet.paragraphStyle,
+            node.start.offset,
+            node.end.offset,
+          );
         }
         _emitBlockGap(node);
     }
@@ -320,10 +339,7 @@ class _PlanVisitor {
     // Record the heading's flat row before emitting its content so the
     // pane's scrollbar marker jumps to the heading's first rendered row.
     _headings.add(
-      PlanHeading(
-        renderedRow: _currentRow,
-        text: heading.textContent.trim(),
-      ),
+      PlanHeading(renderedRow: _currentRow, text: heading.textContent.trim()),
     );
     // Heading markers (`## `) are hidden in the rendered output but
     // recorded so a click where the marker was resolves correctly.
@@ -344,8 +360,10 @@ class _PlanVisitor {
     final footerLine = '╰${'─' * (width - 2 < 0 ? 0 : width - 2)}╯';
 
     final bg = styleSheet.codeBlockBackground ?? theme.codeBlockBackground;
-    final gutterStyle =
-        TextStyle(color: theme.codeBlockGutter, backgroundColor: bg);
+    final gutterStyle = TextStyle(
+      color: theme.codeBlockGutter,
+      backgroundColor: bg,
+    );
     final codeStyle =
         (styleSheet.codeBlockStyle ?? TextStyle(color: theme.mdCodeBlockText))
             .copyWith(backgroundColor: bg);
@@ -354,8 +372,12 @@ class _PlanVisitor {
     // span (markers.first is the opening fence — see
     // fenced_code_block_syntax.dart).
     final openFence = block.markers.isNotEmpty ? block.markers.first : null;
-    _emitMarkerText('$headerLine\n', gutterStyle, openFence,
-        fallbackAnchor: block.start.offset);
+    _emitMarkerText(
+      '$headerLine\n',
+      gutterStyle,
+      openFence,
+      fallbackAnchor: block.start.offset,
+    );
 
     final codeText = block.children.isEmpty
         ? ''
@@ -383,8 +405,12 @@ class _PlanVisitor {
       final closeFenceD = block.markers.length > 1
           ? block.markers.last
           : openFence;
-      _emitMarkerText('$footerLine\n', gutterStyle, closeFenceD,
-          fallbackAnchor: block.end.offset);
+      _emitMarkerText(
+        '$footerLine\n',
+        gutterStyle,
+        closeFenceD,
+        fallbackAnchor: block.end.offset,
+      );
       _emitSynthetic('\n', null, block.end.offset);
       return;
     }
@@ -458,8 +484,12 @@ class _PlanVisitor {
 
     // The closing fence (if any) maps to the footer chrome.
     final closeFence = block.markers.length > 1 ? block.markers.last : null;
-    _emitMarkerText('$footerLine\n', gutterStyle, closeFence ?? openFence,
-        fallbackAnchor: block.end.offset);
+    _emitMarkerText(
+      '$footerLine\n',
+      gutterStyle,
+      closeFence ?? openFence,
+      fallbackAnchor: block.end.offset,
+    );
     _emitSynthetic('\n', null, block.end.offset);
   }
 
@@ -486,11 +516,7 @@ class _PlanVisitor {
     return [
       ...result.text.split('\n'),
       for (final warning in result.warnings)
-        '⚠ ${warning.message(
-          cycleDetected: (nodes) => strings.t('diagram.cycleWarning', {
-            'nodes': nodes,
-          }),
-        )}',
+        '⚠ ${warning.message(cycleDetected: (nodes) => strings.t('diagram.cycleWarning', {'nodes': nodes}))}',
     ];
   }
 
@@ -593,14 +619,16 @@ class _PlanVisitor {
           srcStart = m.sourceStart + rel;
           srcEnd = srcStart + len.clamp(0, m.sourceEnd - srcStart);
         }
-        _mapSpans.add(model.SourceSpan(
-          renderedStart: start,
-          renderedEnd: start + text.length,
-          sourceStart: srcStart,
-          sourceEnd: srcEnd,
-          isMarker: m.isMarker,
-          newlines: _nl(text),
-        ));
+        _mapSpans.add(
+          model.SourceSpan(
+            renderedStart: start,
+            renderedEnd: start + text.length,
+            sourceStart: srcStart,
+            sourceEnd: srcEnd,
+            isMarker: m.isMarker,
+            newlines: _nl(text),
+          ),
+        );
       }
       _emitSynthetic('\n', null, quote.end.offset);
       wroteRow = true;
@@ -696,8 +724,7 @@ class _PlanVisitor {
       }
       if (child is dm.Element && child.type == 'paragraph') {
         if (!first) {
-          _emitSynthetic(
-              '\n${'  ' * (depth + 1)}', null, child.start.offset);
+          _emitSynthetic('\n${'  ' * (depth + 1)}', null, child.start.offset);
         }
         _visitInlines(child.children, styleSheet.paragraphStyle);
       } else if (child is dm.Text) {
@@ -790,11 +817,12 @@ class _PlanVisitor {
       // surface / surfaceVariant (chat renderer's exact recipe).
       final rowBg = isHeader
           ? theme.surfaceVariant.withOpacity(0.5)
-          : ((r - 1).isEven
-              ? theme.surface
-              : theme.surfaceVariant).withOpacity(0.5);
-      final rowStyle = (isHeader ? headerStyle : textStyle)
-          .copyWith(backgroundColor: rowBg);
+          : ((r - 1).isEven ? theme.surface : theme.surfaceVariant).withOpacity(
+              0.5,
+            );
+      final rowStyle = (isHeader ? headerStyle : textStyle).copyWith(
+        backgroundColor: rowBg,
+      );
 
       // Wrap each cell into lines of at most `widths[c]` columns.
       final wrapped = <List<(String, int, int)>>[]; // (text, srcStart, srcEnd)
@@ -809,7 +837,11 @@ class _PlanVisitor {
       }
 
       for (var l = 0; l < rowHeight; l++) {
-        _emitSynthetic('│', borderStyle, cells.first?.start.offset ?? table.start.offset);
+        _emitSynthetic(
+          '│',
+          borderStyle,
+          cells.first?.start.offset ?? table.start.offset,
+        );
         for (var c = 0; c < widths.length; c++) {
           final (text, s, e) = l < wrapped[c].length
               ? wrapped[c][l]
@@ -882,11 +914,7 @@ class _PlanVisitor {
 
     void flush() {
       if (lineText.isEmpty) return;
-      lines.add((
-        lineText,
-        sourceStart + lineStart,
-        sourceStart + lineEnd,
-      ));
+      lines.add((lineText, sourceStart + lineStart, sourceStart + lineEnd));
       lineText = '';
       lineStart = -1;
       lineWidth = 0;
@@ -910,11 +938,7 @@ class _PlanVisitor {
             chunkW += w;
             off++;
           }
-          lines.add((
-            chunk,
-            sourceStart + chunkStart,
-            sourceStart + off,
-          ));
+          lines.add((chunk, sourceStart + chunkStart, sourceStart + off));
         }
         lineEnd = wEnd;
         continue;
@@ -938,8 +962,7 @@ class _PlanVisitor {
   List<int> _distributeColumnWidths(List<int> naturalWidths, int? maxWidth) {
     final numCols = naturalWidths.length;
     final overhead = 3 * numCols + 1;
-    final naturalTotal =
-        naturalWidths.fold(0, (sum, w) => sum + w) + overhead;
+    final naturalTotal = naturalWidths.fold(0, (sum, w) => sum + w) + overhead;
     if (maxWidth == null || naturalTotal <= maxWidth) {
       return List.of(naturalWidths);
     }
@@ -954,8 +977,7 @@ class _PlanVisitor {
       result[i] = naturalWidths[i] * available ~/ totalNatural;
       if (result[i] < minColWidth) result[i] = minColWidth;
     }
-    var remaining =
-        available - result.fold(0, (sum, w) => sum + w);
+    var remaining = available - result.fold(0, (sum, w) => sum + w);
     while (remaining > 0) {
       var bestIdx = 0;
       var bestDeficit = 0;
@@ -978,8 +1000,7 @@ class _PlanVisitor {
   void _visitInlines(List<dm.Node> nodes, TextStyle? baseStyle) {
     for (final node in nodes) {
       if (node is dm.Text) {
-        _emit(node.textContent, baseStyle, node.start.offset,
-            node.end.offset);
+        _emit(node.textContent, baseStyle, node.start.offset, node.end.offset);
       } else if (node is dm.Element) {
         _visitInline(node, baseStyle);
       }
@@ -1009,8 +1030,12 @@ class _PlanVisitor {
         final contentEnd = element.children.isNotEmpty
             ? element.children.last.end.offset
             : element.end.offset;
-        _emit(element.textContent, styleSheet.codeStyle, contentStart,
-            contentEnd);
+        _emit(
+          element.textContent,
+          styleSheet.codeStyle,
+          contentStart,
+          contentEnd,
+        );
       case 'link':
       case 'autolink':
       case 'autolinkExtension':
@@ -1018,18 +1043,30 @@ class _PlanVisitor {
         final href = element.attributes['href'] ?? '';
         final label = element.textContent;
         final display = label.isNotEmpty ? label : href;
-        _emit(display, styleSheet.linkStyle, element.start.offset,
-            element.end.offset);
+        _emit(
+          display,
+          styleSheet.linkStyle,
+          element.start.offset,
+          element.end.offset,
+        );
       case 'image':
         _recordMarkers(element);
         final alt = element.attributes['alt'] ?? 'image';
-        _emit('[Image: $alt]', const TextStyle(fontStyle: FontStyle.italic),
-            element.start.offset, element.end.offset);
+        _emit(
+          '[Image: $alt]',
+          const TextStyle(fontStyle: FontStyle.italic),
+          element.start.offset,
+          element.end.offset,
+        );
       case 'hardLineBreak':
         _emit('\n', baseStyle, element.start.offset, element.end.offset);
       case 'emoji':
-        _emit(element.textContent, baseStyle, element.start.offset,
-            element.end.offset);
+        _emit(
+          element.textContent,
+          baseStyle,
+          element.start.offset,
+          element.end.offset,
+        );
       default:
         _recordMarkers(element);
         _visitInlines(element.children, baseStyle);

@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+
 import '../../theme/crux_theme.dart';
 
 /// A progress bar that renders progress using background colors.

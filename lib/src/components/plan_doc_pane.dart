@@ -73,7 +73,8 @@ PlanSplitLayout resolvePlanSplit(
   // Hard width floor first: below kPlanSidebarShowThreshold the
   // sidebar hides outright, whatever the three-pane split would allow.
   if (sidebarWidth != null && totalWidth >= kPlanSidebarShowThreshold) {
-    final avail = totalWidth - sidebarWidth - 2; // plan|chat + chat|sidebar dividers
+    final avail =
+        totalWidth - sidebarWidth - 2; // plan|chat + chat|sidebar dividers
     final planPaneWidth = (avail - 1) / 2;
     if (avail - planPaneWidth >= kPlanChatPaneMinWidth) {
       return PlanSplitLayout(
@@ -372,9 +373,7 @@ class _PlanDocPaneState extends State<PlanDocPane>
                       label: strings.t('plan.pane.jumpToLatest'),
                       onPressed: () {
                         c.onJumpToLatest();
-                        _animateScrollTo(
-                          c.scrollController.offset,
-                        );
+                        _animateScrollTo(c.scrollController.offset);
                       },
                     ),
                   ],
@@ -528,8 +527,8 @@ class _VersionButton extends StatelessComponent {
       color: isViewed
           ? theme.accent
           : isHead
-              ? theme.buttonText
-              : theme.buttonTextDisabled,
+          ? theme.buttonText
+          : theme.buttonTextDisabled,
       bgColor: isViewed ? theme.surfaceVariant : null,
       style: TextStyle(
         fontWeight: (isHead || isViewed) ? FontWeight.bold : null,

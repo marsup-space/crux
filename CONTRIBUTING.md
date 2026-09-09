@@ -36,7 +36,7 @@ git submodule update --init --recursive
 dart pub get
 dart run tool/third_party.dart fetch
 dart format --output=none --set-exit-if-changed bin lib test tool
-dart analyze --no-fatal-warnings bin lib test tool
+dart analyze --fatal-infos
 dart test
 ```
 

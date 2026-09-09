@@ -30,8 +30,8 @@ void main() {
     Process.runSync('/bin/sh', [
       '-c',
       'pkill -f "cruxd_e2e" 2>/dev/null; '
-      'for p in \$(pgrep -f gold-loop-standin 2>/dev/null); do '
-      'kill -TERM -- -\$p 2>/dev/null; done; true',
+          'for p in \$(pgrep -f gold-loop-standin 2>/dev/null); do '
+          'kill -TERM -- -\$p 2>/dev/null; done; true',
     ]);
     for (final d in [home, proj]) {
       try {
@@ -43,11 +43,13 @@ void main() {
   test('full lifecycle: register, reuse, grace, lights-off', () async {
     // 1. A stand-in producer: resident loop writing a heartbeat file.
     final producer = File('${home.path}/gold-loop-standin.sh')
-      ..writeAsStringSync('#!/bin/bash\n'
-          'while true; do\n'
-          '  date -u +%Y-%m-%dT%H:%M:%SZ > "\$HOME/producer-beat"\n'
-          '  sleep 1\n'
-          'done\n');
+      ..writeAsStringSync(
+        '#!/bin/bash\n'
+        'while true; do\n'
+        '  date -u +%Y-%m-%dT%H:%M:%SZ > "\$HOME/producer-beat"\n'
+        '  sleep 1\n'
+        'done\n',
+      );
     Process.runSync('chmod', ['+x', producer.path]);
 
     // 2. Spawn the daemon with the sealed HOME.
@@ -79,8 +81,10 @@ void main() {
       } catch (_) {}
     }
     expect(ok, isTrue, reason: 'daemon never wrote state.json');
-    final port = (jsonDecode(stateFile.readAsStringSync())
-        as Map<String, dynamic>)['port'] as int;
+    final port =
+        (jsonDecode(stateFile.readAsStringSync())
+                as Map<String, dynamic>)['port']
+            as int;
 
     Future<Map<String, dynamic>> status() async {
       final c = HttpClient();
@@ -113,11 +117,7 @@ void main() {
       'pid': pid,
       'project': proj.path,
       'producers': [
-        {
-          'key': '~:gold',
-          'pluginId': 'gold',
-          'command': producer.path,
-        }
+        {'key': '~:gold', 'pluginId': 'gold', 'command': producer.path},
       ],
     });
     await Future<void>.delayed(const Duration(seconds: 1));
@@ -134,7 +134,7 @@ void main() {
       'pid': pid,
       'project': proj.path,
       'producers': [
-        {'key': '~:gold', 'pluginId': 'gold', 'command': producer.path}
+        {'key': '~:gold', 'pluginId': 'gold', 'command': producer.path},
       ],
     });
     await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -156,20 +156,23 @@ void main() {
     var producerGone = false;
     for (var i = 0; i < 40; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 400));
-      final dp = Process.runSync(
-        '/bin/sh',
-        ['-c', 'kill -0 ${daemonPid} 2>/dev/null'],
-      );
+      final dp = Process.runSync('/bin/sh', [
+        '-c',
+        'kill -0 $daemonPid 2>/dev/null',
+      ]);
       daemonGone = dp.exitCode != 0;
-      final pp = Process.runSync(
-        '/bin/sh',
-        ['-c', 'kill -0 -- -${producerPid} 2>/dev/null'],
-      );
+      final pp = Process.runSync('/bin/sh', [
+        '-c',
+        'kill -0 -- -$producerPid 2>/dev/null',
+      ]);
       producerGone = pp.exitCode != 0;
       if (daemonGone && producerGone) break;
     }
-    expect(producerGone, isTrue,
-        reason: 'producer process group survived lights-off');
+    expect(
+      producerGone,
+      isTrue,
+      reason: 'producer process group survived lights-off',
+    );
     expect(daemonGone, isTrue, reason: 'daemon did not light off');
     // State file ends as the clean-exit marker (empty).
     await Future<void>.delayed(const Duration(milliseconds: 300));

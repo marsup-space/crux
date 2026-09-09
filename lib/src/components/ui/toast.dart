@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+
 import '../../theme/crux_theme.dart';
 import '../../utils/ticker_registry.dart';
 import '../../utils/terminal_symbols.dart';

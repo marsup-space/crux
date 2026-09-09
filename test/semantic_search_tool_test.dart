@@ -41,58 +41,46 @@ void main() {
       expect(result.output, contains('Missing required parameter'));
     });
 
-    test(
-      'finds semantic matches across a repo',
-      () async {
-        final repo = '${Directory.current.path}/.research/semble';
-        if (!Directory(repo).existsSync()) {
-          markTestSkipped('semble source not available at $repo');
-          return;
-        }
-        final result = await tool.execute({
-          'query': 'how does the indexer parse source files',
-          'path': repo,
-          'k': 3,
-        }, ctx);
-        expect(result.metadata['totalMatches'], greaterThan(0));
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+    test('finds semantic matches across a repo', () async {
+      final repo = '${Directory.current.path}/.research/semble';
+      if (!Directory(repo).existsSync()) {
+        markTestSkipped('semble source not available at $repo');
+        return;
+      }
+      final result = await tool.execute({
+        'query': 'how does the indexer parse source files',
+        'path': repo,
+        'k': 3,
+      }, ctx);
+      expect(result.metadata['totalMatches'], greaterThan(0));
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
-    test(
-      'returns clean error when path does not exist',
-      () async {
-        final result = await tool.execute({
-          'query': 'anything',
-          'path': '/nonexistent/path/xyzzy',
-          'k': 3,
-        }, ctx);
-        expect(
-          result.title,
-          equals('Error'),
-          reason: 'invalid path should produce a clean error',
-        );
-      },
-      timeout: const Timeout(Duration(seconds: 30)),
-    );
+    test('returns clean error when path does not exist', () async {
+      final result = await tool.execute({
+        'query': 'anything',
+        'path': '/nonexistent/path/xyzzy',
+        'k': 3,
+      }, ctx);
+      expect(
+        result.title,
+        equals('Error'),
+        reason: 'invalid path should produce a clean error',
+      );
+    }, timeout: const Timeout(Duration(seconds: 30)));
 
-    test(
-      'reports clean error when search engine not installed',
-      () async {
-        final ctx2 = ToolContext(
-          sessionId: 1,
-          messageId: 1,
-          abort: AbortSignal(),
-          workingDirectory: '/nonexistent/path/that/does/not/exist',
-        );
-        final result = await tool.execute({
-          'query': 'anything',
-          'path': '/nonexistent/path/xyzzy',
-        }, ctx2);
-        expect(result.title, equals('Error'));
-      },
-      timeout: const Timeout(Duration(seconds: 30)),
-    );
+    test('reports clean error when search engine not installed', () async {
+      final ctx2 = ToolContext(
+        sessionId: 1,
+        messageId: 1,
+        abort: AbortSignal(),
+        workingDirectory: '/nonexistent/path/that/does/not/exist',
+      );
+      final result = await tool.execute({
+        'query': 'anything',
+        'path': '/nonexistent/path/xyzzy',
+      }, ctx2);
+      expect(result.title, equals('Error'));
+    }, timeout: const Timeout(Duration(seconds: 30)));
 
     test(
       'respects .gitignore: files inside gitignored dirs are not indexed',

@@ -74,8 +74,7 @@ void main() {
     });
   });
 
-  test('many versions render within the pane width (no ~ glyphs)',
-      () async {
+  test('many versions render within the pane width (no ~ glyphs)', () async {
     // Grow to 30 versions so the strip overflows the 60-col host.
     final path = controller.planDocPath!;
     var last = '# Plan\n\n';
@@ -128,9 +127,14 @@ void main() {
           if (cell?.char == '1') {
             // Ensure the neighbors aren't `1x`/`x1` from other text —
             // the strip shows bare single digits separated by spaces.
-            final left = x > 0 ? tester.terminalState.getCellAt(x - 1, y)?.char : null;
-            final right = x + 1 < hostW ? tester.terminalState.getCellAt(x + 1, y)?.char : null;
-            final isolated = (left == null || left == ' ') &&
+            final left = x > 0
+                ? tester.terminalState.getCellAt(x - 1, y)?.char
+                : null;
+            final right = x + 1 < hostW
+                ? tester.terminalState.getCellAt(x + 1, y)?.char
+                : null;
+            final isolated =
+                (left == null || left == ' ') &&
                 (right == null || right == ' ');
             if (isolated) {
               digitX = x;
@@ -145,8 +149,11 @@ void main() {
       await tester.press(digitX, digitY);
       await tester.release(digitX, digitY);
       await tester.pump();
-      expect(controller.viewingVersion, 1,
-          reason: 'clicking the `1` button should time-travel to v1');
+      expect(
+        controller.viewingVersion,
+        1,
+        reason: 'clicking the `1` button should time-travel to v1',
+      );
       expect(controller.isViewingHistory, isTrue);
     }, size: const Size(60, 20));
   });
@@ -186,8 +193,11 @@ void main() {
       await tester.press(approveX, approveY);
       await tester.release(approveX, approveY);
       await tester.pump();
-      expect(controller.approved, isTrue,
-          reason: 'clicking approve should approve the plan');
+      expect(
+        controller.approved,
+        isTrue,
+        reason: 'clicking approve should approve the plan',
+      );
 
       // After approval the same button flips to `unapprove`.
       expect(tester.terminalState.containsText('unapprove'), isTrue);
@@ -212,8 +222,11 @@ void main() {
       await tester.press(exitX, exitY);
       await tester.release(exitX, exitY);
       await tester.pump();
-      expect(controller.active, isFalse,
-          reason: 'clicking exit should leave plan mode');
+      expect(
+        controller.active,
+        isFalse,
+        reason: 'clicking exit should leave plan mode',
+      );
     }, size: const Size(60, 20));
   });
 }

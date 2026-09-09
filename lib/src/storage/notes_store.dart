@@ -38,9 +38,7 @@ class NotesStore {
       content: Value(content),
       updatedAt: now,
     );
-    await _db
-        .into(_db.projectNotes)
-        .insertOnConflictUpdate(companion);
+    await _db.into(_db.projectNotes).insertOnConflictUpdate(companion);
     return db.ProjectNote(
       projectPath: projectPath,
       content: content,

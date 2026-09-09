@@ -39,10 +39,12 @@ DiagramGraph parseStateDiagram(String source) {
     // state "Description" as ID
     var m = RegExp(r'^state\s+"([^"]*)"\s+as\s+(\S+)\s*$').firstMatch(line);
     if (m != null) {
-      graph.ensureNode(m.group(2)!,
-          label: m.group(1)!,
-          shape: NodeShape.rounded,
-          subgraphId: currentComposite);
+      graph.ensureNode(
+        m.group(2)!,
+        label: m.group(1)!,
+        shape: NodeShape.rounded,
+        subgraphId: currentComposite,
+      );
       continue;
     }
 
@@ -50,8 +52,7 @@ DiagramGraph parseStateDiagram(String source) {
     m = RegExp(r'^state\s+(\S+)\s*\{$').firstMatch(line);
     if (m != null) {
       final id = m.group(1)!;
-      graph.ensureSubgraph(id, id,
-          parent: currentComposite);
+      graph.ensureSubgraph(id, id, parent: currentComposite);
       currentComposite = id;
       continue;
     }
@@ -59,27 +60,42 @@ DiagramGraph parseStateDiagram(String source) {
     // Simple declaration: state ID
     m = RegExp(r'^state\s+(\S+)\s*$').firstMatch(line);
     if (m != null) {
-      graph.ensureNode(m.group(1)!,
-          shape: NodeShape.rounded, subgraphId: currentComposite);
+      graph.ensureNode(
+        m.group(1)!,
+        shape: NodeShape.rounded,
+        subgraphId: currentComposite,
+      );
       continue;
     }
 
     // Transition: A --> B [: label]
     m = RegExp(
-            r'^(\[\*\]|[A-Za-z0-9_]+)\s*-->\s*(\[\*\]|[A-Za-z0-9_]+)(?:\s*:\s*(.*))?$')
-        .firstMatch(line);
+      r'^(\[\*\]|[A-Za-z0-9_]+)\s*-->\s*(\[\*\]|[A-Za-z0-9_]+)(?:\s*:\s*(.*))?$',
+    ).firstMatch(line);
     if (m != null) {
-      final fromId = _resolveRef(graph, m.group(1)!, currentComposite,
-          isStart: true, counter: ++startCounter);
-      final toId = _resolveRef(graph, m.group(2)!, currentComposite,
-          isStart: false, counter: ++endCounter);
+      final fromId = _resolveRef(
+        graph,
+        m.group(1)!,
+        currentComposite,
+        isStart: true,
+        counter: ++startCounter,
+      );
+      final toId = _resolveRef(
+        graph,
+        m.group(2)!,
+        currentComposite,
+        isStart: false,
+        counter: ++endCounter,
+      );
       final label = m.group(3)?.trim();
-      graph.edges.add(DiagramEdge(
-        from: fromId,
-        to: toId,
-        label: (label == null || label.isEmpty) ? null : label,
-        semanticCycle: true,
-      ));
+      graph.edges.add(
+        DiagramEdge(
+          from: fromId,
+          to: toId,
+          label: (label == null || label.isEmpty) ? null : label,
+          semanticCycle: true,
+        ),
+      );
       continue;
     }
 
@@ -88,7 +104,8 @@ DiagramGraph parseStateDiagram(String source) {
 
   if (!foundHeader) {
     throw DiagramParseException(
-        "Expected 'stateDiagram' or 'stateDiagram-v2' header");
+      "Expected 'stateDiagram' or 'stateDiagram-v2' header",
+    );
   }
   if (graph.nodes.isEmpty && graph.edges.isEmpty) {
     throw DiagramParseException('No valid state diagram content');
@@ -107,8 +124,7 @@ DiagramGraph parseStateDiagram(String source) {
   return graph;
 }
 
-final _headerRe =
-    RegExp(r'^stateDiagram(?:-v2)?\s*$', caseSensitive: false);
+final _headerRe = RegExp(r'^stateDiagram(?:-v2)?\s*$', caseSensitive: false);
 
 String _resolveRef(
   DiagramGraph graph,
@@ -119,10 +135,12 @@ String _resolveRef(
 }) {
   if (ref == '[*]') {
     final id = '__${isStart ? 'start' : 'end'}$counter';
-    graph.ensureNode(id,
-        label: isStart ? '●' : '◉',
-        shape: NodeShape.circle,
-        subgraphId: composite);
+    graph.ensureNode(
+      id,
+      label: isStart ? '●' : '◉',
+      shape: NodeShape.circle,
+      subgraphId: composite,
+    );
     return id;
   }
   graph.ensureNode(ref, shape: NodeShape.rounded, subgraphId: composite);

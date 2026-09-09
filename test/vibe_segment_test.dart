@@ -89,12 +89,8 @@ void main() {
     });
 
     group('stream_error (abnormal stop) attachment', () {
-      Message errRow(String content, {int id = 9}) => Message(
-        id: id,
-        sessionId: 1,
-        role: 'stream_error',
-        content: content,
-      );
+      Message errRow(String content, {int id = 9}) =>
+          Message(id: id, sessionId: 1, role: 'stream_error', content: content);
 
       test('error after an ai close attaches to that segment', () {
         final messages = [
@@ -107,10 +103,7 @@ void main() {
         expect(segments.length, 1);
         expect(segments[0].prose!.content, 'partial work');
         expect(segments[0].stopError, isNotNull);
-        expect(
-          segments[0].stopError!.content,
-          contains('Step limit reached'),
-        );
+        expect(segments[0].stopError!.content, contains('Step limit reached'));
       });
 
       test('error with no prose still emits a segment carrying it', () {
@@ -129,10 +122,7 @@ void main() {
       });
 
       test('normal turn has no stopError', () {
-        final messages = [
-          _userMsg('hi', id: 1),
-          _aiMsg('done', id: 2),
-        ];
+        final messages = [_userMsg('hi', id: 1), _aiMsg('done', id: 2)];
         final segments = walkSegments(messages, {}, ToolRegistry());
         expect(segments.single.stopError, isNull);
       });
@@ -149,8 +139,11 @@ void main() {
 
         expect(segments.length, 2);
         expect(segments[0].stopError!.content, 'boom');
-        expect(segments[1].stopError, isNull,
-            reason: 'the error belongs to turn one only');
+        expect(
+          segments[1].stopError,
+          isNull,
+          reason: 'the error belongs to turn one only',
+        );
       });
     });
 

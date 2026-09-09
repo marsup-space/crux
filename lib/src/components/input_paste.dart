@@ -275,10 +275,7 @@ class InputPaste {
       onAttachClipboardImage?.call(image);
       final sizeKB = (file.lengthSync() / 1024).toStringAsFixed(0);
       turnOrchestrator.showToast(
-        strings.t('toast.imageAttached', {
-          'label': image.label,
-          'kb': sizeKB,
-        }),
+        strings.t('toast.imageAttached', {'label': image.label, 'kb': sizeKB}),
         mode: ToastMode.status,
       );
     } catch (e) {

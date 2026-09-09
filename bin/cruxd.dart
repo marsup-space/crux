@@ -18,7 +18,8 @@ import 'dart:io';
 import 'package:crux/src/daemon/daemon.dart';
 import 'package:crux/src/daemon/control_server.dart';
 
-String _home() => Platform.environment['HOME'] ??
+String _home() =>
+    Platform.environment['HOME'] ??
     Platform.environment['USERPROFILE'] ??
     Directory.systemTemp.path;
 
@@ -122,10 +123,10 @@ Future<void> _reapOrphans(File stateFile) async {
       final pid = p['pid'] as int?;
       if (pid == null) continue;
       // Group-kill the old producer's session.
-      Process.runSync(
-        '/bin/sh',
-        ['-c', 'kill -TERM -- -$pid 2>/dev/null || true'],
-      );
+      Process.runSync('/bin/sh', [
+        '-c',
+        'kill -TERM -- -$pid 2>/dev/null || true',
+      ]);
     }
   } catch (_) {}
 }
@@ -139,10 +140,10 @@ Future<(int, int)?> _discover() async {
     final pidN = decoded['pid'];
     final portN = decoded['port'];
     if (pidN is! int || portN is! int) return null;
-    final alive = Process.runSync(
-      '/bin/sh',
-      ['-c', 'kill -0 $pidN 2>/dev/null'],
-    );
+    final alive = Process.runSync('/bin/sh', [
+      '-c',
+      'kill -0 $pidN 2>/dev/null',
+    ]);
     if (alive.exitCode != 0) return null;
     return (pidN, portN);
   } catch (_) {

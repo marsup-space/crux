@@ -3,6 +3,7 @@
 // rows come back with '' (untitled). Uses a temp FILE database so
 // closing + re-opening actually re-runs drift's migration.
 import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:crux/src/storage/database.dart' hide Session;

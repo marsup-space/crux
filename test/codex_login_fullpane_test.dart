@@ -1,7 +1,6 @@
 import 'package:crux/src/components/codex_login_fullpane.dart';
 import 'package:crux/src/theme/crux_theme.dart';
 import 'package:nocterm/nocterm.dart';
-import 'package:nocterm/nocterm_test.dart';
 import 'package:test/test.dart';
 
 void main() {

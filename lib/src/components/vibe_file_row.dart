@@ -55,8 +55,14 @@ class VibeFileRow extends StatelessComponent {
     return MultiButton(
       label: '$name +$linesAdded -$linesRemoved',
       segments: [
-        MultiButtonSegment(label: strings.t('chat.vibe.open'), onPressed: onOpen),
-        MultiButtonSegment(label: strings.t('chat.vibe.diff'), onPressed: onDiff),
+        MultiButtonSegment(
+          label: strings.t('chat.vibe.open'),
+          onPressed: onOpen,
+        ),
+        MultiButtonSegment(
+          label: strings.t('chat.vibe.diff'),
+          onPressed: onDiff,
+        ),
       ],
       color: theme.text,
       hoverColor: theme.success,

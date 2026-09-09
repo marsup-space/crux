@@ -49,8 +49,7 @@ class IndentationMatcher extends Matcher {
     if (!replaceAll && positions.length > 1) {
       return MatchResult(
         positions: positions,
-        error:
-            'Found multiple matches for oldString (indentation-flexible). Provide more surrounding context.',
+        error: 'Found multiple matches for oldString (indentation-flexible). Provide more surrounding context.',
       );
     }
 

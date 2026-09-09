@@ -9,58 +9,58 @@ import 'package:test/test.dart';
 import 'package:crux/src/components/ui/toast.dart';
 
 Component toastHost(GlobalKey<ToastHubState> toastKey) => Stack(
-      children: [
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: ToastHub(key: toastKey),
-        ),
-      ],
-    );
+  children: [
+    Positioned(bottom: 0, left: 0, right: 0, child: ToastHub(key: toastKey)),
+  ],
+);
 
 void main() {
   group('monitor toast', () {
-    test('renders intent headline, verdict row and bracket kill button',
-        () async {
-      await testNocterm('standing monitor toast', (tester) async {
-        final toastKey = GlobalKey<ToastHubState>();
-        var killCalls = 0;
-        await tester.pumpComponent(toastHost(toastKey));
-        toastKey.currentState?.showMonitorToast(
-          MonitorToastData(
-            title: 'install dependencies',
-            subtitle: 'dart pub get',
-            verdict: 'PROGRESS',
-            verdictText: 'aux: making progress — next check in 30s',
-            takeaway: 'linker still running · » Resolving 42 packages…',
-            onKill: () async {
-              killCalls++;
-              return true;
-            },
-          ),
-        );
-        await tester.pump();
+    test(
+      'renders intent headline, verdict row and bracket kill button',
+      () async {
+        await testNocterm('standing monitor toast', (tester) async {
+          final toastKey = GlobalKey<ToastHubState>();
+          var killCalls = 0;
+          await tester.pumpComponent(toastHost(toastKey));
+          toastKey.currentState?.showMonitorToast(
+            MonitorToastData(
+              title: 'install dependencies',
+              subtitle: 'dart pub get',
+              verdict: 'PROGRESS',
+              verdictText: 'aux: making progress — next check in 30s',
+              takeaway: 'linker still running · » Resolving 42 packages…',
+              onKill: () async {
+                killCalls++;
+                return true;
+              },
+            ),
+          );
+          await tester.pump();
 
-        final rendered = tester.renderToString(showBorders: false);
-        // Intent is the headline.
-        expect(rendered, contains('install dependencies'));
-        // The verdict sentence is rendered verbatim.
-        expect(rendered, contains('aux: making progress — next check in 30s'));
-        // Evidence row.
-        expect(rendered, contains('Resolving 42 packages'));
-        // The kill affordance reads as a button.
-        expect(rendered, contains('[ click to kill ]'));
+          final rendered = tester.renderToString(showBorders: false);
+          // Intent is the headline.
+          expect(rendered, contains('install dependencies'));
+          // The verdict sentence is rendered verbatim.
+          expect(
+            rendered,
+            contains('aux: making progress — next check in 30s'),
+          );
+          // Evidence row.
+          expect(rendered, contains('Resolving 42 packages'));
+          // The kill affordance reads as a button.
+          expect(rendered, contains('[ click to kill ]'));
 
-        // Trigger the kill (same path the button's onPressed runs):
-        // the action runs and the toast freezes as a killed record.
-        await toastKey.currentState?.pressMonitorKill();
-        await tester.pump();
-        expect(killCalls, 1);
-        final killed = tester.renderToString(showBorders: false);
-        expect(killed, contains('killed'));
-      });
-    });
+          // Trigger the kill (same path the button's onPressed runs):
+          // the action runs and the toast freezes as a killed record.
+          await toastKey.currentState?.pressMonitorKill();
+          await tester.pump();
+          expect(killCalls, 1);
+          final killed = tester.renderToString(showBorders: false);
+          expect(killed, contains('killed'));
+        });
+      },
+    );
 
     test('verdict tone maps to modes (STUCK → error palette)', () {
       expect(monitorVerdictMode('STUCK'), ToastMode.error);
@@ -100,8 +100,7 @@ void main() {
       });
     });
 
-    test('a frozen (killed) record is not replaced by newer reports',
-        () async {
+    test('a frozen (killed) record is not replaced by newer reports', () async {
       await testNocterm('frozen killed record', (tester) async {
         final toastKey = GlobalKey<ToastHubState>();
         await tester.pumpComponent(toastHost(toastKey));

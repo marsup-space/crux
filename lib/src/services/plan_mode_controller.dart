@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_initializing_formals
+
 import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
@@ -35,6 +37,7 @@ const kPlanDocSkeleton = '# Plan\n\n';
 ///     (layered on the resolved prompt, never persisted), so no prompt
 ///     rebuild is needed on enter/exit.
 class PlanModeController extends ChangeNotifier {
+  // Keep the public parameter name `theme` while storing it privately.
   PlanModeController({
     MarkdownThemeFields? theme,
     this.onFileChanged,
@@ -250,8 +253,7 @@ class PlanModeController extends ChangeNotifier {
   /// Whether the pane is currently bound to [sessionId]. A background
   /// session's turn uses this to decide it must NOT receive the
   /// foreground session's plan-context block.
-  bool isAttachedTo(int sessionId) =>
-      _active && _sessionId == sessionId;
+  bool isAttachedTo(int sessionId) => _active && _sessionId == sessionId;
 
   /// Re-key the controller when the current session changes.
   ///
@@ -402,13 +404,11 @@ class PlanModeController extends ChangeNotifier {
     final rows = <int>{
       for (final range in changedLines)
         ..._parsed.sourceMap.sourceLinesToRenderedRows(range.$1, range.$2),
-    }.toList()
-      ..sort();
+    }.toList()..sort();
     if (rows.isNotEmpty) {
-      activeFlashes.add(FlashRegion(
-        renderedRows: rows,
-        startedAt: DateTime.now(),
-      ));
+      activeFlashes.add(
+        FlashRegion(renderedRows: rows, startedAt: DateTime.now()),
+      );
       _pruneFlashes();
       if (_viewMode == PlanViewMode.follow) {
         _lastEditScrollTarget = rows.first.toDouble();
@@ -499,9 +499,9 @@ class PlanModeController extends ChangeNotifier {
   /// [AnimationController] vsync).
   void scrollToRow(int row) {
     final target = row.toDouble().clamp(
-          scrollController.minScrollExtent,
-          scrollController.maxScrollExtent,
-        );
+      scrollController.minScrollExtent,
+      scrollController.maxScrollExtent,
+    );
     scrollController.jumpTo(target);
   }
 
@@ -518,8 +518,10 @@ class PlanModeController extends ChangeNotifier {
       return;
     }
     final start = _parsed.sourceMap.renderedToSource(renderedStart);
-    final end = _parsed.sourceMap
-        .renderedToSource(renderedEnd, bias: MapBias.end);
+    final end = _parsed.sourceMap.renderedToSource(
+      renderedEnd,
+      bias: MapBias.end,
+    );
     final source = _viewedText;
     final startOffset = start.offset.clamp(0, source.length);
     final endOffset = end.offset.clamp(0, source.length);

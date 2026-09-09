@@ -1,5 +1,7 @@
 import 'dart:collection';
+
 import 'package:nocterm/nocterm.dart';
+
 import '../../commands/registry.dart';
 import '../../theme/crux_theme.dart';
 import '../../utils/ticker_registry.dart';

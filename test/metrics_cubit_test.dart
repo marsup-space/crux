@@ -91,47 +91,44 @@ void main() {
       expect(cubit.state.sessionState(1).cacheHitPct, isNull);
     });
 
-    test(
-      'runtime sink adapter updates cubit metrics without mirroring runtime metrics',
-      () {
-        final cubit = MetricsCubit();
-        addTearDown(cubit.close);
-        final runtime = SessionRuntimeState(sessionId: 1);
-        final sink = cubit.runtimeSinkFor(1, runtime);
-        final start = DateTime(2026);
-        final content = start.add(const Duration(milliseconds: 150));
-        final first = start.add(const Duration(milliseconds: 200));
+    test('runtime sink adapter updates cubit metrics without mirroring runtime metrics', () {
+      final cubit = MetricsCubit();
+      addTearDown(cubit.close);
+      final runtime = SessionRuntimeState(sessionId: 1);
+      final sink = cubit.runtimeSinkFor(1, runtime);
+      final start = DateTime(2026);
+      final content = start.add(const Duration(milliseconds: 150));
+      final first = start.add(const Duration(milliseconds: 200));
 
-        sink.beginResponse(now: start);
-        sink.updateContext(
-          turnBaseTokens: 100,
-          accumulatedToolTokens: 10,
-          targetTokens: 110,
-        );
-        sink.beginModelRound(now: start);
-        sink.recordContentStarted(content);
-        sink.recordFirstToken(first);
-        sink.addCompletionTokens(20);
-        sink.finishModelRound(
-          now: first.add(const Duration(milliseconds: 800)),
-          accumulateGeneration: true,
-        );
-        sink.recordCacheHitPct(hitTokens: 8, missTokens: 2);
+      sink.beginResponse(now: start);
+      sink.updateContext(
+        turnBaseTokens: 100,
+        accumulatedToolTokens: 10,
+        targetTokens: 110,
+      );
+      sink.beginModelRound(now: start);
+      sink.recordContentStarted(content);
+      sink.recordFirstToken(first);
+      sink.addCompletionTokens(20);
+      sink.finishModelRound(
+        now: first.add(const Duration(milliseconds: 800)),
+        accumulateGeneration: true,
+      );
+      sink.recordCacheHitPct(hitTokens: 8, missTokens: 2);
 
-        final metrics = cubit.state.sessionState(1);
-        expect(metrics.contentStartTime, content);
-        expect(metrics.ttftMs, 200);
-        expect(metrics.cumulativeCompletionTokens, 20);
-        expect(metrics.cumulativeGenMs, 800);
-        expect(metrics.contextTargetTokens, 110);
-        expect(metrics.cacheHitPct, 80.0);
-        expect(runtime.contentStartTime, isNull);
-        expect(runtime.ttftMs, 0);
-        expect(runtime.cumulativeCompletionTokens, 0);
-        expect(runtime.contextTargetTokens, 0);
-        expect(runtime.cacheHitPct, isNull);
-      },
-    );
+      final metrics = cubit.state.sessionState(1);
+      expect(metrics.contentStartTime, content);
+      expect(metrics.ttftMs, 200);
+      expect(metrics.cumulativeCompletionTokens, 20);
+      expect(metrics.cumulativeGenMs, 800);
+      expect(metrics.contextTargetTokens, 110);
+      expect(metrics.cacheHitPct, 80.0);
+      expect(runtime.contentStartTime, isNull);
+      expect(runtime.ttftMs, 0);
+      expect(runtime.cumulativeCompletionTokens, 0);
+      expect(runtime.contextTargetTokens, 0);
+      expect(runtime.cacheHitPct, isNull);
+    });
 
     test('runtime sink adapter marks round first delta without TTFT', () {
       final cubit = MetricsCubit();

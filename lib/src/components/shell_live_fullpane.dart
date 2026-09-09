@@ -324,10 +324,7 @@ class _TerminalTailViewState extends State<_TerminalTailView> {
     final theme = CruxTheme.of(context);
     final tail = component.entry?.outputTail ?? '';
     final body = tail.isEmpty
-        ? Text(
-            component.emptyText,
-            style: TextStyle(color: theme.onSurfaceDim),
-          )
+        ? Text(component.emptyText, style: TextStyle(color: theme.onSurfaceDim))
         // Plain text in the default color — deliberately NO syntax
         // highlighting, NO markdown parsing. The tail is the process's
         // raw output; any color it appears in is the host's, not an

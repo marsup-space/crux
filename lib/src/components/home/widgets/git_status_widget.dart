@@ -112,9 +112,9 @@ class _GitStatusHomeViewState extends State<_GitStatusHomeView> {
 
     if (!status.isRepo) {
       return homeSurface(
-        declaration: SurfaceBuilder(
-          surfaceId: 'home.git.empty',
-        ).text('root', component.strings.t('home.notGitRepo')).build(),
+        declaration: SurfaceBuilder(surfaceId: 'home.git.empty')
+            .text('root', component.strings.t('home.notGitRepo'))
+            .build(),
         strings: component.strings,
       );
     }

@@ -860,17 +860,51 @@ String _ordinalFor(int streak) {
 /// POSIX verbs that mutate files. Conservative on purpose — this guard
 /// is heuristic / best-effort, not a sandbox (design doc §9 non-goal).
 const _posixMutatingVerbs = <String>{
-  'sed', 'tee', 'mv', 'cp', 'rm', 'rmdir', 'mkdir', 'touch', 'ln',
-  'dd', 'truncate', 'chmod', 'chown', 'patch', 'install', 'rsync',
-  'shred', 'unlink', 'rename',
+  'sed',
+  'tee',
+  'mv',
+  'cp',
+  'rm',
+  'rmdir',
+  'mkdir',
+  'touch',
+  'ln',
+  'dd',
+  'truncate',
+  'chmod',
+  'chown',
+  'patch',
+  'install',
+  'rsync',
+  'shred',
+  'unlink',
+  'rename',
 };
 
 /// Windows / PowerShell mutating verbs and cmdlets.
 const _winMutatingVerbs = <String>{
-  'del', 'erase', 'ren', 'rename', 'move', 'copy', 'xcopy', 'robocopy',
-  'md', 'mkdir', 'rd', 'rmdir', 'type',
-  'Set-Content', 'Add-Content', 'Out-File', 'Copy-Item', 'Move-Item',
-  'Remove-Item', 'New-Item', 'Rename-Item', 'Clear-Content',
+  'del',
+  'erase',
+  'ren',
+  'rename',
+  'move',
+  'copy',
+  'xcopy',
+  'robocopy',
+  'md',
+  'mkdir',
+  'rd',
+  'rmdir',
+  'type',
+  'Set-Content',
+  'Add-Content',
+  'Out-File',
+  'Copy-Item',
+  'Move-Item',
+  'Remove-Item',
+  'New-Item',
+  'Rename-Item',
+  'Clear-Content',
 };
 
 /// Detect a mutating shell command that targets a file other than the
@@ -985,7 +1019,11 @@ String? _firstPathArg(String segment, String verb) {
 
 /// Whether [candidate] resolves (relative to [workingDirectory]) to
 /// [planDocPath]. Pure string normalization — no filesystem access.
-bool _isPlanPath(String candidate, String planDocPath, String workingDirectory) {
+bool _isPlanPath(
+  String candidate,
+  String planDocPath,
+  String workingDirectory,
+) {
   var c = candidate.trim();
   if (c.startsWith('"') && c.endsWith('"') && c.length >= 2) {
     c = c.substring(1, c.length - 1);

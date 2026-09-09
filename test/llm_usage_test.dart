@@ -147,13 +147,13 @@ void main() {
 
     test('omits reasoning_content for the Responses API wire when the turn '
         'had no CoT', () {
-      final wireMessages = ChatService.buildApiMessages(
-        [
-          Message(id: 1, sessionId: 1, role: 'ai', content: 'plain answer'),
-        ],
-        WireFamily.responsesApi,
-      );
-      expect(wireMessages.single, {'role': 'assistant', 'content': 'plain answer'});
+      final wireMessages = ChatService.buildApiMessages([
+        Message(id: 1, sessionId: 1, role: 'ai', content: 'plain answer'),
+      ], WireFamily.responsesApi);
+      expect(wireMessages.single, {
+        'role': 'assistant',
+        'content': 'plain answer',
+      });
     });
 
     test('renders compaction summaries as user context', () {

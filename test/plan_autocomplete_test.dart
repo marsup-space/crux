@@ -144,8 +144,7 @@ void main() {
       );
     });
 
-    test('clean project: heuristic alone still offers plan-named docs',
-        () {
+    test('clean project: heuristic alone still offers plan-named docs', () {
       final clean = Directory.systemTemp.createTempSync('plan_clean');
       addTearDown(() => clean.deleteSync(recursive: true));
       File('${clean.path}/PLAN.md').writeAsStringSync('# Plan\n');
@@ -157,26 +156,18 @@ void main() {
 
   test('/plan te narrows to test run via the shared fuzzy matcher', () {
     final values = buildSuggestionValues(tmp.path, null);
-    final filtered = filterSuggestions(
-      [
-        for (final v in values)
-          CommandSuggestion(value: v, description: null),
-      ],
-      'te',
-    );
+    final filtered = filterSuggestions([
+      for (final v in values) CommandSuggestion(value: v, description: null),
+    ], 'te');
     expect(filtered.map((s) => s.value), contains('test run'));
     expect(filtered.map((s) => s.value), isNot(contains('refactor-plan')));
   });
 
   test('a fresh name yields no suggestion (enter creates it)', () {
     final values = buildSuggestionValues(tmp.path, null);
-    final filtered = filterSuggestions(
-      [
-        for (final v in values)
-          CommandSuggestion(value: v, description: null),
-      ],
-      'brand new plan',
-    );
+    final filtered = filterSuggestions([
+      for (final v in values) CommandSuggestion(value: v, description: null),
+    ], 'brand new plan');
     expect(filtered.map((s) => s.value), isEmpty);
   });
 }

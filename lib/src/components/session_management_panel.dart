@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+
 import '../theme/crux_theme.dart';
 import '../models/session.dart';
 import '../i18n/strings.dart';
@@ -55,8 +56,7 @@ class SessionManagementPanel extends StatefulComponent {
   });
 
   @override
-  State<SessionManagementPanel> createState() =>
-      _SessionManagementPanelState();
+  State<SessionManagementPanel> createState() => _SessionManagementPanelState();
 }
 
 enum _PanelMode { browse, confirmDelete, rename }
@@ -196,8 +196,10 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
       if (activeChats.isNotEmpty)
         _Section(component.strings.t('chat.sessions.chats'), activeChats),
       if (archivedChats.isNotEmpty)
-        _Section(component.strings.t('chat.sessions.chatsArchived'),
-            archivedChats),
+        _Section(
+          component.strings.t('chat.sessions.chatsArchived'),
+          archivedChats,
+        ),
     ];
 
     final rows = <_Row>[];
@@ -541,9 +543,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
                     controller: _searchController,
                     focused: false,
                     maxLines: 1,
-                    style: TextStyle(
-                      color: CruxTheme.of(context).foreground,
-                    ),
+                    style: TextStyle(color: CruxTheme.of(context).foreground),
                     placeholder: component.strings.t(
                       'chat.sessions.searchHint',
                     ),
@@ -557,9 +557,7 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
                             'query': _query,
                           })
                         : component.strings.t('chat.sessions.noSessions'),
-                    style: TextStyle(
-                      color: CruxTheme.of(context).onSurfaceDim,
-                    ),
+                    style: TextStyle(color: CruxTheme.of(context).onSurfaceDim),
                   ),
                 ),
               ),
@@ -820,7 +818,9 @@ class _SessionManagementPanelState extends State<SessionManagementPanel> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            component.strings.t('chat.sessions.current', {'title': session.title}),
+            component.strings.t('chat.sessions.current', {
+              'title': session.title,
+            }),
             style: TextStyle(color: CruxTheme.of(context).onSurfaceVariant),
           ),
           const SizedBox(height: 1),

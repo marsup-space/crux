@@ -87,9 +87,8 @@ void main() {
       // resolve `$e2e-skill`. `discoverSkills(cwd: ...)` walks
       // `<cwd>/.agents/skills/<name>/SKILL.md` by default — using
       // a temp dir as cwd keeps the test hermetic.
-      skillRoot = await Directory(
-        '${tempDir.path}/.agents/skills/e2e-skill',
-      ).create(recursive: true);
+      skillRoot = await Directory('${tempDir.path}/.agents/skills/e2e-skill')
+          .create(recursive: true);
       await File('${skillRoot.path}/SKILL.md').writeAsString('''
 ---
 name: e2e-skill
@@ -192,11 +191,9 @@ Body of the skill — irrelevant; the e2e test only checks that the
           input: 'please review \$e2e-skill by EOD',
           available: discoverSkills(cwd: tempDir.path),
         );
-        expect(
-          expansion.includedSkills,
-          ['e2e-skill'],
-          reason: 'discoverSkills should resolve the test skill',
-        );
+        expect(expansion.includedSkills, [
+          'e2e-skill',
+        ], reason: 'discoverSkills should resolve the test skill');
         final rt = sessionController.runtime(1);
         rt.loadedSkillNames.addAll(expansion.includedSkills);
 

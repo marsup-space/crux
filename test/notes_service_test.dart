@@ -21,10 +21,7 @@ void main() {
   setUp(() {
     project = Directory.systemTemp.createTempSync('notes_service_');
     db = CruxDatabase.forTesting(NativeDatabase.memory());
-    service = NotesService(
-      NotesStore(db),
-      projectPath: project.path,
-    );
+    service = NotesService(NotesStore(db), projectPath: project.path);
   });
 
   tearDown(() async {
@@ -47,21 +44,20 @@ void main() {
     test('count line only — items live in the todos array, not the label', () {
       final s = parseTodos('- [ ] a\n- [x] done\n- [ ] b\n');
       final display = NotesService.renderDisplay(s);
-      expect(
-        display,
-        '2 todos',
-      );
+      expect(display, '2 todos');
     });
 
-    test('overflow no longer collapses — the full list scrolls at the host',
-        () {
-      final s = parseTodos(
-        '- [ ] one\n- [ ] two\n- [ ] three\n- [ ] four\n- [ ] five\n',
-      );
-      // Count line only: rendering surfaces show every open todo in a
-      // scrollable list, so there's no "+N more" overflow line anymore.
-      expect(NotesService.renderDisplay(s), '5 todos');
-    });
+    test(
+      'overflow no longer collapses — the full list scrolls at the host',
+      () {
+        final s = parseTodos(
+          '- [ ] one\n- [ ] two\n- [ ] three\n- [ ] four\n- [ ] five\n',
+        );
+        // Count line only: rendering surfaces show every open todo in a
+        // scrollable list, so there's no "+N more" overflow line anymore.
+        expect(NotesService.renderDisplay(s), '5 todos');
+      },
+    );
 
     test('singular "todo" for exactly one open item', () {
       final s = parseTodos('- [ ] only\n- [x] done\n');
@@ -99,16 +95,16 @@ void main() {
       ]);
     });
 
-    test('todos array carries the full open list (host scrolls, no cap)',
-        () async {
-      await service.init();
-      await service.save(
-        '- [ ] one\n- [ ] two\n- [ ] three\n- [ ] four\n',
-      );
-      final proj = readProjection();
-      expect(proj['todos'], hasLength(4)); // uncapped — full list
-      expect(proj['display'], '4 todos');
-    });
+    test(
+      'todos array carries the full open list (host scrolls, no cap)',
+      () async {
+        await service.init();
+        await service.save('- [ ] one\n- [ ] two\n- [ ] three\n- [ ] four\n');
+        final proj = readProjection();
+        expect(proj['todos'], hasLength(4)); // uncapped — full list
+        expect(proj['display'], '4 todos');
+      },
+    );
 
     test('projection reflects fenced-code todos being ignored', () async {
       await service.init();
@@ -185,8 +181,7 @@ void main() {
       expect((todos.single as Map)['text'], 'second');
     });
 
-    test('markTodoOpen undoes a done todo (the widget undo window)',
-        () async {
+    test('markTodoOpen undoes a done todo (the widget undo window)', () async {
       await service.init();
       await service.save('- [ ] a\n- [ ] b\n');
       await service.markTodoDone(0);
@@ -202,16 +197,18 @@ void main() {
       expect(proj['display'], '2 todos');
     });
 
-    test('markTodoOpen is a no-op on an already-open or non-todo line',
-        () async {
-      await service.init();
-      await service.save('- [ ] a\nplain\n');
-      await service.markTodoOpen(0);
-      expect(await service.load(), '- [ ] a\nplain\n');
-      await service.markTodoOpen(1);
-      expect(await service.load(), '- [ ] a\nplain\n');
-      await service.markTodoOpen(99);
-      expect(await service.load(), '- [ ] a\nplain\n');
-    });
+    test(
+      'markTodoOpen is a no-op on an already-open or non-todo line',
+      () async {
+        await service.init();
+        await service.save('- [ ] a\nplain\n');
+        await service.markTodoOpen(0);
+        expect(await service.load(), '- [ ] a\nplain\n');
+        await service.markTodoOpen(1);
+        expect(await service.load(), '- [ ] a\nplain\n');
+        await service.markTodoOpen(99);
+        expect(await service.load(), '- [ ] a\nplain\n');
+      },
+    );
   });
 }

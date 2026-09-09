@@ -39,15 +39,15 @@ class _DataIdleWatchdog {
     required String providerName,
     LlmVendor? vendor,
     required Duration? timeout,
-  })  : _controller = controller,
-        // Private named params can't be initializing formals.
-        // ignore: prefer_initializing_formals
-        _providerName = providerName,
-        // ignore: prefer_initializing_formals
-        _vendor = vendor,
-        _timeout = (timeout == null || timeout <= Duration.zero)
-            ? null
-            : timeout;
+  }) : _controller = controller,
+       // Private named params can't be initializing formals.
+       // ignore: prefer_initializing_formals
+       _providerName = providerName,
+       // ignore: prefer_initializing_formals
+       _vendor = vendor,
+       _timeout = (timeout == null || timeout <= Duration.zero)
+           ? null
+           : timeout;
 
   final StreamController<LlmChunk> _controller;
   final String _providerName;
@@ -635,9 +635,7 @@ class LlmClient {
           // same synthetic reason a natural connection-close gets)
           // so the executor's empty-stream check fires and retries.
           // With content, keep the honest 'stop'.
-          controller.add(
-            LlmChunk(finishReason: sawContent ? 'stop' : 'done'),
-          );
+          controller.add(LlmChunk(finishReason: sawContent ? 'stop' : 'done'));
           await controller.close();
           return;
         }

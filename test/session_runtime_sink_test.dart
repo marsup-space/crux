@@ -30,8 +30,7 @@ void main() {
     expect(runtime.roundStreaming, isFalse);
   });
 
-  test(
-      'beginResponse clears last-round provider usage so a stale value from '
+  test('beginResponse clears last-round provider usage so a stale value from '
       'a prior turn never leaks into a new interrupted turn', () {
     final runtime = SessionRuntimeState(sessionId: 1)
       ..lastRoundPromptTokens = 1234

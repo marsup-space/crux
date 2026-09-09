@@ -73,7 +73,8 @@ class ShellMonitorRegistry {
 
   /// Whether any monitor-supervised process of [sessionId] is still
   /// running. Drives whether the toast renders a kill button at all.
-  bool isRunning(int sessionId) => (_processes[sessionId] ?? const {}).isNotEmpty;
+  bool isRunning(int sessionId) =>
+      (_processes[sessionId] ?? const {}).isNotEmpty;
 
   /// Take (remove) the pending kill note for the process with OS pid
   /// [osPid], if any.

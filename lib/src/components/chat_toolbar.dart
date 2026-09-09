@@ -5,6 +5,7 @@
 
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
+
 import '../models/session.dart';
 import '../models/session_runtime_state.dart';
 import '../services/chat_service.dart';
@@ -498,11 +499,13 @@ class _ChatToolbarState extends State<ChatToolbar> {
         // of the two so a short model label doesn't let the hover label
         // overflow the reserved width and shift the rest of the row.
         final modelLabelW = UnicodeWidth.stringWidth(modelLabel);
-        final interruptW = UnicodeWidth.stringWidth(component.strings.t('chat.toolbar.interrupt'));
+        final interruptW = UnicodeWidth.stringWidth(
+          component.strings.t('chat.toolbar.interrupt'),
+        );
         final modelW =
             (isSessionRunning && interruptW > modelLabelW
-                    ? interruptW
-                    : modelLabelW) +
+                ? interruptW
+                : modelLabelW) +
             btnPad;
         final imageW =
             _modelSupportsImages(_sessionController.currentSession.model)
@@ -601,8 +604,7 @@ class _ChatToolbarState extends State<ChatToolbar> {
         if (showCreditBalanceUsage) remaining -= creditBalanceW;
 
         final showSyncButton =
-            component.onSyncModelsPressed != null &&
-            (remaining - syncW) >= 0;
+            component.onSyncModelsPressed != null && (remaining - syncW) >= 0;
         if (showSyncButton) remaining -= syncW;
 
         final showAux =
@@ -663,7 +665,9 @@ class _ChatToolbarState extends State<ChatToolbar> {
               if (showThinking && nonNullRt != null)
                 Hinted(
                   hint: component.strings.t('chat.toolbar.thinkingHint', {
-                    'label': _displayEffort(nonNullRt.reasoningEffort ?? 'normal'),
+                    'label': _displayEffort(
+                      nonNullRt.reasoningEffort ?? 'normal',
+                    ),
                   }),
                   child: Button(
                     label: thinkingLabel,

@@ -160,9 +160,8 @@ class NotesService {
   /// without losing anything (the marker may be a space, an `x`/`X`, or
   /// empty).
   static String? _rewriteTodoMarker(String line, {required bool done}) {
-    final m = RegExp(
-      r'^(\s*(?:[-*+]|\d+[.)])\s+\[)([ xX]?)(\])(.*)$',
-    ).firstMatch(line);
+    final m = RegExp(r'^(\s*(?:[-*+]|\d+[.)])\s+\[)([ xX]?)(\])(.*)$')
+        .firstMatch(line);
     if (m == null) return null;
     final marker = m.group(2) ?? '';
     final isChecked = marker.toLowerCase() == 'x';

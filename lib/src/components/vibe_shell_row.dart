@@ -117,7 +117,10 @@ class _VibeShellRowState extends State<VibeShellRow> {
       key: ValueKey('vibe-shell-${component.callId}'),
       label: '$label$timerText',
       segments: [
-        MultiButtonSegment(label: component.strings.t('shell.live.detail'), onPressed: component.onDetail),
+        MultiButtonSegment(
+          label: component.strings.t('shell.live.detail'),
+          onPressed: component.onDetail,
+        ),
       ],
       color: theme.text,
       hoverColor: theme.accent,

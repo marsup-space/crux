@@ -48,7 +48,7 @@ class ActivityHomeWidget extends HomeWidget {
   final Future<DailyTokens> Function(HomeContext ctx)? _loaderOverride;
 
   ActivityHomeWidget({Future<DailyTokens> Function(HomeContext ctx)? loader})
-      : _loaderOverride = loader;
+    : _loaderOverride = loader;
 
   @override
   String get id => 'activity';
@@ -141,7 +141,11 @@ class _ActivityViewState extends State<_ActivityView> {
         style: TextStyle(color: theme.onSurfaceDim),
       );
     }
-    return _ActivityGrid(totals: _totals, theme: theme, strings: component.strings);
+    return _ActivityGrid(
+      totals: _totals,
+      theme: theme,
+      strings: component.strings,
+    );
   }
 }
 
@@ -253,8 +257,7 @@ class _ActivityGrid extends StatelessComponent {
     // Oldest-first: the window is [ActivityHomeWidget.weeks] full
     // weeks ending at the current week. `weeks` full Mon→Sun rows,
     // where the last row is the current week (days after today blank).
-    final firstMonday =
-        _weekStartMonday(today, ActivityHomeWidget.weeks - 1);
+    final firstMonday = _weekStartMonday(today, ActivityHomeWidget.weeks - 1);
 
     // Ceiling from the rendered window only — never from the fetched
     // headroom days before it (see _ceilingFor).
@@ -341,11 +344,7 @@ class _ActivityGrid extends StatelessComponent {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        header,
-        ...weekRows,
-        legend,
-      ],
+      children: [header, ...weekRows, legend],
     );
   }
 }

@@ -921,9 +921,8 @@ void main() {
       // file we edit.
       final nested = Directory(p.join(tempDir.path, 'src', 'lib'))
         ..createSync(recursive: true);
-      await File(
-        p.join(tempDir.path, '.gitattributes'),
-      ).writeAsString('**/*.dart eol=crlf\n');
+      await File(p.join(tempDir.path, '.gitattributes'))
+          .writeAsString('**/*.dart eol=crlf\n');
       final filePath = p.join(nested.path, 'main.dart');
       await File(filePath).writeAsString('void main() {}\n');
 

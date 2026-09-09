@@ -72,10 +72,7 @@ class SessionMentionOverlay extends StatelessComponent {
             ),
             if (query.isNotEmpty) ...[
               const SizedBox(width: 2),
-              Text(
-                '(#$query)',
-                style: TextStyle(color: theme.wizardTextDim),
-              ),
+              Text('(#$query)', style: TextStyle(color: theme.wizardTextDim)),
             ] else ...[
               const SizedBox(width: 2),
               Text(
@@ -144,7 +141,10 @@ class SessionMentionOverlay extends StatelessComponent {
     final title = mention.session.title.isEmpty
         ? strings.t('chat.sessions.untitled')
         : mention.session.title;
-    final meta = describeRelativeTime(mention.session.updatedAt, strings: strings);
+    final meta = describeRelativeTime(
+      mention.session.updatedAt,
+      strings: strings,
+    );
 
     return Container(
       decoration: isSelected
@@ -188,10 +188,7 @@ class SessionMentionOverlay extends StatelessComponent {
               style: TextStyle(color: theme.wizardTextDim),
             ),
           ],
-          Text(
-            meta,
-            style: TextStyle(color: theme.wizardTextDim),
-          ),
+          Text(meta, style: TextStyle(color: theme.wizardTextDim)),
         ],
       ),
     );

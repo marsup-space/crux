@@ -104,12 +104,7 @@ void main() {
     final tool = BashTool();
     final notices = <ShellMonitorNotice>[];
 
-    await tool.execute(
-      callArgs('echo hi'),
-      ctx(
-        onNotice: notices.add,
-      ),
-    );
+    await tool.execute(callArgs('echo hi'), ctx(onNotice: notices.add));
 
     // The run-start notice is emitted but flagged unconfigured — the
     // chat panel's isMeaningful gate drops it (no toast for a plain

@@ -57,29 +57,32 @@ void main() {
     });
 
     group('temperature / top_p pinning', () {
-      test('thinking enabled: pins temp=1.0 and top_p=0.95 regardless of caller', () {
-        for (final callerTemp in const [0.0, 0.5, 0.7, 1.0]) {
-          for (final callerTopP in const [0.85, 0.9, 0.95, 1.0]) {
-            final body = provider.buildRequestBody(
-              'mimo-v2.5-pro',
-              userMsg,
-              thinkingMode: 'enabled',
-              temperature: callerTemp,
-              topP: callerTopP,
-            );
-            expect(
-              body['temperature'],
-              1.0,
-              reason: 'caller temp $callerTemp should be replaced',
-            );
-            expect(
-              body['top_p'],
-              0.95,
-              reason: 'caller top_p $callerTopP should be replaced',
-            );
+      test(
+        'thinking enabled: pins temp=1.0 and top_p=0.95 regardless of caller',
+        () {
+          for (final callerTemp in const [0.0, 0.5, 0.7, 1.0]) {
+            for (final callerTopP in const [0.85, 0.9, 0.95, 1.0]) {
+              final body = provider.buildRequestBody(
+                'mimo-v2.5-pro',
+                userMsg,
+                thinkingMode: 'enabled',
+                temperature: callerTemp,
+                topP: callerTopP,
+              );
+              expect(
+                body['temperature'],
+                1.0,
+                reason: 'caller temp $callerTemp should be replaced',
+              );
+              expect(
+                body['top_p'],
+                0.95,
+                reason: 'caller top_p $callerTopP should be replaced',
+              );
+            }
           }
-        }
-      });
+        },
+      );
 
       test('thinking disabled: honors caller temperature and top_p', () {
         final body = provider.buildRequestBody(

@@ -77,36 +77,39 @@ void main() {
       expect(guard, isNull);
     });
 
-    test('post-exec edit guard returns a guard ToolResult for non-plan', () async {
-      final tool = EditTool();
-      // The plan guard lives in `_doMutation`, which `execute` only
-      // reaches when the target file exists — create it under a temp dir.
-      final tmp = Directory.systemTemp.createTempSync('plan_guard_edit');
-      try {
-        File('${tmp.path}/foo.dart').writeAsStringSync('a');
-        final rt = SessionRuntimeState(sessionId: 1);
-        rt.planDocPath = '${tmp.path}/PLAN.md';
-        final result = await tool.execute(
-          {
-            'filePath': '${tmp.path}/foo.dart',
-            'oldString': 'a',
-            'newString': 'b',
-            'intent': 'test',
-          },
-          ToolContext(
-            sessionId: 1,
-            messageId: 1,
-            abort: AbortSignal(),
-            workingDirectory: tmp.path,
-            sessionRuntime: rt,
-          ),
-        );
-        expect(result.metadata['guardTriggered'], isTrue);
-        expect(result.metadata['guardKind'], 'planMode');
-      } finally {
-        tmp.deleteSync(recursive: true);
-      }
-    });
+    test(
+      'post-exec edit guard returns a guard ToolResult for non-plan',
+      () async {
+        final tool = EditTool();
+        // The plan guard lives in `_doMutation`, which `execute` only
+        // reaches when the target file exists — create it under a temp dir.
+        final tmp = Directory.systemTemp.createTempSync('plan_guard_edit');
+        try {
+          File('${tmp.path}/foo.dart').writeAsStringSync('a');
+          final rt = SessionRuntimeState(sessionId: 1);
+          rt.planDocPath = '${tmp.path}/PLAN.md';
+          final result = await tool.execute(
+            {
+              'filePath': '${tmp.path}/foo.dart',
+              'oldString': 'a',
+              'newString': 'b',
+              'intent': 'test',
+            },
+            ToolContext(
+              sessionId: 1,
+              messageId: 1,
+              abort: AbortSignal(),
+              workingDirectory: tmp.path,
+              sessionRuntime: rt,
+            ),
+          );
+          expect(result.metadata['guardTriggered'], isTrue);
+          expect(result.metadata['guardKind'], 'planMode');
+        } finally {
+          tmp.deleteSync(recursive: true);
+        }
+      },
+    );
   });
 
   group('approved gate lifts the plan-mode guards (plan item D)', () {
@@ -118,8 +121,11 @@ void main() {
         workingDirectory: workingDir,
         sessionRuntime: runtimeWithPlan(planPath, approved: true),
       );
-      expect(guard, isNull,
-          reason: 'approved lifts the plan-only edit restriction');
+      expect(
+        guard,
+        isNull,
+        reason: 'approved lifts the plan-only edit restriction',
+      );
     });
 
     test('write on a non-plan file is allowed while approved', () async {
@@ -161,8 +167,11 @@ void main() {
       // the detector itself never sees an approved plan.
       final planApproved = true;
       final guardArmed = planPath.isNotEmpty && !planApproved;
-      expect(guardArmed, isFalse,
-          reason: 'approved plan skips the plan-mode shell guard entirely');
+      expect(
+        guardArmed,
+        isFalse,
+        reason: 'approved plan skips the plan-mode shell guard entirely',
+      );
 
       // And the same command while unapproved is caught by the
       // detector (covered by the posix group above); sanity-check

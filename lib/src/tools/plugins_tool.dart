@@ -31,7 +31,7 @@ class PluginsTool extends ToolDef {
   /// Overridable launcher for [PluginActionKind.launch] actions —
   /// tests inject a fake instead of opening a real terminal.
   final Future<bool> Function(PluginAction action, String projectPath)?
-      launchFn;
+  launchFn;
 
   /// Override for the user's home directory — passed straight to
   /// [PluginRegistry]. Tests inject an empty temp dir so the global
@@ -60,25 +60,26 @@ class PluginsTool extends ToolDef {
 
   @override
   Map<String, dynamic> get parametersSchema => {
-        'type': 'object',
-        'properties': {
-          'action': {
-            'type': 'string',
-            'enum': ['list', 'inspect', 'trigger'],
-            'description': 'What to do.',
-          },
-          'id': {
-            'type': 'string',
-            'description': 'Plugin id (required for inspect and trigger).',
-          },
-          'action_label': {
-            'type': 'string',
-            'description': 'Action label from the spec (required for '
-                'trigger), e.g. "reload".',
-          },
-        },
-        'required': ['action'],
-      };
+    'type': 'object',
+    'properties': {
+      'action': {
+        'type': 'string',
+        'enum': ['list', 'inspect', 'trigger'],
+        'description': 'What to do.',
+      },
+      'id': {
+        'type': 'string',
+        'description': 'Plugin id (required for inspect and trigger).',
+      },
+      'action_label': {
+        'type': 'string',
+        'description':
+            'Action label from the spec (required for '
+            'trigger), e.g. "reload".',
+      },
+    },
+    'required': ['action'],
+  };
 
   @override
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
@@ -172,11 +173,7 @@ class PluginsTool extends ToolDef {
     );
   }
 
-  ToolResult _inspect(
-    List<Plugin> plugins,
-    String projectPath,
-    String? id,
-  ) {
+  ToolResult _inspect(List<Plugin> plugins, String projectPath, String? id) {
     final plugin = _byId(plugins, id);
     if (plugin == null) {
       return ToolResult.error(
@@ -253,9 +250,9 @@ class PluginsTool extends ToolDef {
         title: 'plugins trigger ${plugin.id}.$actionLabel',
         output: ok
             ? 'Launched ${plugin.id}.$actionLabel → ${action.command} '
-                '(new terminal in $projectPath)'
+                  '(new terminal in $projectPath)'
             : 'Failed to launch ${plugin.id}.$actionLabel — launch actions '
-                'need macOS + Ghostty',
+                  'need macOS + Ghostty',
         metadata: {'plugins': 1, 'ok': ok},
       );
     }
@@ -265,7 +262,8 @@ class PluginsTool extends ToolDef {
       final rendered = renderActionPrompt(action, status.data);
       return ToolResult(
         title: 'plugins trigger ${plugin.id}.$actionLabel',
-        output: 'Quick action ${plugin.id}.$actionLabel renders as:\n\n'
+        output:
+            'Quick action ${plugin.id}.$actionLabel renders as:\n\n'
             '$rendered\n\n'
             'This is the message the user\'s button-click would submit '
             'to the session. Act on it directly (or refine it first if '
@@ -280,7 +278,8 @@ class PluginsTool extends ToolDef {
     if (action.kind == PluginActionKind.screen) {
       return ToolResult(
         title: 'plugins trigger ${plugin.id}.$actionLabel',
-        output: '${plugin.id}.$actionLabel is a `screen` action — clicking '
+        output:
+            '${plugin.id}.$actionLabel is a `screen` action — clicking '
             'it opens the `${action.screen}` fullpane in the running Crux '
             'TUI. There is no agent-side effect to trigger from here.',
         metadata: {'plugins': 1, 'ok': false, 'screen': action.screen},
@@ -306,11 +305,7 @@ class PluginsTool extends ToolDef {
       return ToolResult(
         title: 'plugins trigger ${plugin.id}.$actionLabel',
         output: buf.toString().trimRight(),
-        metadata: {
-          'plugins': 1,
-          'ok': result.ok,
-          'exitCode': result.exitCode,
-        },
+        metadata: {'plugins': 1, 'ok': result.ok, 'exitCode': result.exitCode},
       );
     }
 
@@ -328,7 +323,7 @@ class PluginsTool extends ToolDef {
       output: ok
           ? 'Triggered ${plugin.id}.$actionLabel → POST $url → ok'
           : 'Failed to trigger ${plugin.id}.$actionLabel → POST $url '
-              '(target unreachable or non-200)',
+                '(target unreachable or non-200)',
       metadata: {'plugins': 1, 'ok': ok},
     );
   }

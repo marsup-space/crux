@@ -6,7 +6,10 @@ Future<void> executeModel(List<String> parts, CommandContext ctx) async {
     final modelKey = parts[1];
     if (ctx.providerServiceReady &&
         ctx.providerService.modelByCompositeKey(modelKey) == null) {
-      ctx.showToast(ctx.strings.t('toast.unknownModel', {'model': modelKey}), mode: ToastMode.error);
+      ctx.showToast(
+        ctx.strings.t('toast.unknownModel', {'model': modelKey}),
+        mode: ToastMode.error,
+      );
     } else {
       if (ctx.currentSessionId != null) {
         await ctx.store.update(ctx.currentSessionId!, model: modelKey);
@@ -20,7 +23,10 @@ Future<void> executeModel(List<String> parts, CommandContext ctx) async {
       final display = ctx.providerServiceReady
           ? ctx.providerService.displayLabelFor(modelKey)
           : modelKey;
-      ctx.showToast(ctx.strings.t('toast.modelSwitched', {'model': display}), mode: ToastMode.status);
+      ctx.showToast(
+        ctx.strings.t('toast.modelSwitched', {'model': display}),
+        mode: ToastMode.status,
+      );
       ctx.providerService.setLastUsedModel(modelKey);
     }
   } else {

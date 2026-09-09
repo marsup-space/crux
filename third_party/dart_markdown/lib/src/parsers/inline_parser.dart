@@ -86,7 +86,9 @@ class InlineParser extends SourceParser {
         }
 
         return true;
-      })) continue;
+      })) {
+        continue;
+      }
 
       advance();
     }

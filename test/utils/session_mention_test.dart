@@ -110,11 +110,8 @@ void main() {
   });
 
   group('rankSessionMentions', () {
-    Session session(int id, String title, {DateTime? archivedAt}) => Session(
-      id: id,
-      title: title,
-      archivedAt: archivedAt,
-    );
+    Session session(int id, String title, {DateTime? archivedAt}) =>
+        Session(id: id, title: title, archivedAt: archivedAt);
 
     test('empty query returns every session, non-archived first', () {
       final archived = session(3, 'Old', archivedAt: DateTime(2020));
@@ -214,7 +211,10 @@ void main() {
       final now = DateTime(2026, 1, 10, 12, 0, 0);
       expect(describeRelativeTime(now, now: now), 'just now');
       expect(
-        describeRelativeTime(now.subtract(const Duration(minutes: 5)), now: now),
+        describeRelativeTime(
+          now.subtract(const Duration(minutes: 5)),
+          now: now,
+        ),
         '5m ago',
       );
       expect(

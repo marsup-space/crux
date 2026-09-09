@@ -172,13 +172,18 @@ class BtwTurnHandler {
           streamError = chunk.error;
           break;
         }
-        if (chunk.promptTokens != null) btwTokensIn = chunk.promptTokens!;
-        if (chunk.completionTokens != null)
+        if (chunk.promptTokens != null) {
+          btwTokensIn = chunk.promptTokens!;
+        }
+        if (chunk.completionTokens != null) {
           btwTokensOut = chunk.completionTokens!;
-        if (chunk.promptCacheHitTokens != null)
+        }
+        if (chunk.promptCacheHitTokens != null) {
           btwCacheHit = chunk.promptCacheHitTokens!;
-        if (chunk.promptCacheMissTokens != null)
+        }
+        if (chunk.promptCacheMissTokens != null) {
           btwCacheMiss = chunk.promptCacheMissTokens!;
+        }
         final deltaText = chunk.textDelta;
         final deltaReasoning = chunk.reasoningContent;
         if (deltaText != null || deltaReasoning != null) {

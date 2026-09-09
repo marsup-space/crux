@@ -93,33 +93,29 @@ void main() {
 
   test('arrows reorder the focused box and persist the new order', () async {
     await testNocterm('edit reorder', (tester) async {
-      final captured = await _pumpEdit(
-        tester,
-        [
-          StubHomeWidget('alpha', supportedSpans: const {1}),
-          StubHomeWidget('beta', supportedSpans: const {1}),
-          StubHomeWidget('gamma', supportedSpans: const {1}),
-        ],
-      );
+      final captured = await _pumpEdit(tester, [
+        StubHomeWidget('alpha', supportedSpans: const {1}),
+        StubHomeWidget('beta', supportedSpans: const {1}),
+        StubHomeWidget('gamma', supportedSpans: const {1}),
+      ]);
       await _key(tester, LogicalKey.keyE);
       // Focus is on alpha (index 0); move it right.
       await _key(tester, LogicalKey.arrowRight);
       expect(captured, isNotEmpty);
       final last = captured.last;
-      expect(
-        last.map((e) => e.id).toList(),
-        ['beta', 'alpha', 'gamma'],
-        reason: 'alpha should move after beta',
-      );
+      expect(last.map((e) => e.id).toList(), [
+        'beta',
+        'alpha',
+        'gamma',
+      ], reason: 'alpha should move after beta');
     }, size: const Size(120, 30));
   });
 
   test('= cycles the focused box span within supportedSpans', () async {
     await testNocterm('edit resize', (tester) async {
-      final captured = await _pumpEdit(
-        tester,
-        [StubHomeWidget('alpha', supportedSpans: const {1, 2})],
-      );
+      final captured = await _pumpEdit(tester, [
+        StubHomeWidget('alpha', supportedSpans: const {1, 2}),
+      ]);
       await _key(tester, LogicalKey.keyE);
       // Default span is 2 (largest). `=` cycles to the next supported.
       await _key(tester, LogicalKey.equal);
@@ -130,57 +126,51 @@ void main() {
     }, size: const Size(120, 30));
   });
 
-  test('resize on a fixed-size box shows a notice and does not persist',
-      () async {
-    await testNocterm('edit resize fixed', (tester) async {
-      final captured = await _pumpEdit(
-        tester,
-        [StubHomeWidget('alpha', supportedSpans: const {1})],
-      );
-      await _key(tester, LogicalKey.keyE);
-      await _key(tester, LogicalKey.equal);
-      expect(
-        tester.terminalState.findText('fixed size').isNotEmpty,
-        isTrue,
-        reason: 'resizing a single-span box should explain itself',
-      );
-      expect(captured, isEmpty, reason: 'no layout change should persist');
-    }, size: const Size(120, 30));
-  });
+  test(
+    'resize on a fixed-size box shows a notice and does not persist',
+    () async {
+      await testNocterm('edit resize fixed', (tester) async {
+        final captured = await _pumpEdit(tester, [
+          StubHomeWidget('alpha', supportedSpans: const {1}),
+        ]);
+        await _key(tester, LogicalKey.keyE);
+        await _key(tester, LogicalKey.equal);
+        expect(
+          tester.terminalState.findText('fixed size').isNotEmpty,
+          isTrue,
+          reason: 'resizing a single-span box should explain itself',
+        );
+        expect(captured, isEmpty, reason: 'no layout change should persist');
+      }, size: const Size(120, 30));
+    },
+  );
 
   test('x hides a box; a re-adds it', () async {
     await testNocterm('edit hide add', (tester) async {
-      final captured = await _pumpEdit(
-        tester,
-        [
-          StubHomeWidget('alpha', supportedSpans: const {1}),
-          StubHomeWidget('beta', supportedSpans: const {1}),
-        ],
-      );
+      final captured = await _pumpEdit(tester, [
+        StubHomeWidget('alpha', supportedSpans: const {1}),
+        StubHomeWidget('beta', supportedSpans: const {1}),
+      ]);
       await _key(tester, LogicalKey.keyE);
       // Hide alpha (focused).
       await _key(tester, LogicalKey.keyX);
-      expect(
-        captured.last.map((e) => e.id).toList(),
-        ['beta'],
-        reason: 'hiding alpha leaves only beta',
-      );
+      expect(captured.last.map((e) => e.id).toList(), [
+        'beta',
+      ], reason: 'hiding alpha leaves only beta');
       // Re-add it (goes to the end).
       await _key(tester, LogicalKey.keyA);
-      expect(
-        captured.last.map((e) => e.id).toList(),
-        ['beta', 'alpha'],
-        reason: 're-added alpha appends at the end',
-      );
+      expect(captured.last.map((e) => e.id).toList(), [
+        'beta',
+        'alpha',
+      ], reason: 're-added alpha appends at the end');
     }, size: const Size(120, 30));
   });
 
   test('cannot hide the last remaining box', () async {
     await testNocterm('edit hide last', (tester) async {
-      final captured = await _pumpEdit(
-        tester,
-        [StubHomeWidget('alpha', supportedSpans: const {1})],
-      );
+      final captured = await _pumpEdit(tester, [
+        StubHomeWidget('alpha', supportedSpans: const {1}),
+      ]);
       await _key(tester, LogicalKey.keyE);
       await _key(tester, LogicalKey.keyX);
       expect(
@@ -207,9 +197,7 @@ void main() {
             data: CruxThemeData.draculaFallback,
             child: HomeScreen(
               onExit: () {},
-              widgets: [
-                _ActionStub('alpha', onRun: () => ran = true),
-              ],
+              widgets: [_ActionStub('alpha', onRun: () => ran = true)],
               context_: _ctx(),
             ),
           ),
@@ -258,7 +246,9 @@ void main() {
       // it to 1.
       await _pumpEdit(
         tester,
-        [StubHomeWidget('alpha', supportedSpans: const {1, 2})],
+        [
+          StubHomeWidget('alpha', supportedSpans: const {1, 2}),
+        ],
         initialLayout: const [HomeLayoutEntry('alpha', 1)],
       );
       expect(
@@ -295,6 +285,5 @@ class _ActionStub extends HomeWidget {
     HomeContext ctx,
     int span, {
     bool focused = false,
-  }) =>
-      Text(id);
+  }) => Text(id);
 }

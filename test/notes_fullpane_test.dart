@@ -72,9 +72,7 @@ void main() {
       await mount(tester);
 
       // Move caret to end (already there), press Enter, type a word.
-      await tester.sendKeyEvent(
-        KeyboardEvent(logicalKey: LogicalKey.enter),
-      );
+      await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.enter));
       await tester.enterText('beta');
       await Future<void>.delayed(const Duration(milliseconds: 900));
       for (var i = 0; i < 3; i++) {

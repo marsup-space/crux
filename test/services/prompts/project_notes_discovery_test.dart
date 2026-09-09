@@ -26,9 +26,8 @@ void main() {
     });
 
     test('finds AGENTS.md in cwd', () {
-      File(
-        p.join(tempRoot.path, 'AGENTS.md'),
-      ).writeAsStringSync('Use bun not npm.');
+      File(p.join(tempRoot.path, 'AGENTS.md'))
+          .writeAsStringSync('Use bun not npm.');
 
       final result = discoverProjectNotes(
         cwd: tempRoot.path,
@@ -42,9 +41,8 @@ void main() {
     });
 
     test('finds CLAUDE.md in cwd when AGENTS.md is absent', () {
-      File(
-        p.join(tempRoot.path, 'CLAUDE.md'),
-      ).writeAsStringSync('Prefer functional style.');
+      File(p.join(tempRoot.path, 'CLAUDE.md'))
+          .writeAsStringSync('Prefer functional style.');
 
       final result = discoverProjectNotes(
         cwd: tempRoot.path,
@@ -112,12 +110,10 @@ void main() {
     });
 
     test('appends crux-addition.md when present in cwd', () {
-      File(
-        p.join(tempRoot.path, 'AGENTS.md'),
-      ).writeAsStringSync('AGENTS content');
-      File(
-        p.join(tempRoot.path, 'crux-addition.md'),
-      ).writeAsStringSync('Crux-specific addendum');
+      File(p.join(tempRoot.path, 'AGENTS.md'))
+          .writeAsStringSync('AGENTS content');
+      File(p.join(tempRoot.path, 'crux-addition.md'))
+          .writeAsStringSync('Crux-specific addendum');
 
       final result = discoverProjectNotes(
         cwd: tempRoot.path,
@@ -132,9 +128,8 @@ void main() {
     });
 
     test('returns only crux-addition.md when no AGENTS/CLAUDE exists', () {
-      File(
-        p.join(tempRoot.path, 'crux-addition.md'),
-      ).writeAsStringSync('Standalone addendum');
+      File(p.join(tempRoot.path, 'crux-addition.md'))
+          .writeAsStringSync('Standalone addendum');
 
       final result = discoverProjectNotes(
         cwd: tempRoot.path,
@@ -153,9 +148,8 @@ void main() {
       final root = tempRoot.path;
       final sub = Directory(p.join(root, 'sub'))..createSync();
       File(p.join(root, 'crux-addition.md')).writeAsStringSync('root addendum');
-      File(
-        p.join(sub.path, 'crux-addition.md'),
-      ).writeAsStringSync('sub addendum');
+      File(p.join(sub.path, 'crux-addition.md'))
+          .writeAsStringSync('sub addendum');
 
       final result = discoverProjectNotes(cwd: sub.path, worktree: root);
 
@@ -180,9 +174,8 @@ void main() {
       // The walker should not include tempRoot in the search.
       final worktree = Directory(p.join(tempRoot.path, 'worktree'))
         ..createSync();
-      File(
-        p.join(tempRoot.path, 'AGENTS.md'),
-      ).writeAsStringSync('OUTSIDE WORKTREE');
+      File(p.join(tempRoot.path, 'AGENTS.md'))
+          .writeAsStringSync('OUTSIDE WORKTREE');
 
       final result = discoverProjectNotes(
         cwd: worktree.path,

@@ -42,10 +42,7 @@ void main() {
 ''');
       // The two indented items match; the malformed brackets do not.
       expect(s.openCount, 2);
-      expect(s.open.map((i) => i.text), [
-        'nested open',
-        'tab-indented open',
-      ]);
+      expect(s.open.map((i) => i.text), ['nested open', 'tab-indented open']);
     });
 
     test('ignores todos inside fenced code blocks', () {

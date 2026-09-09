@@ -84,7 +84,8 @@ class LocaleController extends ChangeNotifier {
     if (configured == null) {
       active = defaultLocale;
     } else if (AppLocale.tryFromCode(configured) == null) {
-      warning = 'Configured language "$configured" is unavailable; using English';
+      warning =
+          'Configured language "$configured" is unavailable; using English';
       active = AppLocale.en;
     } else {
       active = AppLocale.tryFromCode(configured)!;
@@ -112,10 +113,8 @@ class LocaleController extends ChangeNotifier {
 
   /// The resolved reply-language policy used to render the system prompt's
   /// language section. Follows the active locale in `follow` mode.
-  ReplyLanguageSettings get replyLanguageSettings => ReplyLanguageSettings(
-        mode: _replyLanguageMode,
-        locale: _activeLocale,
-      );
+  ReplyLanguageSettings get replyLanguageSettings =>
+      ReplyLanguageSettings(mode: _replyLanguageMode, locale: _activeLocale);
 
   /// A [Strings] bound to the *current* active locale, for looking up UI
   /// chrome text at render/execution time.

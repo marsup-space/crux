@@ -88,8 +88,11 @@ void main() {
           }
         }
       }
-      expect(markerCount, greaterThan(0),
-          reason: 'heading markers should be visible on the track');
+      expect(
+        markerCount,
+        greaterThan(0),
+        reason: 'heading markers should be visible on the track',
+      );
 
       // Edit the doc: remove two sections → 5 headings. The markers
       // must follow the new parse.
@@ -142,8 +145,11 @@ void main() {
         greaterThan(0.0),
         reason: 'marker click should jump the plan controller to the row',
       );
-      expect(controller.viewMode, PlanViewMode.free,
-          reason: 'a marker click is a user scroll — drops follow mode');
+      expect(
+        controller.viewMode,
+        PlanViewMode.free,
+        reason: 'a marker click is a user scroll — drops follow mode',
+      );
     });
   });
 
@@ -164,15 +170,16 @@ void main() {
       );
       var markerCount = 0;
       for (var y = 0; y < 20; y++) {
-        if (tester.terminalState
-                .getCellAt(narrowWidth.toInt() - 1, y)
-                ?.char ==
+        if (tester.terminalState.getCellAt(narrowWidth.toInt() - 1, y)?.char ==
             '◆') {
           markerCount++;
         }
       }
-      expect(markerCount, 0,
-          reason: 'narrow panes drop heading markers (plain thumb only)');
+      expect(
+        markerCount,
+        0,
+        reason: 'narrow panes drop heading markers (plain thumb only)',
+      );
     });
   });
 }

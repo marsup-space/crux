@@ -135,8 +135,8 @@ class DiagramEdge {
     this.style = EdgeStyle.solidArrow,
     this.semanticCycle = false,
   }) : label = (label == null || label.isEmpty)
-            ? null
-            : DiagramGraph.normalizeLabel(label);
+           ? null
+           : DiagramGraph.normalizeLabel(label);
 }
 
 /// Structured warning produced while parsing or laying out.

@@ -149,9 +149,8 @@ class TokensHomeWidget extends HomeWidget {
     DateTime? latestActive;
     stats.forEach((key, s) {
       if (s.isEmpty) return;
-      final day = DateTime.tryParse(
-        key,
-      )?.toLocal(); // bucket keys are local days
+      final day = DateTime.tryParse(key)
+          ?.toLocal(); // bucket keys are local days
       if (day == null || day.isAfter(today)) return;
       if (latestActive == null || day.isAfter(latestActive!)) {
         latestActive = day;

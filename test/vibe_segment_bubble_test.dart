@@ -133,11 +133,7 @@ void main() {
           ToolCallData(
             callId: 'c1',
             name: 'edit',
-            input: {
-              'filePath': 'lib/foo.dart',
-              'limit': 5,
-              'offset': 301,
-            },
+            input: {'filePath': 'lib/foo.dart', 'limit': 5, 'offset': 301},
           ),
         ]),
         () => diffed,

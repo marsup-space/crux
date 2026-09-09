@@ -25,10 +25,12 @@ import 'package:nocterm/nocterm.dart';
 import '../../theme/crux_theme.dart';
 import '../../utils/text_width.dart';
 import '../../i18n/strings.dart';
+
 // For TerminalCanvas — the custom ProgressBar render object paints
 // per-cell backgrounds directly, mirroring ContextBar.
 // ignore_for_file: implementation_imports
 import 'package:nocterm/src/framework/terminal_canvas.dart';
+
 import 'basic_catalog_items.dart' show resolveString, resolveValue;
 import 'interactive_list_item.dart' show ListItemCatalogItem;
 import 'models.dart';

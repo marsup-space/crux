@@ -39,21 +39,21 @@ class DaemonClient {
     required this.projectPath,
     Directory? dataDir,
     String? cruxdPath,
-  })  : dataDir = dataDir ?? _defaultDataDir(),
-        cruxdPath = cruxdPath ?? _defaultCruxdPath(),
-        myPid = pid {
+  }) : dataDir = dataDir ?? _defaultDataDir(),
+       cruxdPath = cruxdPath ?? _defaultCruxdPath(),
+       myPid = pid {
     instanceId = '$myPid-${DateTime.now().millisecondsSinceEpoch}';
   }
 
   static Directory _defaultDataDir() =>
       Directory(p.join(_home(), '.crux', 'daemon'));
 
-  static String _home() => Platform.environment['HOME'] ??
+  static String _home() =>
+      Platform.environment['HOME'] ??
       Platform.environment['USERPROFILE'] ??
       Directory.systemTemp.path;
 
-  static String _defaultCruxdPath() =>
-      p.join(_home(), '.crux', 'bin', 'cruxd');
+  static String _defaultCruxdPath() => p.join(_home(), '.crux', 'bin', 'cruxd');
 
   File get stateFile => File(p.join(dataDir.path, 'state.json'));
 
@@ -79,7 +79,10 @@ class DaemonClient {
     var status = await _discover();
     if (status == null) {
       await _spawnDaemon();
-      status = await _discover(retries: 12, delay: const Duration(milliseconds: 400));
+      status = await _discover(
+        retries: 12,
+        delay: const Duration(milliseconds: 400),
+      );
     }
     if (status == null) return; // unreachable — run daemonless
     _port = status.port;
@@ -217,10 +220,10 @@ class DaemonClient {
       final status = DaemonStatus.tryParse(raw);
       if (status == null) return null;
       // pid alive?
-      final alive = Process.runSync(
-        '/bin/sh',
-        ['-c', 'kill -0 ${status.pid} 2>/dev/null'],
-      );
+      final alive = Process.runSync('/bin/sh', [
+        '-c',
+        'kill -0 ${status.pid} 2>/dev/null',
+      ]);
       if (alive.exitCode != 0) return null;
       // port answers?
       final health = await _get('http://127.0.0.1:${status.port}/status');
@@ -261,9 +264,7 @@ class DaemonClient {
       final client = HttpClient();
       try {
         final req = await client
-            .postUrl(
-              Uri.parse('http://127.0.0.1:$port$path'),
-            )
+            .postUrl(Uri.parse('http://127.0.0.1:$port$path'))
             .timeout(const Duration(seconds: 2));
         req.headers.contentType = ContentType.json;
         req.write(jsonEncode(body));
@@ -285,17 +286,13 @@ class DaemonClient {
   Future<void> _spawnDaemon() async {
     if (!File(cruxdPath).existsSync()) return;
     try {
-      final proc = await Process.start(
-        '/usr/bin/perl',
-        [
-          '-MPOSIX=setsid',
-          '-e',
-          r'setsid() or die "setsid: $!\n"; exec @ARGV or die "exec: $!\n";',
-          cruxdPath,
-          'serve',
-        ],
-        mode: ProcessStartMode.detached,
-      );
+      final proc = await Process.start('/usr/bin/perl', [
+        '-MPOSIX=setsid',
+        '-e',
+        r'setsid() or die "setsid: $!\n"; exec @ARGV or die "exec: $!\n";',
+        cruxdPath,
+        'serve',
+      ], mode: ProcessStartMode.detached);
       unawaited(proc.exitCode);
     } catch (_) {}
   }

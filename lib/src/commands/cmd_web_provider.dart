@@ -9,10 +9,15 @@ Future<void> executeWebProvider(List<String> parts, CommandContext ctx) async {
   if (parts.length == 1) {
     final providers = registry.allProviders;
     if (providers.isEmpty) {
-      ctx.showToast(ctx.strings.t('toast.webNoProviders'), mode: ToastMode.error);
+      ctx.showToast(
+        ctx.strings.t('toast.webNoProviders'),
+        mode: ToastMode.error,
+      );
       return;
     }
-    ctx.showToast(providers.map((p) => _webProviderStatusLine(p, ctx.strings)).join('\n'));
+    ctx.showToast(
+      providers.map((p) => _webProviderStatusLine(p, ctx.strings)).join('\n'),
+    );
     return;
   }
   final providerId = parts[1].trim();

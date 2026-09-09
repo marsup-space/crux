@@ -236,23 +236,21 @@ class DaemonCore {
   /// Kill all producers (daemon exit path). Waits bounded time.
   Future<void> killAll() async {
     final kills = <Future<void>>[for (final p in _producers.values) p.kill()];
-    await Future.wait(kills).timeout(
-      const Duration(seconds: 3),
-      onTimeout: () => <void>[],
-    );
+    await Future.wait(kills)
+        .timeout(const Duration(seconds: 3), onTimeout: () => <void>[]);
     _producers.clear();
   }
 
   // ── Status / state file ─────────────────────────────────────────
 
   Map<String, dynamic> statusJson() => DaemonStatus(
-        pid: pid,
-        port: port,
-        startedAt: _startedAt,
-        heartbeatAt: DateTime.now(),
-        instances: _instances.values.toList(),
-        producers: [for (final p in _producers.values) p.snapshot()],
-      ).toJson();
+    pid: pid,
+    port: port,
+    startedAt: _startedAt,
+    heartbeatAt: DateTime.now(),
+    instances: _instances.values.toList(),
+    producers: [for (final p in _producers.values) p.snapshot()],
+  ).toJson();
 
   /// Idempotent atomic state write (tmp+rename). Best-effort: a
   /// read-only home must not kill the daemon.

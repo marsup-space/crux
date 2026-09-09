@@ -443,10 +443,8 @@ echo "(should be empty)"''';
       // `pipes (|)`, `| head`, etc.) was mis-split by the
       // naive splitter, triggering false-positive guard fires
       // on parts of the commit message text.
-      test(
-        'does NOT flag git commit with multi-line message containing | as prose',
-        () {
-          final cmd = '''git commit -m 'feat(tools): shell-tool fallback guard
+      test('does NOT flag git commit with multi-line message containing | as prose', () {
+        final cmd = '''git commit -m 'feat(tools): shell-tool fallback guard
 
 Catches the LLM using bash/cmd/powershell for ops that have a dedicated
 tool (read/grep/glob/semantic_search) and applies a three-tier escalation.
@@ -459,10 +457,9 @@ The detector covers:
 
 Smart skips: input redirects/heredocs (< anywhere), no-arg tail,
 env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
-          final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
-          expect(v, isNull, reason: 'should not flag a commit message');
-        },
-      );
+        final v = detectShellGuard(cmd, isWindows: false, currentStreak: 0);
+        expect(v, isNull, reason: 'should not flag a commit message');
+      });
 
       test('does NOT flag double-quoted strings with pipes', () {
         // `echo "hello | world"` — the `|` is inside double
@@ -485,41 +482,35 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
         expect(v, isNull);
       });
 
-      test(
-        'mixed quoted/unquoted pipe does NOT flag (first verb not in any violation set)',
-        () {
-          // The OUTER `|` is unquoted and splits; the INNER
-          // `|` is inside single quotes and does not. Two
-          // segments: `cmd 'a|b'` and `cat file.txt`. With the
-          // "dumber detector" rule, only the FIRST segment is
-          // checked. `cmd` isn't in any violation set, so no flag
-          // fires. (Previously this flagged as read because cat
-          // was the first verb the old code walked to.)
-          final v = detectShellGuard(
-            "cmd 'a|b' | cat file.txt",
-            isWindows: false,
-            currentStreak: 0,
-          );
-          expect(v, isNull);
-        },
-      );
+      test('mixed quoted/unquoted pipe does NOT flag (first verb not in any violation set)', () {
+        // The OUTER `|` is unquoted and splits; the INNER
+        // `|` is inside single quotes and does not. Two
+        // segments: `cmd 'a|b'` and `cat file.txt`. With the
+        // "dumber detector" rule, only the FIRST segment is
+        // checked. `cmd` isn't in any violation set, so no flag
+        // fires. (Previously this flagged as read because cat
+        // was the first verb the old code walked to.)
+        final v = detectShellGuard(
+          "cmd 'a|b' | cat file.txt",
+          isWindows: false,
+          currentStreak: 0,
+        );
+        expect(v, isNull);
+      });
 
-      test(
-        'rg/grep inside single quotes does NOT flag (first verb is echo, not grep)',
-        () {
-          // The whole `'rg "concept" lib/ | head'` is one
-          // segment with verb `echo` (since `echo` is the first
-          // non-env token). `echo` isn't a violation verb, so
-          // no flag fires. Quote-aware segmentation preserves
-          // the `|` inside the single-quoted string.
-          final v = detectShellGuard(
-            "echo 'rg \"concept\" lib/ | head'",
-            isWindows: false,
-            currentStreak: 0,
-          );
-          expect(v, isNull);
-        },
-      );
+      test('rg/grep inside single quotes does NOT flag (first verb is echo, not grep)', () {
+        // The whole `'rg "concept" lib/ | head'` is one
+        // segment with verb `echo` (since `echo` is the first
+        // non-env token). `echo` isn't a violation verb, so
+        // no flag fires. Quote-aware segmentation preserves
+        // the `|` inside the single-quoted string.
+        final v = detectShellGuard(
+          "echo 'rg \"concept\" lib/ | head'",
+          isWindows: false,
+          currentStreak: 0,
+        );
+        expect(v, isNull);
+      });
 
       test('handles escaped pipe outside quotes (\\| does not split)', () {
         // Backslash-escaped pipe outside any string: POSIX
@@ -935,10 +926,8 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
         results: [
           (
             callId: 'a',
-            output:
-                '...cat output...\n\n[Crux system note — shell-tool fallback]\n...',
-            meta:
-                '{"shellGuard":true,"shellGuardKind":"read","shellGuardSeverity":"mild","shellGuardStreakAfter":1}',
+            output: '...cat output...\n\n[Crux system note — shell-tool fallback]\n...',
+            meta: '{"shellGuard":true,"shellGuardKind":"read","shellGuardSeverity":"mild","shellGuardStreakAfter":1}',
           ),
         ],
       );
@@ -985,9 +974,9 @@ env-var prefixes (FOO=bar cat f), absolute-path verbs (/bin/cat).' ''';
             parallelCount: v.streakAfter,
           );
         }
-        final msgs = (await store.messageStore.getMessages(
-          sessionId,
-        )).where((m) => m.role == 'shell_guard').toList();
+        final msgs = (await store.messageStore.getMessages(sessionId))
+            .where((m) => m.role == 'shell_guard')
+            .toList();
         expect(msgs.length, 3);
         expect(msgs.map((m) => m.parallelCount).toList(), [1, 2, 3]);
         expect(msgs.map((m) => m.content).toList(), [

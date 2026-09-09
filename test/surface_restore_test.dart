@@ -230,7 +230,7 @@ void main() {
               surface: instance,
               catalog: catalog,
               onAction: (_) => actionFired = true,
-              onDataModelUpdate: (_, __) => dataModelUpdated = true,
+              onDataModelUpdate: (_, _) => dataModelUpdated = true,
             ),
           ),
         );
@@ -267,14 +267,20 @@ void main() {
         expect(checkedPos.isNotEmpty, isTrue);
         await tester.tap(checkedPos.first.x, checkedPos.first.y);
         await tester.pump();
-        expect(dataModelUpdated, isFalse,
-            reason: 'submitted surface should not update DataModel');
+        expect(
+          dataModelUpdated,
+          isFalse,
+          reason: 'submitted surface should not update DataModel',
+        );
 
         // Submit button should be disabled — tapping should not fire.
         await tester.tap(submitPos.first.x, submitPos.first.y);
         await tester.pump();
-        expect(actionFired, isFalse,
-            reason: 'submitted surface should not fire action');
+        expect(
+          actionFired,
+          isFalse,
+          reason: 'submitted surface should not fire action',
+        );
       }, size: const Size(80, 24));
     });
 
@@ -357,38 +363,41 @@ void main() {
       expect(action.context['subscribe'], true);
     });
 
-    test('legacy surfaceId falls back to nearest surface (simulate pass 2)', () {
-      // Old actions recorded a component id in the "surface:" field.
-      // Pass 2's fallback picks the most recent un-submitted surface.
-      final registry = createBasicCatalog();
-      registerInteractiveCatalogItems(registry);
+    test(
+      'legacy surfaceId falls back to nearest surface (simulate pass 2)',
+      () {
+        // Old actions recorded a component id in the "surface:" field.
+        // Pass 2's fallback picks the most recent un-submitted surface.
+        final registry = createBasicCatalog();
+        registerInteractiveCatalogItems(registry);
 
-      final decl = CreateSurface(
-        surfaceId: 'subscription_form',
-        catalogId: 'crux/1.0/chat',
-        components: [
-          A2uiComponent(
-            id: 'root',
-            component: 'Text',
-            properties: {'text': 'form'},
-          ),
-        ],
-      );
-      final instance = registry.instanceFor('call_1', decl);
+        final decl = CreateSurface(
+          surfaceId: 'subscription_form',
+          catalogId: 'crux/1.0/chat',
+          components: [
+            A2uiComponent(
+              id: 'root',
+              component: 'Text',
+              properties: {'text': 'form'},
+            ),
+          ],
+        );
+        final instance = registry.instanceFor('call_1', decl);
 
-      final action = A2uiAction.tryParseDisplayString(
-        'action: submit_form\n'
-        'surface: submitBtn\n'
-        'context: {"name": "Alice"}',
-      )!;
+        final action = A2uiAction.tryParseDisplayString(
+          'action: submit_form\n'
+          'surface: submitBtn\n'
+          'context: {"name": "Alice"}',
+        )!;
 
-      // instanceById misses (component id), fallback applies.
-      final found = registry.instanceById(action.surfaceId);
-      expect(found, isNull, reason: 'component id should not match');
-      instance.restoreSubmitted(action);
-      expect(instance.submitted, isTrue);
-      expect(instance.dataModel['name'], 'Alice');
-    });
+        // instanceById misses (component id), fallback applies.
+        final found = registry.instanceById(action.surfaceId);
+        expect(found, isNull, reason: 'component id should not match');
+        instance.restoreSubmitted(action);
+        expect(instance.submitted, isTrue);
+        expect(instance.dataModel['name'], 'Alice');
+      },
+    );
   });
 
   group('TextField layout robustness', () {

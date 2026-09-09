@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart';
+
 import 'database.dart' as db;
 import '../models/session.dart';
 import '../services/llm_error.dart';
@@ -761,7 +762,8 @@ WHERE status = ?
         final stopError = LlmError(
           kind: LlmErrorKind.cancelled,
           vendor: LlmVendor.unknown,
-          message: 'The previous Crux process exited while this turn '
+          message:
+              'The previous Crux process exited while this turn '
               'was still streaming — the response was cut off.',
           providerName: '',
         );

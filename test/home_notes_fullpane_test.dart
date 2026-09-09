@@ -12,7 +12,6 @@ import 'package:test/test.dart';
 import 'package:crux/src/components/chat_panel.dart';
 import 'package:crux/src/services/provider_service.dart';
 import 'package:crux/src/services/recent_projects_store.dart';
-import 'package:crux/src/storage/database.dart';
 import 'package:crux/src/storage/storage.dart';
 import 'package:crux/src/theme/crux_theme.dart';
 import 'package:crux/src/theme/theme_config_store.dart';
@@ -39,8 +38,7 @@ void main() {
     }
   });
 
-  test('notes fullpane opens on top of home and esc returns to home',
-      () async {
+  test('notes fullpane opens on top of home and esc returns to home', () async {
     final bootState = await loadChatPanelBootState(
       userProvidersDir: tempDir.path,
       providerService: providerService,
@@ -52,9 +50,7 @@ void main() {
         themes: {'dracula': CruxThemeData.draculaFallback},
         orderedIds: const ['dracula'],
       ),
-      configStore: ThemeConfigStore(
-        File(p.join(tempDir.path, 'config.toml')),
-      ),
+      configStore: ThemeConfigStore(File(p.join(tempDir.path, 'config.toml'))),
     );
     final recents = RecentProjectsStore.forTesting(
       p.join(tempDir.path, 'recent_projects.json'),
@@ -96,8 +92,7 @@ void main() {
         await tester.pump();
         notesVisible = tester.terminalState.containsText('my notes');
       }
-      expect(notesVisible, isTrue,
-          reason: 'notes box scrolled into view');
+      expect(notesVisible, isTrue, reason: 'notes box scrolled into view');
 
       // Click the `open` button inside the visible notes box.
       final open = tester.terminalState.findText('open').first;
@@ -116,15 +111,16 @@ void main() {
       );
 
       // Esc closes the fullpane, returning to the dashboard.
-      await tester.sendKeyEvent(
-        KeyboardEvent(logicalKey: LogicalKey.escape),
-      );
+      await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.escape));
       for (var i = 0; i < 5; i++) {
         await tester.pump();
       }
       expect(tester.terminalState.containsText('✕ close'), isFalse);
-      expect(tester.terminalState.containsText('esc chat'), isTrue,
-          reason: 'esc returns to home, not chat');
+      expect(
+        tester.terminalState.containsText('esc chat'),
+        isTrue,
+        reason: 'esc returns to home, not chat',
+      );
     });
   });
 }

@@ -302,11 +302,9 @@ void main() {
 
       await controller.deleteSession(drop.id);
 
-      expect(
-        controller.cubit.state.sessions.map((s) => s.id),
-        [keep.id],
-        reason: 'removed session should be gone from the cubit list',
-      );
+      expect(controller.cubit.state.sessions.map((s) => s.id), [
+        keep.id,
+      ], reason: 'removed session should be gone from the cubit list');
       expect(
         controller.cubit.state.currentSessionId,
         keep.id,

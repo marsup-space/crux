@@ -103,9 +103,7 @@ Future<void> executeTemperature(List<String> parts, CommandContext ctx) async {
     );
   } else {
     ctx.showToast(
-      ctx.strings.t('toast.tempSet', {
-        'value': formatSamplingValue(clamped),
-      }),
+      ctx.strings.t('toast.tempSet', {'value': formatSamplingValue(clamped)}),
       mode: ToastMode.info,
     );
   }

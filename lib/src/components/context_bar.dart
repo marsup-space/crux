@@ -5,6 +5,7 @@
 import 'package:meta/meta.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';
+
 import '../services/chat_service.dart';
 import '../theme/crux_theme.dart';
 import '../i18n/strings.dart';

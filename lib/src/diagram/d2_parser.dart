@@ -37,23 +37,27 @@ DiagramGraph parseD2(String source) {
         final colon = _splitLabelColon(head);
         final id = _unquote(colon?.key ?? head);
         final label = _unquote(colon?.value ?? head);
-        graph.ensureSubgraph(id, label,
-            parent: containerStack.isNotEmpty ? containerStack.last : null);
+        graph.ensureSubgraph(
+          id,
+          label,
+          parent: containerStack.isNotEmpty ? containerStack.last : null,
+        );
         containerStack.add(id);
         continue;
       }
 
       // Shape override: `id.shape: cylinder` (also declares the node).
-      final shapeMatch =
-          RegExp(r'^(.+?)\.shape\s*:\s*(\S+)\s*$').firstMatch(stmt);
+      final shapeMatch = RegExp(r'^(.+?)\.shape\s*:\s*(\S+)\s*$')
+          .firstMatch(stmt);
       if (shapeMatch != null) {
         final id = _unquote(shapeMatch.group(1)!);
         final shape = _d2ShapeToNodeShape(shapeMatch.group(2)!);
         shapeOverrides[id] = shape;
-        graph.ensureNode(id,
-            shape: shape,
-            subgraphId:
-                containerStack.isNotEmpty ? containerStack.last : null);
+        graph.ensureNode(
+          id,
+          shape: shape,
+          subgraphId: containerStack.isNotEmpty ? containerStack.last : null,
+        );
         continue;
       }
 
@@ -67,11 +71,12 @@ DiagramGraph parseD2(String source) {
       final colon = _splitLabelColon(stmt);
       final id = _unquote(colon?.key ?? stmt);
       final label = colon?.value == null ? id : _unquote(colon!.value!);
-      graph.ensureNode(id,
-          label: label,
-          shape: shapeOverrides.remove(id) ?? NodeShape.rectangle,
-          subgraphId:
-              containerStack.isNotEmpty ? containerStack.last : null);
+      graph.ensureNode(
+        id,
+        label: label,
+        shape: shapeOverrides.remove(id) ?? NodeShape.rectangle,
+        subgraphId: containerStack.isNotEmpty ? containerStack.last : null,
+      );
     }
   }
 
@@ -165,32 +170,36 @@ void _parseConnection(
     final c = _splitLabelColon(trimmed);
     final id = _unquote(c?.key ?? trimmed);
     final label = c?.value == null ? id : _unquote(c!.value!);
-    graph.ensureNode(id,
-        label: label,
-        shape: shapeOverrides.remove(id) ?? NodeShape.rectangle,
-        subgraphId: subgraphId);
+    graph.ensureNode(
+      id,
+      label: label,
+      shape: shapeOverrides.remove(id) ?? NodeShape.rectangle,
+      subgraphId: subgraphId,
+    );
     ids.add(id);
   }
 
   final label = (chainLabel == null || chainLabel.isEmpty) ? null : chainLabel;
   for (var k = 0; k < ops.length && k + 1 < ids.length; k++) {
-    final style =
-        ops[k] == '--' ? EdgeStyle.solidLine : EdgeStyle.solidArrow;
+    final style = ops[k] == '--' ? EdgeStyle.solidLine : EdgeStyle.solidArrow;
     switch (ops[k]) {
       case '<-':
         graph.edges.add(
-            DiagramEdge(from: ids[k + 1], to: ids[k], label: label,
-                style: style));
+          DiagramEdge(from: ids[k + 1], to: ids[k], label: label, style: style),
+        );
         break;
       case '<->':
-        graph.edges.add(DiagramEdge(
-            from: ids[k], to: ids[k + 1], label: label, style: style));
-        graph.edges.add(DiagramEdge(
-            from: ids[k + 1], to: ids[k], label: label, style: style));
+        graph.edges.add(
+          DiagramEdge(from: ids[k], to: ids[k + 1], label: label, style: style),
+        );
+        graph.edges.add(
+          DiagramEdge(from: ids[k + 1], to: ids[k], label: label, style: style),
+        );
         break;
       default:
-        graph.edges.add(DiagramEdge(
-            from: ids[k], to: ids[k + 1], label: label, style: style));
+        graph.edges.add(
+          DiagramEdge(from: ids[k], to: ids[k + 1], label: label, style: style),
+        );
     }
   }
 }

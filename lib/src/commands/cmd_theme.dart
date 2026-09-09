@@ -4,7 +4,10 @@ import 'command_executor.dart';
 Future<void> executeTheme(List<String> parts, CommandContext ctx) async {
   final controller = ctx.themeController;
   if (controller == null) {
-    ctx.showToast(ctx.strings.t('toast.themeUnavailable'), mode: ToastMode.error);
+    ctx.showToast(
+      ctx.strings.t('toast.themeUnavailable'),
+      mode: ToastMode.error,
+    );
     return;
   }
   final id = parts.length > 1 ? parts[1].trim() : '';
@@ -32,5 +35,8 @@ Future<void> executeTheme(List<String> parts, CommandContext ctx) async {
     );
     return;
   }
-  ctx.showToast(ctx.strings.t('toast.themeSwitched', {'id': id}), mode: ToastMode.status);
+  ctx.showToast(
+    ctx.strings.t('toast.themeSwitched', {'id': id}),
+    mode: ToastMode.status,
+  );
 }

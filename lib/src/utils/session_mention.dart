@@ -210,9 +210,7 @@ List<SessionMention> rankSessionMentions(
     return b.session.updatedAt.compareTo(a.session.updatedAt);
   });
 
-  return mentions.length <= limit
-      ? mentions
-      : mentions.sublist(0, limit);
+  return mentions.length <= limit ? mentions : mentions.sublist(0, limit);
 }
 
 /// Rewrite completed session-mention chips into the LLM-facing
@@ -223,10 +221,7 @@ List<SessionMention> rankSessionMentions(
 /// rewrites only the exact spans recorded by the picker. A chip whose
 /// content is `#<id>` or `#<id>:<title>` becomes `ses://<id>`; the
 /// title is dropped because it exists purely for the user's display.
-String rewriteSessionMentionsFromChips(
-  String input,
-  List<MentionChip> chips,
-) {
+String rewriteSessionMentionsFromChips(String input, List<MentionChip> chips) {
   if (input.isEmpty || chips.isEmpty) return input;
 
   final sorted = List<MentionChip>.of(chips)
@@ -290,10 +285,16 @@ String describeRelativeTime(
     return strings.t('chat.time.daysAgo', {'n': '${diff.inDays}'});
   }
   if (diff.inDays < 30) {
-    return strings.t('chat.time.weeksAgo', {'n': '${(diff.inDays / 7).floor()}'});
+    return strings.t('chat.time.weeksAgo', {
+      'n': '${(diff.inDays / 7).floor()}',
+    });
   }
   if (diff.inDays < 365) {
-    return strings.t('chat.time.monthsAgo', {'n': '${(diff.inDays / 30).floor()}'});
+    return strings.t('chat.time.monthsAgo', {
+      'n': '${(diff.inDays / 30).floor()}',
+    });
   }
-  return strings.t('chat.time.yearsAgo', {'n': '${(diff.inDays / 365).floor()}'});
+  return strings.t('chat.time.yearsAgo', {
+    'n': '${(diff.inDays / 365).floor()}',
+  });
 }

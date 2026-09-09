@@ -35,9 +35,7 @@ void main(List<String> args) {
       'description': tool.description,
       'parameters': tool.parametersSchema,
     };
-    print(
-      const JsonEncoder.withIndent('  ').convert(schema),
-    );
+    print(const JsonEncoder.withIndent('  ').convert(schema));
     print('');
   }
 

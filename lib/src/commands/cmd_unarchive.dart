@@ -8,7 +8,10 @@ Future<void> executeUnarchive(List<String> parts, CommandContext ctx) async {
     if (id != null) {
       final session = await ctx.store.getById(id);
       if (session == null) {
-        ctx.showToast(ctx.strings.t('toast.sessionNotFound', {'id': '$id'}), mode: ToastMode.error);
+        ctx.showToast(
+          ctx.strings.t('toast.sessionNotFound', {'id': '$id'}),
+          mode: ToastMode.error,
+        );
         return;
       }
       if (session.archivedAt == null) {
@@ -17,7 +20,10 @@ Future<void> executeUnarchive(List<String> parts, CommandContext ctx) async {
       }
       await ctx.store.unarchiveSession(id);
       await ctx.initSessions();
-      ctx.showToast(ctx.strings.t('toast.unarchived', {'title': session.title}), mode: ToastMode.status);
+      ctx.showToast(
+        ctx.strings.t('toast.unarchived', {'title': session.title}),
+        mode: ToastMode.status,
+      );
     } else {
       ctx.showToast(ctx.strings.t('toast.unarchiveUsage'));
     }

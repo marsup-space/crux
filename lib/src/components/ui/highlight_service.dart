@@ -1,5 +1,6 @@
 import 'package:nocterm/nocterm.dart';
 import 'package:textmate_highlight/textmate_highlight.dart' as tm;
+
 import 'markdown_isolate.dart' show MarkdownThemeFields;
 
 class HighlightService {

@@ -42,10 +42,8 @@ class YesterdayHomeWidget extends HomeWidget {
   /// Injectable clock for tests.
   final DateTime Function() _now;
 
-  YesterdayHomeWidget({
-    required this.sessions,
-    DateTime Function()? now,
-  }) : _now = now ?? DateTime.now;
+  YesterdayHomeWidget({required this.sessions, DateTime Function()? now})
+    : _now = now ?? DateTime.now;
 
   @override
   String get id => 'yesterday';
@@ -115,14 +113,8 @@ class YesterdayHomeWidget extends HomeWidget {
   List<HomeTitleButton>? get titleButtons {
     if (_latestActiveDay == null) return null;
     return [
-      HomeTitleButton(
-        label: '‹',
-        onPressed: canGoBack ? goBack : null,
-      ),
-      HomeTitleButton(
-        label: '›',
-        onPressed: canGoLatest ? goLatest : null,
-      ),
+      HomeTitleButton(label: '‹', onPressed: canGoBack ? goBack : null),
+      HomeTitleButton(label: '›', onPressed: canGoLatest ? goLatest : null),
     ];
   }
 

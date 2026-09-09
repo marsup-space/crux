@@ -49,8 +49,11 @@ void main() {
   test('revert creates a NEW version, never rewinds', () {
     store.append('# A\n', kind: PlanVersionKind.init);
     store.append('# B\n');
-    final head = store.append('# A\n',
-        kind: PlanVersionKind.revert, revertedTo: 1);
+    final head = store.append(
+      '# A\n',
+      kind: PlanVersionKind.revert,
+      revertedTo: 1,
+    );
     expect(head, 3);
     expect(store.readVersion(3), '# A\n');
     // v2 still exists — history is linear.
@@ -68,8 +71,7 @@ void main() {
   });
 
   test('corrupt index is treated as empty', () {
-    final dir = Directory(
-        '${tmp.path}/.crux/plans/42/PLAN.md');
+    final dir = Directory('${tmp.path}/.crux/plans/42/PLAN.md');
     dir.createSync(recursive: true);
     File('${dir.path}/index.json').writeAsStringSync('not json{');
     expect(store.readIndex(), isEmpty);

@@ -49,11 +49,8 @@ void main() {
   // ─── LlmError.canContinue ─────────────────────────────────────
 
   group('LlmError.canContinue', () {
-    LlmError err(LlmErrorKind kind, String message) => LlmError(
-      kind: kind,
-      vendor: LlmVendor.unknown,
-      message: message,
-    );
+    LlmError err(LlmErrorKind kind, String message) =>
+        LlmError(kind: kind, vendor: LlmVendor.unknown, message: message);
 
     test('retriable kinds can always continue', () {
       expect(err(LlmErrorKind.overloaded, 'x').canContinue, isTrue);
@@ -68,7 +65,7 @@ void main() {
         err(
           LlmErrorKind.unknown,
           'Step limit reached (50 tool rounds). '
-              'Send another message to continue.',
+          'Send another message to continue.',
         ).canContinue,
         isTrue,
       );
@@ -82,8 +79,7 @@ void main() {
     });
 
     test('arbitrary unknown errors cannot continue', () {
-      expect(err(LlmErrorKind.unknown, 'something broke').canContinue,
-          isFalse);
+      expect(err(LlmErrorKind.unknown, 'something broke').canContinue, isFalse);
     });
   });
 

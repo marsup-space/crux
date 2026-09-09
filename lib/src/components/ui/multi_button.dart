@@ -9,6 +9,7 @@ import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/text/text_layout_engine.dart';
 import 'package:nocterm/src/utils/unicode_width.dart';
+
 import '../../theme/crux_theme.dart';
 
 /// A single clickable segment within a [MultiButton].

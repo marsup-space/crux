@@ -156,8 +156,7 @@ class AskPlanModeTool extends ToolDef {
     if (!controller.approved) {
       return ToolResult(
         title: 'ask_plan_mode',
-        output:
-            'The plan is not approved — already in plan-only editing mode.',
+        output: 'The plan is not approved — already in plan-only editing mode.',
       );
     }
     return ToolResult(

@@ -618,11 +618,10 @@ void main() {
         hasLength(2),
         reason: 'the corrupt row itself is left untouched',
       );
-      expect(
-        toolCallRows.first.toolCalls.map((c) => c.callId).toList(),
-        ['a', 'b'],
-        reason: 'the well-formed tool_call row keeps both entries',
-      );
+      expect(toolCallRows.first.toolCalls.map((c) => c.callId).toList(), [
+        'a',
+        'b',
+      ], reason: 'the well-formed tool_call row keeps both entries');
     });
 
     test(

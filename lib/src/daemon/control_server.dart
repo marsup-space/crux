@@ -91,18 +91,18 @@ class ControlServer {
           ),
           decls,
         );
-        return (200, {
-          'ok': true,
-          'daemon': {'pid': pid, 'port': port},
-        });
+        return (
+          200,
+          {
+            'ok': true,
+            'daemon': {'pid': pid, 'port': port},
+          },
+        );
       case 'POST /deregister':
         final err = _need(body, ['instanceId']);
         if (err != null) return err;
         final gone = core.deregister(body!['instanceId'] as String);
-        return (
-          200,
-          {'ok': true, 'deregistered': gone},
-        );
+        return (200, {'ok': true, 'deregistered': gone});
       case 'POST /heartbeat':
         final err = _need(body, ['instanceId']);
         if (err != null) return err;
@@ -111,10 +111,7 @@ class ControlServer {
         // daemon restart re-registers from the heartbeat body).
         core.bodyPid = body['pid'] as int?;
         core.bodyProject = body['project'] as String?;
-        core.heartbeat(
-          body['instanceId'] as String,
-          decls,
-        );
+        core.heartbeat(body['instanceId'] as String, decls);
         return (200, {'ok': true});
       case 'POST /producer/restart':
         final err = _need(body, ['key']);
@@ -136,8 +133,7 @@ class ControlServer {
     if (raw is! List) return const [];
     return [
       for (final e in raw)
-        if (e is Map<String, dynamic>)
-          if (ProducerDecl.fromJson(e) case final d?) d,
+        if (e is Map<String, dynamic>) ?ProducerDecl.fromJson(e),
     ];
   }
 

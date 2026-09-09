@@ -120,9 +120,9 @@ class RecentSessionsHomeWidget extends HomeWidget {
     final shown = _shown;
     if (shown.isEmpty) {
       return homeSurface(
-        declaration: SurfaceBuilder(
-          surfaceId: 'home.recent.empty',
-        ).text('root', ctx.strings.t('home.recent.empty')).build(),
+        declaration: SurfaceBuilder(surfaceId: 'home.recent.empty')
+            .text('root', ctx.strings.t('home.recent.empty'))
+            .build(),
         strings: ctx.strings,
       );
     }

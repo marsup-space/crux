@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:test/test.dart';
 import 'package:crux/src/services/provider_seeder.dart';
 
@@ -92,12 +93,10 @@ context_size = 128000
     test('overwrites file when SHA-256 differs (destructive)', () async {
       const builtInContent = 'NEW: bundled version 2.0';
       const userContent = 'OLD: user-edited version 1.0';
-      await File(
-        '${builtInDir.path}/provider.toml',
-      ).writeAsString(builtInContent);
-      await File(
-        '${userDir.path}/example.provider.toml',
-      ).writeAsString(userContent);
+      await File('${builtInDir.path}/provider.toml')
+          .writeAsString(builtInContent);
+      await File('${userDir.path}/example.provider.toml')
+          .writeAsString(userContent);
 
       final results = await seedExampleProviders(
         builtInDir: builtInDir,
@@ -142,9 +141,8 @@ context_size = 128000
         // in the user dir. Without the strip the loader would still
         // skip the file (startsWith("example.")), but the double prefix
         // is confusing for users reading their providers directory.
-        await File(
-          '${builtInDir.path}/example.provider.toml',
-        ).writeAsString('reference template');
+        await File('${builtInDir.path}/example.provider.toml')
+            .writeAsString('reference template');
 
         final results = await seedExampleProviders(
           builtInDir: builtInDir,
@@ -180,43 +178,40 @@ context_size = 128000
       expect(File('${userDir.path}/README.md').existsSync(), isFalse);
     });
 
-    test(
-      'mixed: some files exist (unchanged), some are new (created), some differ (overwritten)',
-      () async {
-        // bundled has all three
-        await File('${builtInDir.path}/alpha.toml').writeAsString('a-v2');
-        await File('${builtInDir.path}/beta.toml').writeAsString('b-v2');
-        await File('${builtInDir.path}/gamma.toml').writeAsString('g-v2');
+    test('mixed: some files exist (unchanged), some are new (created), some differ (overwritten)', () async {
+      // bundled has all three
+      await File('${builtInDir.path}/alpha.toml').writeAsString('a-v2');
+      await File('${builtInDir.path}/beta.toml').writeAsString('b-v2');
+      await File('${builtInDir.path}/gamma.toml').writeAsString('g-v2');
 
-        // user has: example.alpha unchanged, example.beta different, gamma missing
-        await File('${userDir.path}/example.alpha.toml').writeAsString('a-v2');
-        await File('${userDir.path}/example.beta.toml').writeAsString('b-v1');
+      // user has: example.alpha unchanged, example.beta different, gamma missing
+      await File('${userDir.path}/example.alpha.toml').writeAsString('a-v2');
+      await File('${userDir.path}/example.beta.toml').writeAsString('b-v1');
 
-        final results = await seedExampleProviders(
-          builtInDir: builtInDir,
-          userDir: userDir,
-        );
+      final results = await seedExampleProviders(
+        builtInDir: builtInDir,
+        userDir: userDir,
+      );
 
-        final byName = {for (final r in results) r.fileName: r};
-        expect(byName['example.alpha.toml']!.action, SeedAction.unchanged);
-        expect(byName['example.beta.toml']!.action, SeedAction.overwritten);
-        expect(byName['example.gamma.toml']!.action, SeedAction.created);
+      final byName = {for (final r in results) r.fileName: r};
+      expect(byName['example.alpha.toml']!.action, SeedAction.unchanged);
+      expect(byName['example.beta.toml']!.action, SeedAction.overwritten);
+      expect(byName['example.gamma.toml']!.action, SeedAction.created);
 
-        // File contents after seed
-        expect(
-          await File('${userDir.path}/example.alpha.toml').readAsString(),
-          'a-v2',
-        );
-        expect(
-          await File('${userDir.path}/example.beta.toml').readAsString(),
-          'b-v2',
-        );
-        expect(
-          await File('${userDir.path}/example.gamma.toml').readAsString(),
-          'g-v2',
-        );
-      },
-    );
+      // File contents after seed
+      expect(
+        await File('${userDir.path}/example.alpha.toml').readAsString(),
+        'a-v2',
+      );
+      expect(
+        await File('${userDir.path}/example.beta.toml').readAsString(),
+        'b-v2',
+      );
+      expect(
+        await File('${userDir.path}/example.gamma.toml').readAsString(),
+        'g-v2',
+      );
+    });
 
     test('second call after no-op is still a no-op', () async {
       await File('${builtInDir.path}/foo.toml').writeAsString('x');

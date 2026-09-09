@@ -20,8 +20,7 @@ bool _hasWord(NoctermTester tester, String needle) {
 }
 
 /// The terminal line containing a box's top border (its title).
-String _borderLine(NoctermTester tester, String title) => tester
-    .terminalState
+String _borderLine(NoctermTester tester, String title) => tester.terminalState
     .getText()
     .split('\n')
     .firstWhere((l) => l.contains('─ $title ─'));
@@ -132,7 +131,8 @@ void main() {
       expect(
         alphaLine.contains('─ wide ─'),
         isFalse,
-        reason: 'the rigid box wraps off the shared row when it would '
+        reason:
+            'the rigid box wraps off the shared row when it would '
             'starve the flexible box',
       );
       expect(_cellWidth(_borderLine(tester, 'wide'), 'wide'), 34);
@@ -166,6 +166,5 @@ class _MinWidthStub extends HomeWidget {
     HomeContext ctx,
     int span, {
     bool focused = false,
-  }) =>
-      Text(id);
+  }) => Text(id);
 }

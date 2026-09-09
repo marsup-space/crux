@@ -2,8 +2,7 @@ import 'package:crux/src/diagram/diagram.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('nearest-source edge owns the port when no edge is mid-aligned',
-      () {
+  test('nearest-source edge owns the port when no edge is mid-aligned', () {
     // Box heights differ: no edge is exactly level with the target's
     // mid row. The line into the target must still exist and end in an
     // arrowhead — no break, no floating arrow.
@@ -43,7 +42,8 @@ C["训练 inverter<br>(vec2text 式小模型)"] -->|"通顺完整"| D
     final shaftRows = <int>[];
     for (var y = 0; y < lines.length; y++) {
       final row = lines[y];
-      final hasInkNear = row.length > trunkCol &&
+      final hasInkNear =
+          row.length > trunkCol &&
           (row[trunkCol] == '│' ||
               row[trunkCol] == '╮' ||
               row[trunkCol] == '╯' ||

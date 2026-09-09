@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+
 import '../../i18n/strings.dart';
 import '../../theme/crux_theme.dart';
 import '../../utils/terminal_symbols.dart';
@@ -521,9 +522,8 @@ class _WizardOverlayState extends State<WizardOverlay> {
                             bgColor: focused
                                 ? focusedBtnBgColor
                                 : CruxTheme.of(context).buttonBackground,
-                            hoverBgColor: CruxTheme.of(
-                              context,
-                            ).buttonBackgroundHover,
+                            hoverBgColor: CruxTheme.of(context)
+                                .buttonBackgroundHover,
                           );
                         },
                       ),
@@ -613,15 +613,13 @@ class _WizardOverlayState extends State<WizardOverlay> {
                               color: focused
                                   ? focusedBtnColor
                                   : CruxTheme.of(context).wizardTextDim,
-                              hoverColor: CruxTheme.of(
-                                context,
-                              ).wizardMarkerSelected,
+                              hoverColor: CruxTheme.of(context)
+                                  .wizardMarkerSelected,
                               bgColor: focused
                                   ? focusedBtnBgColor
                                   : CruxTheme.of(context).buttonBackground,
-                              hoverBgColor: CruxTheme.of(
-                                context,
-                              ).buttonBackgroundHover,
+                              hoverBgColor: CruxTheme.of(context)
+                                  .buttonBackgroundHover,
                             );
                           },
                         ),

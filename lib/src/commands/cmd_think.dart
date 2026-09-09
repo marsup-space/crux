@@ -75,9 +75,11 @@ Future<void> executeThink(List<String> parts, CommandContext ctx) async {
       final levels = levelLabels.isNotEmpty
           ? '<${levelLabels.join('|')}>'
           : '<off|low|normal|high|max>';
-      ctx.showToast(ctx.strings.t('toast.thinkUsage', {
-        'levels': levels,
-        'current': current,
-      }));
+      ctx.showToast(
+        ctx.strings.t('toast.thinkUsage', {
+          'levels': levels,
+          'current': current,
+        }),
+      );
   }
 }

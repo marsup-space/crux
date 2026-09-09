@@ -15,10 +15,7 @@ import 'package:crux/src/theme/crux_theme.dart';
 
 /// Pumps the activity grid (bypassing the async loader) at a fixed
 /// width so the heatmap cells are assertable.
-Future<void> _pumpGrid(
-  NoctermTester tester,
-  Map<String, int> totals,
-) async {
+Future<void> _pumpGrid(NoctermTester tester, Map<String, int> totals) async {
   await tester.pumpComponent(
     Container(
       width: 80,
@@ -26,9 +23,9 @@ Future<void> _pumpGrid(
       child: CruxTheme(
         data: CruxThemeData.draculaFallback,
         child: Builder(
-          builder: (context) => ActivityHomeWidget(
-            loader: (_) async => totals,
-          ).build(context, _ctx(), 2),
+          builder: (context) =>
+              ActivityHomeWidget(loader: (_) async => totals)
+                  .build(context, _ctx(), 2),
         ),
       ),
     ),
@@ -42,8 +39,7 @@ HomeContext _ctx() => HomeContext.minimal(close: () {});
 
 void main() {
   group('activity widget', () {
-    test('renders weekday header, week-number gutter and the legend',
-        () async {
+    test('renders weekday header, week-number gutter and the legend', () async {
       await testNocterm('activity grid', (tester) async {
         await _pumpGrid(tester, const {});
         expect(tester.terminalState.findText('Mon'), nocterm.isNotEmpty);
@@ -81,42 +77,38 @@ void main() {
       });
     });
 
-    test('empty window falls back to the 100M default ceiling',
-        () async {
+    test('empty window falls back to the 100M default ceiling', () async {
       await testNocterm('activity ceiling empty', (tester) async {
         await _pumpGrid(tester, const {});
-        expect(
-          tester.terminalState.findText('0→100M'),
-          nocterm.isNotEmpty,
-        );
+        expect(tester.terminalState.findText('0→100M'), nocterm.isNotEmpty);
       });
     });
 
-    test('days older than the rendered window do not raise the ceiling',
-        () async {
-      await testNocterm('activity ceiling window', (tester) async {
-        final today = DateTime.now();
-        String key(DateTime d) =>
-            '${d.year}-'
-            '${d.month.toString().padLeft(2, '0')}-'
-            '${d.day.toString().padLeft(2, '0')}';
-        // A 90M monster day five weeks back (fetched as headroom but
-        // scrolled off the 4-week grid) must not become the ceiling;
-        // the visible peak (today, 6M) defines it instead.
-        await _pumpGrid(tester, {
-          key(today.subtract(const Duration(days: 35))): 90000000,
-          key(today): 6000000,
+    test(
+      'days older than the rendered window do not raise the ceiling',
+      () async {
+        await testNocterm('activity ceiling window', (tester) async {
+          final today = DateTime.now();
+          String key(DateTime d) =>
+              '${d.year}-'
+              '${d.month.toString().padLeft(2, '0')}-'
+              '${d.day.toString().padLeft(2, '0')}';
+          // A 90M monster day five weeks back (fetched as headroom but
+          // scrolled off the 4-week grid) must not become the ceiling;
+          // the visible peak (today, 6M) defines it instead.
+          await _pumpGrid(tester, {
+            key(today.subtract(const Duration(days: 35))): 90000000,
+            key(today): 6000000,
+          });
+          expect(tester.terminalState.findText('0→6M'), nocterm.isNotEmpty);
         });
-        expect(tester.terminalState.findText('0→6M'), nocterm.isNotEmpty);
-      });
-    });
+      },
+    );
 
-    test('week totals render with adaptive precision (<= 5 chars)',
-        () async {
+    test('week totals render with adaptive precision (<= 5 chars)', () async {
       await testNocterm('activity week totals', (tester) async {
         final today = DateTime.now();
-        final monday =
-            today.subtract(Duration(days: today.weekday - 1));
+        final monday = today.subtract(Duration(days: today.weekday - 1));
         String key(DateTime d) =>
             '${d.year}-'
             '${d.month.toString().padLeft(2, '0')}-'
@@ -144,9 +136,7 @@ void main() {
     late SessionStore store;
 
     setUp(() {
-      store = SessionStore(
-        CruxDatabase.forTesting(NativeDatabase.memory()),
-      );
+      store = SessionStore(CruxDatabase.forTesting(NativeDatabase.memory()));
     });
 
     tearDown(() async {
@@ -159,10 +149,7 @@ void main() {
       required int tokensOut,
       String projectPath = '/p',
     }) async {
-      final session = await store.create(
-        title: 't',
-        projectPath: projectPath,
-      );
+      final session = await store.create(title: 't', projectPath: projectPath);
       // addMessage stamps createdAt as now; to place a message on a
       // past day we write directly through the database.
       await store.database
@@ -235,19 +222,13 @@ void main() {
       );
       expect(a.values.fold(0, (s, v) => s + v), 15);
 
-      final all = await store.messageStore.dailyTokenTotals(
-        sinceDaysAgo: 7,
-      );
+      final all = await store.messageStore.dailyTokenTotals(sinceDaysAgo: 7);
       expect(all.values.fold(0, (s, v) => s + v), 55);
     });
 
     test('excludes messages older than the window', () async {
       final old = DateTime.now().subtract(const Duration(days: 400));
-      await sessionWithMessage(
-        when: old,
-        tokensIn: 999,
-        tokensOut: 999,
-      );
+      await sessionWithMessage(when: old, tokensIn: 999, tokensOut: 999);
 
       final totals = await store.messageStore.dailyTokenTotals(
         sinceDaysAgo: 7,
@@ -255,59 +236,56 @@ void main() {
       );
       expect(totals, isEmpty);
     });
-
   });
 
-  test('daily aggregates work through the production background isolate',
-      () async {
-    final dir = await Directory.systemTemp.createTemp(
-      'crux_daily_background_',
-    );
-    final backgroundStore = SessionStore(
-      CruxDatabase.forTesting(
-        NativeDatabase.createInBackground(
-          File(p.join(dir.path, 'stats.db')),
+  test(
+    'daily aggregates work through the production background isolate',
+    () async {
+      final dir = await Directory.systemTemp.createTemp(
+        'crux_daily_background_',
+      );
+      final backgroundStore = SessionStore(
+        CruxDatabase.forTesting(
+          NativeDatabase.createInBackground(File(p.join(dir.path, 'stats.db'))),
         ),
-      ),
-    );
-    addTearDown(() async {
-      await backgroundStore.database.close();
-      if (await dir.exists()) await dir.delete(recursive: true);
-    });
-    final session = await backgroundStore.create(
-      title: 'background',
-      projectPath: '/p',
-    );
-    await backgroundStore.messageStore.addMessage(
-      session.id,
-      role: 'ai',
-      content: 'done',
-      model: 'provider/model',
-      tokensIn: 120,
-      tokensOut: 30,
-    );
+      );
+      addTearDown(() async {
+        await backgroundStore.database.close();
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      final session = await backgroundStore.create(
+        title: 'background',
+        projectPath: '/p',
+      );
+      await backgroundStore.messageStore.addMessage(
+        session.id,
+        role: 'ai',
+        content: 'done',
+        model: 'provider/model',
+        tokensIn: 120,
+        tokensOut: 30,
+      );
 
-    final totals = await backgroundStore.messageStore.dailyTokenTotals(
-      sinceDaysAgo: 1,
-      projectPath: '/p',
-    );
-    final usage = await backgroundStore.messageStore.dailyUsageStats(
-      sinceDaysAgo: 1,
-      projectPath: '/p',
-    );
+      final totals = await backgroundStore.messageStore.dailyTokenTotals(
+        sinceDaysAgo: 1,
+        projectPath: '/p',
+      );
+      final usage = await backgroundStore.messageStore.dailyUsageStats(
+        sinceDaysAgo: 1,
+        projectPath: '/p',
+      );
 
-    expect(totals.values.single, 150);
-    expect(usage.values.single.tokens, 150);
-    expect(usage.values.single.byModel['provider/model'], 150);
-  });
+      expect(totals.values.single, 150);
+      expect(usage.values.single.tokens, 150);
+      expect(usage.values.single.byModel['provider/model'], 150);
+    },
+  );
 
   group('dailyUsageStats', () {
     late SessionStore store;
 
     setUp(() {
-      store = SessionStore(
-        CruxDatabase.forTesting(NativeDatabase.memory()),
-      );
+      store = SessionStore(CruxDatabase.forTesting(NativeDatabase.memory()));
     });
 
     tearDown(() async {

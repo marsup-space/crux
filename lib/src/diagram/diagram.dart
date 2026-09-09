@@ -56,17 +56,21 @@ DiagramGraph _parseAutoDetected(String source) {
   }
 
   // Arrow-shape disambiguation: mermaid uses `-->`, D2 uses `->`.
-  final mermaidish = trimmed.contains('-->') ||
+  final mermaidish =
+      trimmed.contains('-->') ||
       trimmed.contains('-.->') ||
       trimmed.contains('==>');
   if (mermaidish) {
     return parseMermaidFlowchart(source, requireHeader: false);
   }
 
-  final d2ish = RegExp(r'^\s*\S+\s*(->|<->|<-)\s*\S+', multiLine: true)
-      .hasMatch(trimmed);
+  final d2ish = RegExp(
+    r'^\s*\S+\s*(->|<->|<-)\s*\S+',
+    multiLine: true,
+  ).hasMatch(trimmed);
   if (d2ish) return parseD2(source);
 
   throw DiagramParseException(
-      'Unrecognized diagram syntax (expected mermaid or D2)');
+    'Unrecognized diagram syntax (expected mermaid or D2)',
+  );
 }

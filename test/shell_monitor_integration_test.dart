@@ -50,43 +50,39 @@ void main() {
   Map<String, dynamic> callArgs(String command, {int? timeout}) => {
     'command': command,
     'intent': 'integration test',
-    if (timeout != null) 'timeout': timeout,
+    'timeout': ?timeout,
   };
 
   group('shell progress monitor — STUCK kills the process', () {
-    test(
-      'a STUCK verdict kills a long-running command early',
-      () async {
-        final tool = BashTool();
-        var evaluatorCalls = 0;
-        final sw = Stopwatch()..start();
+    test('a STUCK verdict kills a long-running command early', () async {
+      final tool = BashTool();
+      var evaluatorCalls = 0;
+      final sw = Stopwatch()..start();
 
-        final result = await tool.execute(
-          // `sleep 60` would blow far past any test budget if the
-          // monitor failed to kill it. The fake evaluator returns STUCK
-          // on its first call, so the process dies at the first check.
-          callArgs('sleep 60'),
-          ctx(
-            monitor: (messages, {required abort}) async {
-              evaluatorCalls++;
-              return const ShellMonitorVerdict(
-                ShellMonitorVerdictKind.stuck,
-                reason: 'test-forced stuck verdict',
-              );
-            },
-          ),
-        );
+      final result = await tool.execute(
+        // `sleep 60` would blow far past any test budget if the
+        // monitor failed to kill it. The fake evaluator returns STUCK
+        // on its first call, so the process dies at the first check.
+        callArgs('sleep 60'),
+        ctx(
+          monitor: (messages, {required abort}) async {
+            evaluatorCalls++;
+            return const ShellMonitorVerdict(
+              ShellMonitorVerdictKind.stuck,
+              reason: 'test-forced stuck verdict',
+            );
+          },
+        ),
+      );
 
-        sw.stop();
-        expect(evaluatorCalls, greaterThan(0));
-        // Killed well before 60s — the first check fires at
-        // kMonitorFirstCheckSeconds (20s), so allow generous headroom.
-        expect(sw.elapsed.inSeconds, lessThan(40));
-        expect(result.output, contains('killed by progress monitor'));
-        expect(result.output, contains('test-forced stuck verdict'));
-      },
-      skip: Platform.isWindows,
-    );
+      sw.stop();
+      expect(evaluatorCalls, greaterThan(0));
+      // Killed well before 60s — the first check fires at
+      // kMonitorFirstCheckSeconds (20s), so allow generous headroom.
+      expect(sw.elapsed.inSeconds, lessThan(40));
+      expect(result.output, contains('killed by progress monitor'));
+      expect(result.output, contains('test-forced stuck verdict'));
+    }, skip: Platform.isWindows);
 
     test('the monitor conversation has the expected shape', () async {
       final tool = BashTool();
@@ -128,52 +124,44 @@ void main() {
   });
 
   group('shell progress monitor — no-aux regime unchanged', () {
-    test(
-      'classic timeout still fires without a monitor evaluator',
-      () async {
-        final tool = BashTool();
-        final sw = Stopwatch()..start();
+    test('classic timeout still fires without a monitor evaluator', () async {
+      final tool = BashTool();
+      final sw = Stopwatch()..start();
 
-        final result = await tool.execute(
-          callArgs('sleep 60', timeout: 1500),
-          ctx(), // no shellMonitorEvaluator → classic timeout regime
-        );
+      final result = await tool.execute(
+        callArgs('sleep 60', timeout: 1500),
+        ctx(), // no shellMonitorEvaluator → classic timeout regime
+      );
 
-        sw.stop();
-        expect(sw.elapsed.inSeconds, lessThan(20));
-        expect(result.output, contains('timed out'));
-      },
-      skip: Platform.isWindows,
-    );
+      sw.stop();
+      expect(sw.elapsed.inSeconds, lessThan(20));
+      expect(result.output, contains('timed out'));
+    }, skip: Platform.isWindows);
 
-    test(
-      'a PROGRESS verdict lets the command run to completion',
-      () async {
-        final tool = BashTool();
-        var evaluatorCalls = 0;
+    test('a PROGRESS verdict lets the command run to completion', () async {
+      final tool = BashTool();
+      var evaluatorCalls = 0;
 
-        final result = await tool.execute(
-          // A short command that finishes before the first check: the
-          // monitor never fires and the exit is clean.
-          callArgs('echo monitor-should-not-fire'),
-          ctx(
-            monitor: (messages, {required abort}) async {
-              evaluatorCalls++;
-              return const ShellMonitorVerdict(
-                ShellMonitorVerdictKind.progress,
-                intervalSeconds: 5,
-              );
-            },
-          ),
-        );
+      final result = await tool.execute(
+        // A short command that finishes before the first check: the
+        // monitor never fires and the exit is clean.
+        callArgs('echo monitor-should-not-fire'),
+        ctx(
+          monitor: (messages, {required abort}) async {
+            evaluatorCalls++;
+            return const ShellMonitorVerdict(
+              ShellMonitorVerdictKind.progress,
+              intervalSeconds: 5,
+            );
+          },
+        ),
+      );
 
-        expect(result.metadata['exitCode'], 0);
-        expect(result.output, contains('monitor-should-not-fire'));
-        // The command finished before kMonitorFirstCheckSeconds, so the
-        // monitor never evaluated.
-        expect(evaluatorCalls, 0);
-      },
-      skip: Platform.isWindows,
-    );
+      expect(result.metadata['exitCode'], 0);
+      expect(result.output, contains('monitor-should-not-fire'));
+      // The command finished before kMonitorFirstCheckSeconds, so the
+      // monitor never evaluated.
+      expect(evaluatorCalls, 0);
+    }, skip: Platform.isWindows);
   });
 }

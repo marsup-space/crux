@@ -75,10 +75,7 @@ void main() {
       expect(spec.absentText, 'not running');
       expect(spec.actions, hasLength(2));
       expect(spec.actions[0].label, 'reload');
-      expect(
-        spec.actions[0].url,
-        'http://127.0.0.1:{controlPort}/reload',
-      );
+      expect(spec.actions[0].url, 'http://127.0.0.1:{controlPort}/reload');
     });
 
     test('id must match the file name', () {
@@ -121,8 +118,11 @@ url = "http://127.0.0.1:{controlPort}/reload"
 
       expect(spec.actions, hasLength(2));
       expect(spec.actions[0].kind, PluginActionKind.launch);
-      expect(spec.actions[0].command, 'dart --enable-vm-service '
-          'tool/crux_dev.dart home');
+      expect(
+        spec.actions[0].command,
+        'dart --enable-vm-service '
+        'tool/crux_dev.dart home',
+      );
       expect(spec.actions[0].url, isNull);
       expect(spec.actions[1].kind, PluginActionKind.http);
       expect(spec.actions[1].url, isNotNull);
@@ -330,44 +330,39 @@ path = "s.json"
     });
 
     Plugin spec({bool heartbeat = true}) => Plugin(
-          id: 'dev-harness',
-          labelTemplate: '⟳ crux dev · {state}',
-          refresh: const Duration(seconds: 2),
-          statusPath: 'status.json',
-          heartbeatField: heartbeat ? 'heartbeatAt' : null,
-          staleAfter: const Duration(seconds: 15),
-          stateRules: [
-            const PluginStateRule(
-              field: 'lastReload.result',
-              equals: 'succeeded',
-              text: '✓ {lastReload.at@HH:MM}',
-            ),
-            const PluginStateRule(
-              field: 'lastReload.result',
-              equals: 'failed',
-              text: '✗ reload failed',
-              color: PluginStateColor.error,
-            ),
-          ],
-          actions: const [
-            PluginAction(label: 'reload', url: 'http://x/{controlPort}/r'),
-          ],
-        );
+      id: 'dev-harness',
+      labelTemplate: '⟳ crux dev · {state}',
+      refresh: const Duration(seconds: 2),
+      statusPath: 'status.json',
+      heartbeatField: heartbeat ? 'heartbeatAt' : null,
+      staleAfter: const Duration(seconds: 15),
+      stateRules: [
+        const PluginStateRule(
+          field: 'lastReload.result',
+          equals: 'succeeded',
+          text: '✓ {lastReload.at@HH:MM}',
+        ),
+        const PluginStateRule(
+          field: 'lastReload.result',
+          equals: 'failed',
+          text: '✗ reload failed',
+          color: PluginStateColor.error,
+        ),
+      ],
+      actions: const [
+        PluginAction(label: 'reload', url: 'http://x/{controlPort}/r'),
+      ],
+    );
 
-    Map<String, dynamic> data({
-      DateTime? heartbeat,
-      String? reloadResult,
-    }) =>
-        {
-          if (heartbeat != null)
-            'heartbeatAt': heartbeat.toUtc().toIso8601String(),
-          if (reloadResult != null)
-            'lastReload': {
-              'at': DateTime(2026, 8, 4, 16, 53).toUtc().toIso8601String(),
-              'result': reloadResult,
-            },
-          'controlPort': 5555,
-        };
+    Map<String, dynamic> data({DateTime? heartbeat, String? reloadResult}) => {
+      if (heartbeat != null) 'heartbeatAt': heartbeat.toUtc().toIso8601String(),
+      if (reloadResult != null)
+        'lastReload': {
+          'at': DateTime(2026, 8, 4, 16, 53).toUtc().toIso8601String(),
+          'result': reloadResult,
+        },
+      'controlPort': 5555,
+    };
 
     void write(Map<String, dynamic> d) =>
         statusFile.writeAsStringSync(jsonEncode(d));
@@ -381,12 +376,7 @@ path = "s.json"
     });
 
     test('alive + rule hit renders the rule text with time', () {
-      write(
-        data(
-          heartbeat: DateTime.now(),
-          reloadResult: 'succeeded',
-        ),
-      );
+      write(data(heartbeat: DateTime.now(), reloadResult: 'succeeded'));
       final s = evaluatePluginStatus(spec(), statusFile, DateTime.now());
       expect(s.alive, PluginAlive.alive);
       // Regex: local HH:MM of the fixture's UTC timestamp.
@@ -394,12 +384,7 @@ path = "s.json"
     });
 
     test('alive + failed rule renders error state', () {
-      write(
-        data(
-          heartbeat: DateTime.now(),
-          reloadResult: 'failed',
-        ),
-      );
+      write(data(heartbeat: DateTime.now(), reloadResult: 'failed'));
       final s = evaluatePluginStatus(spec(), statusFile, DateTime.now());
       expect(s.alive, PluginAlive.alive);
       expect(s.label, '⟳ crux dev · ✗ reload failed');
@@ -431,9 +416,11 @@ path = "s.json"
         PluginAlive.alive,
       );
       expect(
-        evaluatePluginStatus(noHeartbeat, File('${tmp.path}/nope.json'),
-                DateTime.now())
-            .alive,
+        evaluatePluginStatus(
+          noHeartbeat,
+          File('${tmp.path}/nope.json'),
+          DateTime.now(),
+        ).alive,
         PluginAlive.absent,
       );
     });
@@ -490,16 +477,14 @@ path = "s.json"
         s.spanLines[0]
             .map((sp) => (sp.text, sp.isValue, sp.emphasize))
             .toList(),
-        [
-          ('Au ', false, false),
-          ('953.56', true, true),
-          ('/oz', false, false),
-        ],
+        [('Au ', false, false), ('953.56', true, true), ('/oz', false, false)],
       );
 
       // Line 2: neutral arrow value, emphasis delta, neutral pct.
       expect(
-        s.spanLines[1].map((sp) => (sp.text, sp.isValue, sp.emphasize)).toList(),
+        s.spanLines[1]
+            .map((sp) => (sp.text, sp.isValue, sp.emphasize))
+            .toList(),
         [
           ('▼', true, false),
           (' ', false, false),
@@ -512,10 +497,7 @@ path = "s.json"
 
       // Span text always reassembles into the plain label lines.
       for (var i = 0; i < s.spanLines.length; i++) {
-        expect(
-          s.spanLines[i].map((sp) => sp.text).join(),
-          s.labelLines[i],
-        );
+        expect(s.spanLines[i].map((sp) => sp.text).join(), s.labelLines[i]);
       }
     });
 
@@ -536,8 +518,7 @@ path = "s.json"
       ]);
     });
 
-    test('dead label is the fallback text when template has no {state}',
-        () {
+    test('dead label is the fallback text when template has no {state}', () {
       // Content plugins (price monitors) reference data fields the
       // missing/stale file can't supply — the dead label must be the
       // plain fallback, not raw `{field}` placeholders.
@@ -552,14 +533,14 @@ path = "s.json"
         absentText: 'tracker not running',
       );
 
-      final absent =
-          evaluatePluginStatus(monitor, statusFile, DateTime.now());
+      final absent = evaluatePluginStatus(monitor, statusFile, DateTime.now());
       expect(absent.alive, PluginAlive.absent);
       expect(absent.label, 'tracker not running');
 
       write({
-        'heartbeatAt':
-            DateTime.now().subtract(const Duration(minutes: 5)).toIso8601String(),
+        'heartbeatAt': DateTime.now()
+            .subtract(const Duration(minutes: 5))
+            .toIso8601String(),
       });
       final stale = evaluatePluginStatus(monitor, statusFile, DateTime.now());
       expect(stale.alive, PluginAlive.stale);
@@ -625,10 +606,7 @@ path = "s.json"
     });
 
     test('unknown fields render as the literal placeholder', () {
-      expect(
-        renderTemplate('{nope}', const {}, ''),
-        '{nope}',
-      );
+      expect(renderTemplate('{nope}', const {}, ''), '{nope}');
     });
 
     test('renderActionUrl substitutes status fields', () {
@@ -668,8 +646,7 @@ path = "s.json"
   });
 
   group('runPluginShellAction', () {
-    test('runs a command and captures the exit code + output tail',
-        () async {
+    test('runs a command and captures the exit code + output tail', () async {
       final action = PluginAction(
         label: 'hello',
         kind: PluginActionKind.shell,
@@ -701,18 +678,15 @@ path = "s.json"
       expect(result.tail, contains('oops'));
     });
 
-    test('renders the command template against the status data',
-        () async {
+    test('renders the command template against the status data', () async {
       final action = PluginAction(
         label: 't',
         kind: PluginActionKind.shell,
         command: 'echo {marker}',
       );
-      final result = await runPluginShellAction(
-        action,
-        const {'marker': 'templated-value'},
-        Directory.systemTemp.path,
-      );
+      final result = await runPluginShellAction(action, const {
+        'marker': 'templated-value',
+      }, Directory.systemTemp.path);
       expect(result.tail, contains('templated-value'));
     });
   });
@@ -827,32 +801,34 @@ path = "s.json"
       registry.dispose();
     });
 
-    test('watcher reloads a modified spec without waiting for the poll',
-        () async {
-      writeSpec(
-        'a',
-        'id = "a"\nlabel = "A · {state}"\n[status]\npath = "s.json"\n',
-      );
-      // Polling effectively disabled: only the file watcher can pick
-      // up the rewrite below.
-      final registry = PluginRegistry(
-        projectPath: project.path,
-        homeOverride: home.path,
-        scanInterval: const Duration(hours: 1),
-      );
-      registry.start();
-      expect(registry.plugins.single.labelTemplate, contains('A'));
+    test(
+      'watcher reloads a modified spec without waiting for the poll',
+      () async {
+        writeSpec(
+          'a',
+          'id = "a"\nlabel = "A · {state}"\n[status]\npath = "s.json"\n',
+        );
+        // Polling effectively disabled: only the file watcher can pick
+        // up the rewrite below.
+        final registry = PluginRegistry(
+          projectPath: project.path,
+          homeOverride: home.path,
+          scanInterval: const Duration(hours: 1),
+        );
+        registry.start();
+        expect(registry.plugins.single.labelTemplate, contains('A'));
 
-      // Rewrite the spec — the watcher should re-scan (debounced).
-      writeSpec(
-        'a',
-        'id = "a"\nlabel = "B · {state}"\n[status]\npath = "s.json"\n',
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 1500));
-      expect(registry.plugins.single.labelTemplate, contains('B'));
+        // Rewrite the spec — the watcher should re-scan (debounced).
+        writeSpec(
+          'a',
+          'id = "a"\nlabel = "B · {state}"\n[status]\npath = "s.json"\n',
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 1500));
+        expect(registry.plugins.single.labelTemplate, contains('B'));
 
-      registry.dispose();
-    });
+        registry.dispose();
+      },
+    );
 
     test('placement parses: sidebar default, home, both', () {
       writeSpec(
@@ -883,13 +859,18 @@ path = "s.json"
         registry.sidebarPlugins.map((p) => p.id),
         containsAll(['p-default', 'p-both']),
       );
-      expect(registry.sidebarPlugins.map((p) => p.id), isNot(contains('p-home')));
+      expect(
+        registry.sidebarPlugins.map((p) => p.id),
+        isNot(contains('p-home')),
+      );
       expect(
         registry.homePlugins.map((p) => p.id),
         containsAll(['p-home', 'p-both']),
       );
       expect(
-          registry.homePlugins.map((p) => p.id), isNot(contains('p-default')));
+        registry.homePlugins.map((p) => p.id),
+        isNot(contains('p-default')),
+      );
       registry.dispose();
     });
 
@@ -927,8 +908,7 @@ path = "s.json"
       registry.dispose();
     });
 
-    test('global ~/.crux/plugins/ specs are scanned and flagged isGlobal',
-        () {
+    test('global ~/.crux/plugins/ specs are scanned and flagged isGlobal', () {
       final home = Directory.systemTemp.createTempSync('plugin_home_test_');
       addTearDown(() {
         try {

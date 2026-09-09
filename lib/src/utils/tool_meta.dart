@@ -150,9 +150,8 @@ String? lspStateToWire(LspState state) =>
 /// `dart:convert` for a single well-known key shape. Returns
 /// `null` if the field is absent or the JSON is malformed.
 String? _extractJsonStringField(String json, String field) {
-  final match = RegExp(
-    '"$field"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"',
-  ).firstMatch(json);
+  final match = RegExp('"$field"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"')
+      .firstMatch(json);
   if (match == null) return null;
   return _unescapeJsonString(match.group(1)!);
 }

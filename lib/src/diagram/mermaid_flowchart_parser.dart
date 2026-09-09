@@ -11,8 +11,7 @@ import 'diagram_model.dart';
 ///
 /// When [requireHeader] is false (auto-detection path), a missing
 /// `flowchart`/`graph` header defaults to TB instead of throwing.
-DiagramGraph parseMermaidFlowchart(String source,
-    {bool requireHeader = true}) {
+DiagramGraph parseMermaidFlowchart(String source, {bool requireHeader = true}) {
   final lines = source.split('\n');
   if (lines.every((l) => l.trim().isEmpty)) {
     throw DiagramParseException('Empty diagram source');
@@ -33,10 +32,13 @@ DiagramGraph parseMermaidFlowchart(String source,
         (line.toLowerCase().startsWith('flowchart') ||
             line.toLowerCase().startsWith('graph'))) {
       foundHeader = true;
-      final keyword =
-          line.toLowerCase().startsWith('flowchart') ? 'flowchart' : 'graph';
-      final m = RegExp(r'(LR|RL|TB|TD|BT)', caseSensitive: false)
-          .firstMatch(line.substring(keyword.length));
+      final keyword = line.toLowerCase().startsWith('flowchart')
+          ? 'flowchart'
+          : 'graph';
+      final m = RegExp(
+        r'(LR|RL|TB|TD|BT)',
+        caseSensitive: false,
+      ).firstMatch(line.substring(keyword.length));
       if (m != null) {
         graph.direction = DiagramDirection.parse(m.group(1)!);
       }
@@ -61,8 +63,11 @@ DiagramGraph parseMermaidFlowchart(String source,
         id = rest.isEmpty ? '__sg${graph.subgraphs.length}' : rest;
         label = rest;
       }
-      graph.ensureSubgraph(id, label,
-          parent: subgraphStack.isNotEmpty ? subgraphStack.last : null);
+      graph.ensureSubgraph(
+        id,
+        label,
+        parent: subgraphStack.isNotEmpty ? subgraphStack.last : null,
+      );
       subgraphStack.add(id);
       continue;
     }
@@ -72,9 +77,10 @@ DiagramGraph parseMermaidFlowchart(String source,
       continue;
     }
 
-    if (RegExp(r'^(classDef|class|style|click|linkStyle)\b',
-            caseSensitive: false)
-        .hasMatch(line)) {
+    if (RegExp(
+      r'^(classDef|class|style|click|linkStyle)\b',
+      caseSensitive: false,
+    ).hasMatch(line)) {
       continue;
     }
 
@@ -266,49 +272,49 @@ String? _readWrapped(String s, int start) {
   if (wrapped.startsWith('[(') && wrapped.endsWith(')]')) {
     return (
       shape: NodeShape.cylinder,
-      label: wrapped.substring(2, wrapped.length - 2)
+      label: wrapped.substring(2, wrapped.length - 2),
     );
   }
   if (wrapped.startsWith('((') && wrapped.endsWith('))')) {
     return (
       shape: NodeShape.circle,
-      label: wrapped.substring(2, wrapped.length - 2)
+      label: wrapped.substring(2, wrapped.length - 2),
     );
   }
   if (wrapped.startsWith('[[') && wrapped.endsWith(']]')) {
     return (
       shape: NodeShape.generic,
-      label: wrapped.substring(2, wrapped.length - 2)
+      label: wrapped.substring(2, wrapped.length - 2),
     );
   }
   if (wrapped.startsWith('{{') && wrapped.endsWith('}}')) {
     return (
       shape: NodeShape.generic,
-      label: wrapped.substring(2, wrapped.length - 2)
+      label: wrapped.substring(2, wrapped.length - 2),
     );
   }
   if (wrapped.startsWith('([') && wrapped.endsWith('])')) {
     return (
       shape: NodeShape.generic,
-      label: wrapped.substring(2, wrapped.length - 2)
+      label: wrapped.substring(2, wrapped.length - 2),
     );
   }
   if (wrapped.startsWith('(') && wrapped.endsWith(')')) {
     return (
       shape: NodeShape.rounded,
-      label: wrapped.substring(1, wrapped.length - 1)
+      label: wrapped.substring(1, wrapped.length - 1),
     );
   }
   if (wrapped.startsWith('{') && wrapped.endsWith('}')) {
     return (
       shape: NodeShape.diamond,
-      label: wrapped.substring(1, wrapped.length - 1)
+      label: wrapped.substring(1, wrapped.length - 1),
     );
   }
   if (wrapped.startsWith('[') && wrapped.endsWith(']')) {
     return (
       shape: NodeShape.rectangle,
-      label: wrapped.substring(1, wrapped.length - 1)
+      label: wrapped.substring(1, wrapped.length - 1),
     );
   }
   return (shape: NodeShape.rectangle, label: wrapped);
@@ -325,8 +331,12 @@ void _parseEdgeChain(
   // First node anchors the chain.
   final first = _parseNodeToken(statement, pos);
   if (first == null) return;
-  graph.ensureNode(first.id,
-      label: first.label, shape: first.shape, subgraphId: subgraphId);
+  graph.ensureNode(
+    first.id,
+    label: first.label,
+    shape: first.shape,
+    subgraphId: subgraphId,
+  );
   var prevId = first.id;
   pos = _scanPastNode(statement, pos);
 
@@ -343,8 +353,7 @@ void _parseEdgeChain(
 
     // Optional pipe label directly after the operator (`|text|`).
     String? label = edge.label;
-    final pipe =
-        RegExp(r'\s*\|([^|]*)\|').firstMatch(statement.substring(pos));
+    final pipe = RegExp(r'\s*\|([^|]*)\|').firstMatch(statement.substring(pos));
     if (pipe != null && pipe.start == 0) {
       label ??= pipe.group(1)?.trim();
       pos += pipe.end;
@@ -356,15 +365,21 @@ void _parseEdgeChain(
     // ...then exactly one node token closes it.
     final next = _parseNodeToken(statement, pos);
     if (next == null) break;
-    graph.ensureNode(next.id,
-        label: next.label, shape: next.shape, subgraphId: subgraphId);
+    graph.ensureNode(
+      next.id,
+      label: next.label,
+      shape: next.shape,
+      subgraphId: subgraphId,
+    );
 
     final (from, to) = edge.reverse ? (next.id, prevId) : (prevId, next.id);
-    graph.edges.add(DiagramEdge(
-        from: from, to: to, label: label, style: edge.style));
+    graph.edges.add(
+      DiagramEdge(from: from, to: to, label: label, style: edge.style),
+    );
     if (edge.bidirectional) {
-      graph.edges.add(DiagramEdge(
-          from: next.id, to: prevId, label: label, style: edge.style));
+      graph.edges.add(
+        DiagramEdge(from: next.id, to: prevId, label: label, style: edge.style),
+      );
     }
 
     prevId = next.id;
@@ -439,8 +454,13 @@ class _EdgeToken {
   final bool reverse;
   final bool bidirectional;
   final int nextPos;
-  _EdgeToken(this.style, this.label, this.reverse, this.bidirectional,
-      this.nextPos);
+  _EdgeToken(
+    this.style,
+    this.label,
+    this.reverse,
+    this.bidirectional,
+    this.nextPos,
+  );
 }
 
 _EdgeToken? _parseEdgeOperator(String s, int pos) {
@@ -457,13 +477,23 @@ _EdgeToken? _parseEdgeOperator(String s, int pos) {
   // Dotted family.
   var m = RegExp(r'^-\.\s*"([^"]*)"\s*\.+-+>').firstMatch(rest);
   if (m != null) {
-    return _EdgeToken(EdgeStyle.dottedArrow, m.group(1)!, false, false,
-        pos + m.end);
+    return _EdgeToken(
+      EdgeStyle.dottedArrow,
+      m.group(1)!,
+      false,
+      false,
+      pos + m.end,
+    );
   }
   m = RegExp(r'^-\.([^|]*?)\.+-+>').firstMatch(rest);
   if (m != null) {
     return _EdgeToken(
-        EdgeStyle.dottedArrow, m.group(1)!.trim(), false, false, pos + m.end);
+      EdgeStyle.dottedArrow,
+      m.group(1)!.trim(),
+      false,
+      false,
+      pos + m.end,
+    );
   }
   if (rest.startsWith('-.->')) {
     return _EdgeToken(EdgeStyle.dottedArrow, null, false, false, pos + 4);
@@ -479,12 +509,22 @@ _EdgeToken? _parseEdgeOperator(String s, int pos) {
   m = RegExp(r'^==\s*"([^"]*)"\s*==+>').firstMatch(rest);
   if (m != null) {
     return _EdgeToken(
-        EdgeStyle.thickArrow, m.group(1)!, false, false, pos + m.end);
+      EdgeStyle.thickArrow,
+      m.group(1)!,
+      false,
+      false,
+      pos + m.end,
+    );
   }
   m = RegExp(r'^==([^|]*?)==+>').firstMatch(rest);
   if (m != null) {
     return _EdgeToken(
-        EdgeStyle.thickArrow, m.group(1)!.trim(), false, false, pos + m.end);
+      EdgeStyle.thickArrow,
+      m.group(1)!.trim(),
+      false,
+      false,
+      pos + m.end,
+    );
   }
   if (rest.startsWith('==>')) {
     return _EdgeToken(EdgeStyle.thickArrow, null, false, false, pos + 3);
@@ -506,12 +546,22 @@ _EdgeToken? _parseEdgeOperator(String s, int pos) {
   m = RegExp(r'^--\s*"([^"]*)"\s*--+>').firstMatch(rest);
   if (m != null) {
     return _EdgeToken(
-        EdgeStyle.solidArrow, m.group(1)!, false, false, pos + m.end);
+      EdgeStyle.solidArrow,
+      m.group(1)!,
+      false,
+      false,
+      pos + m.end,
+    );
   }
   m = RegExp(r'^--([^|>\-][^|>]*?)--+>').firstMatch(rest);
   if (m != null) {
     return _EdgeToken(
-        EdgeStyle.solidArrow, m.group(1)!.trim(), false, false, pos + m.end);
+      EdgeStyle.solidArrow,
+      m.group(1)!.trim(),
+      false,
+      false,
+      pos + m.end,
+    );
   }
   if (rest.startsWith('---')) {
     return _EdgeToken(EdgeStyle.solidLine, null, false, false, pos + 3);

@@ -823,10 +823,7 @@ void main() {
 
           // 'third' lives on note line 3 — invisible with the old
           // 2-line box, must render now.
-          expect(
-            tester.renderToString(showBorders: false),
-            contains('third'),
-          );
+          expect(tester.renderToString(showBorders: false), contains('third'));
 
           await tester.sendEnter();
           await tester.pump();

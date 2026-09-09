@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/text/text_layout_engine.dart';
 import 'package:nocterm_bloc/nocterm_bloc.dart';
+
 import '../models/message.dart';
 import '../services/a2ui/models.dart';
 import '../models/message_queue.dart';
@@ -830,9 +831,9 @@ class _ChatHistoryState extends State<ChatHistory> {
           userItemIndices.add(items.length);
           // Strip skill bodies + the LLM-only plan-context block so the
           // jump-bar label shows only what the user typed.
-          final text = stripPlanContext(
-            stripSkillBodies(msg.content),
-          ).text.replaceAll('\n', ' ').trim();
+          final text = stripPlanContext(stripSkillBodies(msg.content)).text
+              .replaceAll('\n', ' ')
+              .trim();
           userItemLabels.add(text);
         }
 

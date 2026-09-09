@@ -290,9 +290,10 @@ String _normalize(String value) =>
 }
 
 (int, int)? _wordOverlapRange(String plainText, String search) {
-  final words = _normalize(
-    search,
-  ).split(' ').where((word) => word.length > 2).toList();
+  final words = _normalize(search)
+      .split(' ')
+      .where((word) => word.length > 2)
+      .toList();
   if (words.isEmpty) return null;
 
   final windowSize = search.length * 2;

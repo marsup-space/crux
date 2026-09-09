@@ -5,11 +5,7 @@ void main() {
   group('resolvePlanSplit', () {
     test('plan inactive: keeps the bare sidebar decision', () {
       // Wide terminal — sidebar shown at its natural width.
-      final wide = resolvePlanSplit(
-        140,
-        planActive: false,
-        sidebarWidth: 40,
-      );
+      final wide = resolvePlanSplit(140, planActive: false, sidebarWidth: 40);
       expect(wide.showSidebar, isTrue);
       expect(wide.sidebarWidth, 40);
       expect(wide.planPaneWidth, 0);
@@ -59,22 +55,14 @@ void main() {
 
     test('narrow: sidebar already gone, plan halves with chat', () {
       // 80 cols, no sidebar: avail 79 → plan 39, chat 40.
-      final l = resolvePlanSplit(
-        80,
-        planActive: true,
-        sidebarWidth: null,
-      );
+      final l = resolvePlanSplit(80, planActive: true, sidebarWidth: null);
       expect(l.showSidebar, isFalse);
       expect(l.planPaneWidth, 39);
     });
 
     test('extreme narrow: plan still halves with no minimum', () {
       // 50 cols: avail 49 → plan 24, chat 25 — no 30-col floor.
-      final l = resolvePlanSplit(
-        50,
-        planActive: true,
-        sidebarWidth: null,
-      );
+      final l = resolvePlanSplit(50, planActive: true, sidebarWidth: null);
       expect(l.planPaneWidth, 24);
     });
 
@@ -89,10 +77,18 @@ void main() {
             sidebarWidth: sidebar,
           );
           final dividers = l.showSidebar ? 2 : 1;
-          final chat = w - l.planPaneWidth - (l.showSidebar ? l.sidebarWidth : 0) - dividers;
-          expect(l.planPaneWidth <= chat + 1, isTrue,
-              reason: 'w=$w sidebar=$sidebar: plan ${l.planPaneWidth} '
-                  'vs chat $chat');
+          final chat =
+              w -
+              l.planPaneWidth -
+              (l.showSidebar ? l.sidebarWidth : 0) -
+              dividers;
+          expect(
+            l.planPaneWidth <= chat + 1,
+            isTrue,
+            reason:
+                'w=$w sidebar=$sidebar: plan ${l.planPaneWidth} '
+                'vs chat $chat',
+          );
         }
       }
     });

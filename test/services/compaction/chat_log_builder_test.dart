@@ -767,8 +767,7 @@ void main() {
           SummaryContribution(
             category: 'skill-bodies',
             key: 'pr-review',
-            value:
-                '<skill_content name="pr-review">\nProcedure body\n</skill_content>',
+            value: '<skill_content name="pr-review">\nProcedure body\n</skill_content>',
           ),
         ),
       );

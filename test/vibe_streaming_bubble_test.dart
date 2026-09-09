@@ -202,70 +202,66 @@ void main() {
         ),
       );
 
-      await testNocterm(
-        'vibe open segment merges persisted and live boxes',
-        (tester) async {
-          await tester.pumpComponent(
-            MultiBlocProvider(
-              providers: [
-                BlocProvider<SessionCubit>.value(
-                  value: sessionController.cubit,
-                ),
-                BlocProvider<BtwCubit>.value(value: sessionController.btwCubit),
-                BlocProvider<MetricsCubit>.value(
-                  value: sessionController.metricsCubit,
-                ),
-                BlocProvider<ChatTurnCubit>.value(
-                  value: sessionController.chatTurnCubit,
-                ),
-                BlocProvider<StreamingCubit>.value(
-                  value: sessionController.streamingCubit,
-                ),
-              ],
-              child: CruxTheme(
-                data: CruxThemeData.draculaFallback,
-                child: Container(
-                  width: 120,
-                  height: 24,
-                  child: ChatHistory(
-                    scrollController: scrollController,
-                    sessionController: sessionController,
-                    streamingController: streamingController,
-                    turnOrchestrator: turnOrchestrator,
-                    providerService: providerService,
-                    toolRegistry: toolRegistry,
-                    showToast: (_, {mode = ToastMode.info}) {},
-                    refresh: () {},
-                  ),
+      await testNocterm('vibe open segment merges persisted and live boxes', (
+        tester,
+      ) async {
+        await tester.pumpComponent(
+          MultiBlocProvider(
+            providers: [
+              BlocProvider<SessionCubit>.value(value: sessionController.cubit),
+              BlocProvider<BtwCubit>.value(value: sessionController.btwCubit),
+              BlocProvider<MetricsCubit>.value(
+                value: sessionController.metricsCubit,
+              ),
+              BlocProvider<ChatTurnCubit>.value(
+                value: sessionController.chatTurnCubit,
+              ),
+              BlocProvider<StreamingCubit>.value(
+                value: sessionController.streamingCubit,
+              ),
+            ],
+            child: CruxTheme(
+              data: CruxThemeData.draculaFallback,
+              child: Container(
+                width: 120,
+                height: 24,
+                child: ChatHistory(
+                  scrollController: scrollController,
+                  sessionController: sessionController,
+                  streamingController: streamingController,
+                  turnOrchestrator: turnOrchestrator,
+                  providerService: providerService,
+                  toolRegistry: toolRegistry,
+                  showToast: (_, {mode = ToastMode.info}) {},
+                  refresh: () {},
                 ),
               ),
             ),
-          );
+          ),
+        );
 
-          final rendered = tester.renderToString(showBorders: false);
-          expect(
-            RegExp(r'\bthink\b').allMatches(rendered),
-            hasLength(1),
-            reason: rendered,
-          );
-          expect(
-            RegExp(r'\btools\b').allMatches(rendered),
-            hasLength(1),
-            reason: rendered,
-          );
-          expect(
-            RegExp(r'\bfiles\b').allMatches(rendered),
-            hasLength(1),
-            reason: rendered,
-          );
-          expect(rendered, contains('251 tokens'));
-          expect(rendered, contains('read x2:'));
-          expect(rendered, contains('edit x2:'));
-          expect(rendered, contains('base.dart +1 -1'));
-          expect(rendered, contains('live.dart'));
-        },
-        size: const Size(120, 24),
-      );
+        final rendered = tester.renderToString(showBorders: false);
+        expect(
+          RegExp(r'\bthink\b').allMatches(rendered),
+          hasLength(1),
+          reason: rendered,
+        );
+        expect(
+          RegExp(r'\btools\b').allMatches(rendered),
+          hasLength(1),
+          reason: rendered,
+        );
+        expect(
+          RegExp(r'\bfiles\b').allMatches(rendered),
+          hasLength(1),
+          reason: rendered,
+        );
+        expect(rendered, contains('251 tokens'));
+        expect(rendered, contains('read x2:'));
+        expect(rendered, contains('edit x2:'));
+        expect(rendered, contains('base.dart +1 -1'));
+        expect(rendered, contains('live.dart'));
+      }, size: const Size(120, 24));
     },
   );
 
@@ -411,9 +407,9 @@ void main() {
           // Exactly one foo.dart row. A duplicate bare-basename
           // row from the live edit (the regression) would
           // produce 2 matches.
-          final fooRows = RegExp(
-            r'foo\.dart(?: \+\d+ -\d+)?',
-          ).allMatches(rendered).length;
+          final fooRows = RegExp(r'foo\.dart(?: \+\d+ -\d+)?')
+              .allMatches(rendered)
+              .length;
           expect(fooRows, 1, reason: rendered);
         },
         size: const Size(120, 24),

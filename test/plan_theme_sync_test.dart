@@ -33,17 +33,27 @@ void main() {
   });
 
   test('pane first mount syncs the real theme before painting', () async {
-    expect(controller.theme, isNull,
-        reason: 'precondition: enter() parsed with the mono fallback');
+    expect(
+      controller.theme,
+      isNull,
+      reason: 'precondition: enter() parsed with the mono fallback',
+    );
     await testNocterm('plan theme sync', (tester) async {
       await tester.pumpComponent(
-        SizedBox(width: 60, height: 20, child: PlanDocPane(controller: controller)),
+        SizedBox(
+          width: 60,
+          height: 20,
+          child: PlanDocPane(controller: controller),
+        ),
       );
       // No controller event fired after the pane mounted — the theme
       // must already be the CruxThemeData context's theme via
       // didChangeDependencies, not via a listener-only path.
-      expect(controller.theme, isA<CruxThemeData>(),
-          reason: 'pane must inject the real theme on first mount');
+      expect(
+        controller.theme,
+        isA<CruxThemeData>(),
+        reason: 'pane must inject the real theme on first mount',
+      );
     });
   });
 }

@@ -8,7 +8,10 @@ Future<void> executeCompact(CommandContext ctx) async {
   }
   final compact = ctx.compactSession;
   if (compact == null) {
-    ctx.showToast(ctx.strings.t('toast.compactUnavailable'), mode: ToastMode.error);
+    ctx.showToast(
+      ctx.strings.t('toast.compactUnavailable'),
+      mode: ToastMode.error,
+    );
     return;
   }
   await compact();

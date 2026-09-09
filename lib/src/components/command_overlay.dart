@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+
 import '../i18n/strings.dart';
 import '../theme/crux_theme.dart';
 import '../models/slash_command.dart';
@@ -64,7 +65,7 @@ class CommandOverlay extends StatelessComponent {
           child: GestureDetector(
             onTap: () => onTap?.call(actualIndex),
             behavior: HitTestBehavior.opaque,
-                        child: _buildCommandRow(cmd, isSelected, theme),
+            child: _buildCommandRow(cmd, isSelected, theme),
           ),
         ),
       );

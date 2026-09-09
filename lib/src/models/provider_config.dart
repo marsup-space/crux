@@ -584,9 +584,12 @@ class ProviderConfig {
   /// (treated as "no cap"). Returns a positive integer otherwise.
   int? effectiveMaxRoundsFor(ModelConfig model) {
     final fromModel = model.maxRounds;
-    if (fromModel != null && fromModel > 0) return fromModel;
-    if (defaultMaxRounds != null && defaultMaxRounds! > 0)
+    if (fromModel != null && fromModel > 0) {
+      return fromModel;
+    }
+    if (defaultMaxRounds != null && defaultMaxRounds! > 0) {
       return defaultMaxRounds;
+    }
     return null;
   }
 

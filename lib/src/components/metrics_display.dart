@@ -4,8 +4,10 @@
 // ignore_for_file: implementation_imports
 
 import 'dart:async';
+
 import 'package:nocterm/nocterm.dart';
 import 'package:nocterm/src/framework/terminal_canvas.dart';
+
 import '../i18n/strings.dart';
 import '../theme/crux_theme.dart';
 import '../utils/text_width.dart';
@@ -182,8 +184,7 @@ class _MetricsDisplayState extends State<MetricsDisplay> {
         .runtime(sessionId)
         .lastChunkTime;
     final stallSeconds = (isResponding && lastChunkTime != null)
-        ? (DateTime.now().difference(lastChunkTime).inMicroseconds /
-              1000000.0)
+        ? (DateTime.now().difference(lastChunkTime).inMicroseconds / 1000000.0)
         : null;
     final thresholdSeconds = _stallThreshold.inMicroseconds / 1000000.0;
     if (stallSeconds != null && stallSeconds >= thresholdSeconds) {

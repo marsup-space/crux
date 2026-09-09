@@ -54,8 +54,8 @@ Component? buildOverlayPopover({
 
   if (overlay.overlayMode == OverlayMode.parameter &&
       overlay.filteredSuggestions.isNotEmpty) {
-    final paramLabel = overlay.currentParamIndex <
-            overlay.activeCommand!.params.length
+    final paramLabel =
+        overlay.currentParamIndex < overlay.activeCommand!.params.length
         ? overlay.activeCommand!.params[overlay.currentParamIndex]
         : 'value';
     return MouseRegion(

@@ -54,11 +54,11 @@ class ProducerDecl {
   });
 
   Map<String, dynamic> toJson() => {
-        'key': key,
-        'pluginId': pluginId,
-        'command': command,
-        if (cwd != null) 'cwd': cwd,
-      };
+    'key': key,
+    'pluginId': pluginId,
+    'command': command,
+    if (cwd != null) 'cwd': cwd,
+  };
 
   static ProducerDecl? fromJson(Map<String, dynamic> json) {
     final key = json['key'] as String?;
@@ -108,12 +108,12 @@ class InstanceInfo {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'pid': pid,
-        'project': project,
-        'producers': producerKeys.toList()..sort(),
-        'lastSeen': lastSeen.toUtc().toIso8601String(),
-      };
+    'id': id,
+    'pid': pid,
+    'project': project,
+    'producers': producerKeys.toList()..sort(),
+    'lastSeen': lastSeen.toUtc().toIso8601String(),
+  };
 
   static InstanceInfo? fromJson(Map<String, dynamic> json) {
     final id = json['id'] as String?;
@@ -128,7 +128,8 @@ class InstanceInfo {
       producerKeys: rawKeys is List
           ? rawKeys.map((e) => e.toString()).toSet()
           : const <String>{},
-      lastSeen: DateTime.tryParse(json['lastSeen'] as String? ?? '') ??
+      lastSeen:
+          DateTime.tryParse(json['lastSeen'] as String? ?? '') ??
           DateTime.now(),
     );
   }
@@ -165,21 +166,21 @@ class ProducerState {
   });
 
   Map<String, dynamic> toJson() => {
-        ...decl.toJson(),
-        if (pid != null) 'pid': pid,
-        'startedAt': startedAt.toUtc().toIso8601String(),
-        'restarts': restarts,
-        'status': status,
-        if (lastExit != null) 'lastExit': lastExit,
-      };
+    ...decl.toJson(),
+    if (pid != null) 'pid': pid,
+    'startedAt': startedAt.toUtc().toIso8601String(),
+    'restarts': restarts,
+    'status': status,
+    if (lastExit != null) 'lastExit': lastExit,
+  };
 
   static ProducerState fromDecl(ProducerDecl decl) => ProducerState(
-        decl: decl,
-        pid: null,
-        startedAt: DateTime.now(),
-        restarts: 0,
-        status: 'idle',
-      );
+    decl: decl,
+    pid: null,
+    startedAt: DateTime.now(),
+    restarts: 0,
+    status: 'idle',
+  );
 }
 
 /// Full daemon snapshot — the shape of `GET /status` data AND
@@ -203,13 +204,13 @@ class DaemonStatus {
   });
 
   Map<String, dynamic> toJson() => {
-        'pid': pid,
-        'port': port,
-        'startedAt': startedAt.toUtc().toIso8601String(),
-        'heartbeatAt': heartbeatAt.toUtc().toIso8601String(),
-        'instances': [for (final i in instances) i.toJson()],
-        'producers': [for (final p in producers) p.toJson()],
-      };
+    'pid': pid,
+    'port': port,
+    'startedAt': startedAt.toUtc().toIso8601String(),
+    'heartbeatAt': heartbeatAt.toUtc().toIso8601String(),
+    'instances': [for (final i in instances) i.toJson()],
+    'producers': [for (final p in producers) p.toJson()],
+  };
 
   /// Parse the discovery file. Null when unreadable/stale-shaped —
   /// callers treat that as "no daemon" and bootstrap.
@@ -227,30 +228,30 @@ class DaemonStatus {
         port: port,
         startedAt:
             DateTime.tryParse(decoded['startedAt'] as String? ?? '') ??
-                DateTime.now(),
+            DateTime.now(),
         heartbeatAt:
             DateTime.tryParse(decoded['heartbeatAt'] as String? ?? '') ??
-                DateTime.now(),
+            DateTime.now(),
         instances: [
           if (rawInstances is List)
             for (final raw in rawInstances)
-              if (raw is Map<String, dynamic>)
-                if (InstanceInfo.fromJson(raw) case final info?) info,
+              if (raw is Map<String, dynamic>) ?InstanceInfo.fromJson(raw),
         ],
         producers: [
           if (rawProducers is List)
             for (final raw in rawProducers)
               if (raw is Map<String, dynamic>)
-                if (ProducerDecl.fromJson(raw) case final decl?) ProducerState(
-                  decl: decl,
-                  pid: raw['pid'] as int?,
-                  startedAt:
-                      DateTime.tryParse(raw['startedAt'] as String? ?? '') ??
-                          DateTime.now(),
-                  restarts: (raw['restarts'] as num?)?.toInt() ?? 0,
-                  status: raw['status'] as String? ?? 'unknown',
-                  lastExit: raw['lastExit'] as String?,
-                ),
+                if (ProducerDecl.fromJson(raw) case final decl?)
+                  ProducerState(
+                    decl: decl,
+                    pid: raw['pid'] as int?,
+                    startedAt:
+                        DateTime.tryParse(raw['startedAt'] as String? ?? '') ??
+                        DateTime.now(),
+                    restarts: (raw['restarts'] as num?)?.toInt() ?? 0,
+                    status: raw['status'] as String? ?? 'unknown',
+                    lastExit: raw['lastExit'] as String?,
+                  ),
         ],
       );
     } catch (_) {

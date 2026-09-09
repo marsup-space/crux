@@ -126,8 +126,7 @@ UU conflict.txt
       expect(
         status.stagedFiles,
         5,
-        reason:
-            'idx_modified + both + added + idx_deleted + rename = 5 (mm counts once)',
+        reason: 'idx_modified + both + added + idx_deleted + rename = 5 (mm counts once)',
       );
       expect(status.untrackedFiles, 1);
       expect(status.conflictedFiles, 1);
@@ -280,38 +279,40 @@ UU conflict.txt
       svc.dispose();
     });
 
-    test('start() performs the initial fetch and does not crash the isolate',
-        () async {
-      // Regression test for the start-message arg-order bug: `start()`
-      // used to send [interval, refreshImmediately, path] while the
-      // isolate handler read message[2] as the path (String) and
-      // message[3] as the flag (bool). That made message[2] a bool, so
-      // the `as String` cast threw inside the isolate, killing both the
-      // immediate fetch and the periodic-refresh timer. Exercising
-      // `start()` directly (rather than `refresh()`, which sends a
-      // different, correctly-ordered message) is what catches it.
-      File(p.join(tempDir.path, 'README.md')).writeAsStringSync('# Test\n');
-      _runGitSync(tempDir.path, ['add', '.']);
-      _runGitSync(tempDir.path, ['commit', '-m', 'init']);
+    test(
+      'start() performs the initial fetch and does not crash the isolate',
+      () async {
+        // Regression test for the start-message arg-order bug: `start()`
+        // used to send [interval, refreshImmediately, path] while the
+        // isolate handler read message[2] as the path (String) and
+        // message[3] as the flag (bool). That made message[2] a bool, so
+        // the `as String` cast threw inside the isolate, killing both the
+        // immediate fetch and the periodic-refresh timer. Exercising
+        // `start()` directly (rather than `refresh()`, which sends a
+        // different, correctly-ordered message) is what catches it.
+        File(p.join(tempDir.path, 'README.md')).writeAsStringSync('# Test\n');
+        _runGitSync(tempDir.path, ['add', '.']);
+        _runGitSync(tempDir.path, ['commit', '-m', 'init']);
 
-      final svc = GitStatusService(pathProvider: () => tempDir.path);
-      addTearDown(svc.dispose);
+        final svc = GitStatusService(pathProvider: () => tempDir.path);
+        addTearDown(svc.dispose);
 
-      // start() is fire-and-forget: it spawns the isolate and kicks off
-      // the immediate fetch (refreshImmediately defaults to true). Wait
-      // for the ChangeNotifier to fire with the fetched status. If the
-      // isolate crashed on the arg-order bug, no notification ever
-      // arrives and the test times out.
-      final notified = svc.firstWhere((s) => s.isRepo);
-      svc.start();
-      final status = await notified.timeout(
-        const Duration(seconds: 10),
-        onTimeout: () =>
-            fail('start() never delivered a status — isolate likely crashed'),
-      );
-      expect(status.branch, 'main');
-      expect(status.isClean, isTrue);
-    });
+        // start() is fire-and-forget: it spawns the isolate and kicks off
+        // the immediate fetch (refreshImmediately defaults to true). Wait
+        // for the ChangeNotifier to fire with the fetched status. If the
+        // isolate crashed on the arg-order bug, no notification ever
+        // arrives and the test times out.
+        final notified = svc.firstWhere((s) => s.isRepo);
+        svc.start();
+        final status = await notified.timeout(
+          const Duration(seconds: 10),
+          onTimeout: () =>
+              fail('start() never delivered a status — isolate likely crashed'),
+        );
+        expect(status.branch, 'main');
+        expect(status.isClean, isTrue);
+      },
+    );
   });
 }
 

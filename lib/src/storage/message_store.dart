@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
+
 import 'database.dart' as db;
 import '../models/daily_usage_stats.dart';
 import '../models/image_attachment.dart';
@@ -227,8 +228,7 @@ class MessageStore {
         )
         .get();
     return {
-      for (final row in rows)
-        row.read<String>('day'): row.read<int>('total'),
+      for (final row in rows) row.read<String>('day'): row.read<int>('total'),
     };
   }
 
@@ -306,9 +306,11 @@ class MessageStore {
     // day → model → tokens.
     final byModel = <String, Map<String, int>>{};
     for (final row in modelRows) {
-      byModel
-          .putIfAbsent(row.read<String>('day'), () => {})
-          [row.read<String>('model')] = row.read<int>('tokens');
+      byModel.putIfAbsent(row.read<String>('day'), () => {})[row.read<String>(
+        'model',
+      )] = row.read<int>(
+        'tokens',
+      );
     }
 
     return {

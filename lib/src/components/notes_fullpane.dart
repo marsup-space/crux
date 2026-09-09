@@ -124,8 +124,9 @@ class _NotesFullpaneState extends State<NotesFullpane> {
     final end = sel.end.clamp(0, current.length);
     final next = current.replaceRange(start, end, text);
     _controller.text = next;
-    _controller.selection =
-        TextSelection.collapsed(offset: start + text.length);
+    _controller.selection = TextSelection.collapsed(
+      offset: start + text.length,
+    );
     _onChanged(next);
   }
 
@@ -196,7 +197,7 @@ class _NotesFullpaneState extends State<NotesFullpane> {
                     todos.isEmpty
                         ? component.strings.t('home.notes.noTodos')
                         : '◷ ${component.strings.t(todos.openCount == 1 ? 'chat.notes.openTodo' : 'chat.notes.openTodos', {'n': '${todos.openCount}'})}'
-                            ' · ${component.strings.t('chat.notes.doneCount', {'n': '${todos.done.length}'})}',
+                              ' · ${component.strings.t('chat.notes.doneCount', {'n': '${todos.done.length}'})}',
                     style: TextStyle(
                       color: todos.openCount > 0
                           ? theme.warningColor
@@ -208,8 +209,8 @@ class _NotesFullpaneState extends State<NotesFullpane> {
                     _saving
                         ? component.strings.t('chat.notes.saving')
                         : _dirty
-                            ? component.strings.t('chat.notes.unsaved')
-                            : component.strings.t('chat.notes.saved'),
+                        ? component.strings.t('chat.notes.unsaved')
+                        : component.strings.t('chat.notes.saved'),
                     style: TextStyle(
                       color: _dirty && !_saving
                           ? theme.warningColor

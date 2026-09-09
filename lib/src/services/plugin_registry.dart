@@ -103,16 +103,15 @@ class PluginRegistry extends ChangeNotifier {
   }
 
   /// Parsed specs, in stable (id) order.
-  List<Plugin> get plugins => _specs.values.toList()
-    ..sort((a, b) => a.id.compareTo(b.id));
+  List<Plugin> get plugins =>
+      _specs.values.toList()..sort((a, b) => a.id.compareTo(b.id));
 
   /// Specs that render on the sidebar ([Plugin.showsOnSidebar]).
   List<Plugin> get sidebarPlugins =>
       plugins.where((s) => s.showsOnSidebar).toList();
 
   /// Specs that render on the home grid ([Plugin.showsOnHome]).
-  List<Plugin> get homePlugins =>
-      plugins.where((s) => s.showsOnHome).toList();
+  List<Plugin> get homePlugins => plugins.where((s) => s.showsOnHome).toList();
 
   /// Begin periodic scanning + file watching. Idempotent.
   void start() {
@@ -185,12 +184,13 @@ class PluginRegistry extends ChangeNotifier {
     for (final root in scanRoots()) {
       try {
         if (!root.dir.existsSync()) continue;
-        final files = root.dir
-            .listSync()
-            .whereType<File>()
-            .where((f) => f.path.endsWith('.toml'))
-            .toList()
-          ..sort((a, b) => a.path.compareTo(b.path));
+        final files =
+            root.dir
+                .listSync()
+                .whereType<File>()
+                .where((f) => f.path.endsWith('.toml'))
+                .toList()
+              ..sort((a, b) => a.path.compareTo(b.path));
         for (final file in files) {
           final id = p.basenameWithoutExtension(file.path);
           if (specs.containsKey(id)) continue; // higher precedence won

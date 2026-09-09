@@ -94,9 +94,8 @@ void main() {
     test(
       'rejects malformed TOML, invalid brightness, and malformed color',
       () async {
-        final valid = await File(
-          p.join(bundledThemes.path, 'dracula.toml'),
-        ).readAsString();
+        final valid = await File(p.join(bundledThemes.path, 'dracula.toml'))
+            .readAsString();
 
         expect(
           () => ThemeLoader.parse('name = [', id: 'bad'),
@@ -129,9 +128,8 @@ void main() {
     );
 
     test('accepts #RGB shorthand and expands it to #RRGGBB', () async {
-      final valid = await File(
-        p.join(bundledThemes.path, 'dracula.toml'),
-      ).readAsString();
+      final valid = await File(p.join(bundledThemes.path, 'dracula.toml'))
+          .readAsString();
       final theme = ThemeLoader.parse(
         valid
             .replaceFirst('background = "#282A36"', 'background = "#1A2b3C"')
@@ -145,9 +143,8 @@ void main() {
     test(
       'missing tokens fall back to Dracula defaults with warnings',
       () async {
-        final valid = await File(
-          p.join(bundledThemes.path, 'dracula.toml'),
-        ).readAsString();
+        final valid = await File(p.join(bundledThemes.path, 'dracula.toml'))
+            .readAsString();
         final warnings = <String>[];
         final theme = ThemeLoader.parse(
           valid
@@ -277,9 +274,8 @@ void main() {
     });
 
     test('optional h1..h6 markdown overrides win', () async {
-      final valid = await File(
-        p.join(bundledThemes.path, 'dracula.toml'),
-      ).readAsString();
+      final valid = await File(p.join(bundledThemes.path, 'dracula.toml'))
+          .readAsString();
       final theme = ThemeLoader.parse(
         valid.replaceFirst(
           'heading = "#BD93F9"',
@@ -320,9 +316,8 @@ void main() {
     });
 
     test('valid user files override bundled IDs', () async {
-      final source = await File(
-        p.join(bundledThemes.path, 'dracula.toml'),
-      ).readAsString();
+      final source = await File(p.join(bundledThemes.path, 'dracula.toml'))
+          .readAsString();
       await File(p.join(userDirectory.path, 'dracula.toml')).writeAsString(
         source.replaceFirst('name = "Dracula"', 'name = "My Dracula"'),
       );

@@ -680,15 +680,17 @@ String _initialsForPath(String s) {
 /// including the multi-second in-process walk on huge trees —
 /// ever blocks the UI thread.
 Future<
-    ({
-      List<String> paths,
-      List<String> lower,
-      List<String> basenames,
-      List<String> initials,
-      List<String> basenameInitials,
-      List<bool> isDir,
-      bool usedRipgrep,
-    })> _buildWorkerIndex(String rootPath, bool preferRipgrep) async {
+  ({
+    List<String> paths,
+    List<String> lower,
+    List<String> basenames,
+    List<String> initials,
+    List<String> basenameInitials,
+    List<bool> isDir,
+    bool usedRipgrep,
+  })
+>
+_buildWorkerIndex(String rootPath, bool preferRipgrep) async {
   List<String>? paths;
   var usedRipgrep = false;
   if (preferRipgrep) {
@@ -719,9 +721,7 @@ Future<
     // directories with the trailing slash). `p.basename` is
     // separator-agnostic, so the Windows `\` vs POSIX `/`
     // distinction doesn't matter for the basename field.
-    isDir: List<bool>.unmodifiable(
-      sorted.map((s) => s.endsWith('/')).toList(),
-    ),
+    isDir: List<bool>.unmodifiable(sorted.map((s) => s.endsWith('/')).toList()),
     // Initials for the basename only. We tokenize from the
     // original-case basename (so camelCase boundaries are
     // detectable) but emit lowercased initials so the per-
@@ -880,10 +880,7 @@ void _collectGitignoresAt(
     if (gi.existsSync()) {
       try {
         final lines = gi.readAsLinesSync();
-        out.add((
-          directory: relPrefix.isEmpty ? '.' : relPrefix,
-          lines: lines,
-        ));
+        out.add((directory: relPrefix.isEmpty ? '.' : relPrefix, lines: lines));
       } on FileSystemException {
         // Unreadable .gitignore — skip.
       }
@@ -1166,10 +1163,13 @@ class _FileSearchWorker {
     // Guard against a dead isolate leaving the caller hanging
     // forever: on timeout we drop the pending completer and surface
     // an error so the [FileSearcher] can dispose and respawn.
-    return completer.future.timeout(timeout, onTimeout: () {
-      _pending.remove(id);
-      throw StateError('file search worker timed out');
-    });
+    return completer.future.timeout(
+      timeout,
+      onTimeout: () {
+        _pending.remove(id);
+        throw StateError('file search worker timed out');
+      },
+    );
   }
 
   void _handleMessage(dynamic message) {

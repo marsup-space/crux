@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_initializing_formals
+
 // Draggable pan viewport for mermaid / d2 / state-diagram fences.
 //
 // Why this exists
@@ -48,9 +50,14 @@ import 'dart:math' as math;
 
 import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart';
+// These rendering primitives are intentionally used by this custom render object.
+// ignore: implementation_imports
 import 'package:nocterm/src/framework/terminal_canvas.dart';
+// ignore: implementation_imports
 import 'package:nocterm/src/rendering/mouse_hit_test.dart';
+// ignore: implementation_imports
 import 'package:nocterm/src/rendering/mouse_tracker.dart';
+// ignore: implementation_imports
 import 'package:nocterm/src/utils/unicode_width.dart';
 
 import '../../diagram/diagram.dart';
@@ -475,6 +482,7 @@ class _DiagramViewportRenderWidget extends SingleChildRenderObjectComponent {
 /// enclosing chat scroll and move vertically.
 class RenderDiagramViewport extends RenderObject
     implements MouseTrackerAnnotationProvider {
+  // Public constructor names intentionally omit the private storage prefix.
   RenderDiagramViewport({
     required DiagramPanController controller,
     required DiagramViewportData data,

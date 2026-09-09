@@ -50,9 +50,9 @@ class StubHomeWidget extends HomeWidget {
     bool focused = false,
   }) {
     return homeSurface(
-      declaration: SurfaceBuilder(
-        surfaceId: 'home.stub.$id',
-      ).text('root', '$id · span $span').build(),
+      declaration: SurfaceBuilder(surfaceId: 'home.stub.$id')
+          .text('root', '$id · span $span')
+          .build(),
       strings: ctx.strings,
     );
   }

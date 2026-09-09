@@ -99,9 +99,8 @@ node_modules/
 ''');
         Directory(p.join(dir.path, 'build')).createSync();
         Directory(p.join(dir.path, 'src')).createSync();
-        File(
-          p.join(dir.path, 'src/main.dart'),
-        ).writeAsStringSync('void main() {}');
+        File(p.join(dir.path, 'src/main.dart'))
+            .writeAsStringSync('void main() {}');
         File(p.join(dir.path, 'src/main.pyc')).writeAsStringSync('x');
         File(p.join(dir.path, 'debug.log')).writeAsStringSync('x');
         File(p.join(dir.path, 'keep.log')).writeAsStringSync('x');

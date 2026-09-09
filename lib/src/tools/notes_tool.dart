@@ -74,24 +74,21 @@ class NotesTool extends ToolDef {
     if (note == null || note.content.isEmpty) {
       return ToolResult(
         title: 'my notes',
-        output: 'No notes yet for this project (${ctx.workingDirectory}). '
+        output:
+            'No notes yet for this project (${ctx.workingDirectory}). '
             'Open the `notes` fullpane to start one.',
         metadata: {'exists': false, 'charCount': 0},
       );
     }
 
-    final updated = DateTime.fromMillisecondsSinceEpoch(
-      note.updatedAt,
-    ).toLocal();
+    final updated = DateTime.fromMillisecondsSinceEpoch(note.updatedAt)
+        .toLocal();
     final header = 'my notes — updated ${_formatTimestamp(updated)}';
 
     return ToolResult(
       title: 'my notes',
       output: '$header\n\n${note.content}',
-      metadata: {
-        'updatedAt': note.updatedAt,
-        'charCount': note.content.length,
-      },
+      metadata: {'updatedAt': note.updatedAt, 'charCount': note.content.length},
     );
   }
 

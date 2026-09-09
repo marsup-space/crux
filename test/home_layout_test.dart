@@ -46,15 +46,11 @@ Future<void> _pumpHome(
 void main() {
   test('grid renders boxes at wide width (4 columns)', () async {
     await testNocterm('wide grid', (tester) async {
-      await _pumpHome(
-        tester,
-        [
-          StubHomeWidget('alpha'),
-          StubHomeWidget('beta', supportedSpans: const {1}),
-          StubHomeWidget('gamma', supportedSpans: const {1}),
-        ],
-        const Size(120, 30),
-      );
+      await _pumpHome(tester, [
+        StubHomeWidget('alpha'),
+        StubHomeWidget('beta', supportedSpans: const {1}),
+        StubHomeWidget('gamma', supportedSpans: const {1}),
+      ], const Size(120, 30));
       for (final id in ['alpha', 'beta', 'gamma']) {
         expect(
           tester.terminalState.findText(id).isNotEmpty,
@@ -71,14 +67,10 @@ void main() {
     await testNocterm('narrow grid', (tester) async {
       // A span-2-only widget must fall back to rendering (at span 1)
       // in a 1-column layout rather than disappearing.
-      await _pumpHome(
-        tester,
-        [
-          StubHomeWidget('alpha', supportedSpans: const {1, 2}),
-          StubHomeWidget('beta', supportedSpans: const {1, 2}),
-        ],
-        const Size(70, 30),
-      );
+      await _pumpHome(tester, [
+        StubHomeWidget('alpha', supportedSpans: const {1, 2}),
+        StubHomeWidget('beta', supportedSpans: const {1, 2}),
+      ], const Size(70, 30));
       expect(tester.terminalState.findText('alpha').isNotEmpty, isTrue);
       expect(tester.terminalState.findText('beta').isNotEmpty, isTrue);
     }, size: const Size(70, 30));
@@ -88,11 +80,9 @@ void main() {
     await testNocterm('span fallback', (tester) async {
       // At 2 columns, a {1,2} widget takes span 2; the stub renders the
       // span it was laid out at, so we can read it back.
-      await _pumpHome(
-        tester,
-        [StubHomeWidget('alpha', supportedSpans: const {1, 2})],
-        const Size(90, 30),
-      );
+      await _pumpHome(tester, [
+        StubHomeWidget('alpha', supportedSpans: const {1, 2}),
+      ], const Size(90, 30));
       expect(
         tester.terminalState.findText('alpha · span 2').isNotEmpty,
         isTrue,
@@ -101,59 +91,56 @@ void main() {
     }, size: const Size(90, 30));
   });
 
-  test('a {1,2} flexible widget takes a double-width share of its row', () async {
-    await testNocterm('span share', (tester) async {
-      // Flexible boxes split a row's pixels by span: on a 4-column row,
-      // span-1 alpha + span-2 beta fit the 3-span budget, and beta gets
-      // twice alpha's width.
-      // The container must clear the 4-column threshold *after* home's
-      // horizontal padding (2 cols each side): 132 → 128 inner ≥ 120.
-      await _pumpHome(
-        tester,
-        [
+  test(
+    'a {1,2} flexible widget takes a double-width share of its row',
+    () async {
+      await testNocterm('span share', (tester) async {
+        // Flexible boxes split a row's pixels by span: on a 4-column row,
+        // span-1 alpha + span-2 beta fit the 3-span budget, and beta gets
+        // twice alpha's width.
+        // The container must clear the 4-column threshold *after* home's
+        // horizontal padding (2 cols each side): 132 → 128 inner ≥ 120.
+        await _pumpHome(tester, [
           StubHomeWidget('alpha', supportedSpans: const {1}),
           StubHomeWidget('beta', supportedSpans: const {1, 2}),
-        ],
-        const Size(132, 30),
-      );
-      final text = tester.terminalState.getText();
-      expect(
-        text.contains('beta · span 2'),
-        isTrue,
-        reason: 'a {1,2} flexible widget renders at its span-2 share',
-      );
-      // Both boxes share one row: alpha's and beta's borders are on the
-      // same terminal line.
-      final borderLine =
-          text.split('\n').firstWhere((l) => l.contains('─ alpha ─'));
-      expect(borderLine, contains('─ beta ─'));
-      // Beta is roughly twice alpha's width. Measure each box by the
-      // span of its top border between the corner glyphs.
-      int boxWidth(String title) {
-        final start = borderLine.indexOf('─ $title ─');
-        final close = borderLine.indexOf('╮', start);
-        return close - start;
-      }
-      final alphaW = boxWidth('alpha');
-      final betaW = boxWidth('beta');
-      expect(
-        betaW / alphaW,
-        closeTo(2.0, 0.4),
-        reason: 'span-2 beta ($betaW) should be ~2x span-1 alpha ($alphaW)',
-      );
-    }, size: const Size(132, 30));
-  });
+        ], const Size(132, 30));
+        final text = tester.terminalState.getText();
+        expect(
+          text.contains('beta · span 2'),
+          isTrue,
+          reason: 'a {1,2} flexible widget renders at its span-2 share',
+        );
+        // Both boxes share one row: alpha's and beta's borders are on the
+        // same terminal line.
+        final borderLine = text
+            .split('\n')
+            .firstWhere((l) => l.contains('─ alpha ─'));
+        expect(borderLine, contains('─ beta ─'));
+        // Beta is roughly twice alpha's width. Measure each box by the
+        // span of its top border between the corner glyphs.
+        int boxWidth(String title) {
+          final start = borderLine.indexOf('─ $title ─');
+          final close = borderLine.indexOf('╮', start);
+          return close - start;
+        }
+
+        final alphaW = boxWidth('alpha');
+        final betaW = boxWidth('beta');
+        expect(
+          betaW / alphaW,
+          closeTo(2.0, 0.4),
+          reason: 'span-2 beta ($betaW) should be ~2x span-1 alpha ($alphaW)',
+        );
+      }, size: const Size(132, 30));
+    },
+  );
 
   test('arrow keys move the focus ring between boxes', () async {
     await testNocterm('focus nav', (tester) async {
-      await _pumpHome(
-        tester,
-        [
-          StubHomeWidget('alpha', supportedSpans: const {1}),
-          StubHomeWidget('beta', supportedSpans: const {1}),
-        ],
-        const Size(120, 30),
-      );
+      await _pumpHome(tester, [
+        StubHomeWidget('alpha', supportedSpans: const {1}),
+        StubHomeWidget('beta', supportedSpans: const {1}),
+      ], const Size(120, 30));
       // Focus starts on the first box. Moving right should not throw
       // and keeps both boxes on screen; the layout is stable across
       // navigation.
@@ -172,11 +159,9 @@ void main() {
 
   test('enter on a passive box is a no-op', () async {
     await testNocterm('passive enter', (tester) async {
-      await _pumpHome(
-        tester,
-        [StubHomeWidget('alpha', actionable: false)],
-        const Size(120, 30),
-      );
+      await _pumpHome(tester, [
+        StubHomeWidget('alpha', actionable: false),
+      ], const Size(120, 30));
       // Should not throw, and the box stays put.
       await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.enter));
       await tester.pump();
@@ -195,13 +180,13 @@ void main() {
             data: CruxThemeData.draculaFallback,
             child: HomeScreen(
               onExit: () {},
-              widgets: [
-                _CommandStub('alpha', onRun: '/new'),
-              ],
-              context_: _ctx(runCommand: (c) {
-                ran.add(c);
-                return true;
-              }),
+              widgets: [_CommandStub('alpha', onRun: '/new')],
+              context_: _ctx(
+                runCommand: (c) {
+                  ran.add(c);
+                  return true;
+                },
+              ),
             ),
           ),
         ),
@@ -240,11 +225,10 @@ void main() {
   test('up/down select items within a box, not other boxes', () async {
     await testNocterm('in-box selection', (tester) async {
       final list = _ItemStub('list', itemCount: 3);
-      await _pumpHome(
-        tester,
-        [list, StubHomeWidget('other', supportedSpans: const {1})],
-        const Size(120, 30),
-      );
+      await _pumpHome(tester, [
+        list,
+        StubHomeWidget('other', supportedSpans: const {1}),
+      ], const Size(120, 30));
       // Focus starts on the list box, item 0.
       expect(list.selectedIndex, 0);
       await tester.sendKeyEvent(
@@ -283,8 +267,8 @@ void main() {
       // The state type is private, so grab it via State<HomeScreen> and
       // read the test getter through `dynamic`.
       int focus() =>
-          (tester.findState<State<HomeScreen>>() as dynamic)
-              .focusedIndexForTest as int;
+          (tester.findState<State<HomeScreen>>() as dynamic).focusedIndexForTest
+              as int;
       expect(focus(), 0);
       await tester.sendKeyEvent(
         KeyboardEvent(logicalKey: LogicalKey.arrowRight),
@@ -333,8 +317,8 @@ void main() {
       // The state type is private, so grab it via State<HomeScreen> and
       // read the test getter through `dynamic`.
       int focus() =>
-          (tester.findState<State<HomeScreen>>() as dynamic)
-              .focusedIndexForTest as int;
+          (tester.findState<State<HomeScreen>>() as dynamic).focusedIndexForTest
+              as int;
       expect(focus(), 0, reason: 'start on the wide row-1 box');
       await tester.sendKeyEvent(KeyboardEvent(logicalKey: LogicalKey.tab));
       await tester.pump();
@@ -364,8 +348,8 @@ void main() {
       // The state type is private, so grab it via State<HomeScreen> and
       // read the test getter through `dynamic`.
       int focus() =>
-          (tester.findState<State<HomeScreen>>() as dynamic)
-              .focusedIndexForTest as int;
+          (tester.findState<State<HomeScreen>>() as dynamic).focusedIndexForTest
+              as int;
       expect(focus(), 0);
       await tester.sendKeyEvent(
         KeyboardEvent(logicalKey: LogicalKey.arrowDown),
@@ -422,7 +406,11 @@ void main() {
       await tester.pump();
     }, size: const Size(60, 24));
     expect(ran, contains('/chat'), reason: 'click on /chat runs /chat');
-    expect(ran, isNot(contains('/new')), reason: 'must not fire the first item');
+    expect(
+      ran,
+      isNot(contains('/new')),
+      reason: 'must not fire the first item',
+    );
   });
 
   test('Ctrl+C on home calls quitApp (not swallowed)', () async {
@@ -522,10 +510,16 @@ void main() {
       // on the same index, so home schedules no rebuild. This is the
       // hover-lag regression guard — before the fix each motion event
       // rebuilt the whole grid.
-      expect(widget.selectItemAt(0), isFalse,
-          reason: 'same-index hover is a no-op');
-      expect(widget.selectItemAt(1), isTrue,
-          reason: 'a different row still moves the selection');
+      expect(
+        widget.selectItemAt(0),
+        isFalse,
+        reason: 'same-index hover is a no-op',
+      );
+      expect(
+        widget.selectItemAt(1),
+        isTrue,
+        reason: 'a different row still moves the selection',
+      );
       expect(widget.selectedIndex, 1);
     }, size: const Size(60, 24));
   });
@@ -601,8 +595,7 @@ class _ItemStub extends HomeWidget {
     HomeContext ctx,
     int span, {
     bool focused = false,
-  }) =>
-      Text(id);
+  }) => Text(id);
 }
 
 /// A stub whose primary action routes a fixed command through
@@ -631,6 +624,5 @@ class _CommandStub extends HomeWidget {
     HomeContext ctx,
     int span, {
     bool focused = false,
-  }) =>
-      Text(id);
+  }) => Text(id);
 }

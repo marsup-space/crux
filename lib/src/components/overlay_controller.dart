@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+
 import '../models/slash_command.dart';
 import '../services/skills/skill.dart';
 import '../utils/at_mention_parser.dart';
@@ -578,12 +579,12 @@ class OverlayController {
         ? filteredSessionMentions.length - maxVisibleItems
         : 0;
     if (event.button == MouseButton.wheelUp && sessionMentionScrollOffset > 0) {
-      sessionMentionScrollOffset = (sessionMentionScrollOffset - maxVisibleItems)
-          .clamp(0, maxOffset);
+      sessionMentionScrollOffset =
+          (sessionMentionScrollOffset - maxVisibleItems).clamp(0, maxOffset);
     } else if (event.button == MouseButton.wheelDown &&
         sessionMentionScrollOffset < maxOffset) {
-      sessionMentionScrollOffset = (sessionMentionScrollOffset + maxVisibleItems)
-          .clamp(0, maxOffset);
+      sessionMentionScrollOffset =
+          (sessionMentionScrollOffset + maxVisibleItems).clamp(0, maxOffset);
     }
   }
 

@@ -1,4 +1,5 @@
 import 'package:nocterm/nocterm.dart';
+
 import '../theme/crux_theme.dart';
 
 /// Small header row at the top of a session that was created via

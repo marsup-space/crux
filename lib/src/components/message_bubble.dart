@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
+
 import '../theme/crux_theme.dart';
 import '../i18n/strings.dart';
 import '../utils/skill_chip_parser.dart';
@@ -1166,9 +1167,9 @@ class _ClickableToolCallState extends State<_ClickableToolCall> {
     // shape up front and emit a label that names the bad tool so
     // the collapsed row explains what happened.
     if (content.startsWith('[UNKNOWN TOOL]')) {
-      final requested = RegExp(
-        r'no tool named "([^"]+)"',
-      ).firstMatch(content)?.group(1);
+      final requested = RegExp(r'no tool named "([^"]+)"')
+          .firstMatch(content)
+          ?.group(1);
       final tokenMatch = RegExp(
         r'Aborted after ~(\d+) generated tool-argument tokens\.',
       ).firstMatch(content);

@@ -15,11 +15,7 @@ void main() {
         '### Gamma\n',
         const _TestTheme(),
       );
-      expect(result.headings.map((h) => h.text), [
-        'Alpha',
-        'Beta',
-        'Gamma',
-      ]);
+      expect(result.headings.map((h) => h.text), ['Alpha', 'Beta', 'Gamma']);
       // Rows are 0-based flat rows. Each block is followed by a blank
       // separator row (the `_emitBlockGap` extra `\n`).
       //   0  Alpha
@@ -110,8 +106,7 @@ void main() {
   });
 
   group('plan_markdown_parser diagram fences (mermaid/d2)', () {
-    test('a parseable mermaid fence renders the graph inside the box',
-        () {
+    test('a parseable mermaid fence renders the graph inside the box', () {
       final result = parsePlanDocument(
         '```mermaid\n'
         'flowchart LR\n'
@@ -126,13 +121,19 @@ void main() {
       // Some rendered row contains an arrow — the graph, not raw source
       // (`-->` with boxes around it; raw source would show `A[Start]`).
       expect(
-        rows.any((r) => r.contains('──') && r.contains('▶') ||
-            r.contains('-->') == false && r.contains('[') ),
+        rows.any(
+          (r) =>
+              r.contains('──') && r.contains('▶') ||
+              r.contains('-->') == false && r.contains('['),
+        ),
         isTrue,
         reason: 'diagram art expected; got:\n${result.renderedText}',
       );
-      expect(result.renderedText.contains('flowchart LR'), isFalse,
-          reason: 'raw source must not leak when parsing succeeded');
+      expect(
+        result.renderedText.contains('flowchart LR'),
+        isFalse,
+        reason: 'raw source must not leak when parsing succeeded',
+      );
     });
 
     test('an unparseable (streaming partial) fence falls back to code', () {

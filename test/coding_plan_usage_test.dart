@@ -1672,94 +1672,91 @@ void main() {
       },
     );
 
-    test(
-      'switch with no initialUsage shows placeholder, then animates later',
-      () async {
-        // New provider hasn't polled yet → `initialUsage` is
-        // null on the rebuild. The cell should show `—` (no
-        // lerp from the old value, no flash). When B's stream
-        // eventually emits, the normal animation path takes
-        // over (and since there's no `prev`, the first event
-        // just paints — no animation on the very first event
-        // of a fresh provider, matching the existing
-        // behaviour on first mount).
-        await testNocterm(
-          'coding-plan display with null initial shows placeholder after switch',
-          (tester) async {
-            final controllerA = StreamController<CodingPlanUsage>.broadcast();
-            addTearDown(controllerA.close);
-            final controllerB = StreamController<CodingPlanUsage>.broadcast();
-            addTearDown(controllerB.close);
+    test('switch with no initialUsage shows placeholder, then animates later', () async {
+      // New provider hasn't polled yet → `initialUsage` is
+      // null on the rebuild. The cell should show `—` (no
+      // lerp from the old value, no flash). When B's stream
+      // eventually emits, the normal animation path takes
+      // over (and since there's no `prev`, the first event
+      // just paints — no animation on the very first event
+      // of a fresh provider, matching the existing
+      // behaviour on first mount).
+      await testNocterm(
+        'coding-plan display with null initial shows placeholder after switch',
+        (tester) async {
+          final controllerA = StreamController<CodingPlanUsage>.broadcast();
+          addTearDown(controllerA.close);
+          final controllerB = StreamController<CodingPlanUsage>.broadcast();
+          addTearDown(controllerB.close);
 
-            var activeStream = controllerA.stream;
-            CodingPlanUsage? activeInitial = CodingPlanUsage(
-              providerName: 'a',
+          var activeStream = controllerA.stream;
+          CodingPlanUsage? activeInitial = CodingPlanUsage(
+            providerName: 'a',
+            modelName: 'general',
+            intervalRemainingPct: 88,
+            weeklyRemainingPct: 88,
+            fetchedAt: DateTime.now(),
+          );
+          late void Function() switchToProviderB;
+
+          await tester.pumpComponent(
+            _RebuildOnDemand(
+              builder: (context, setState) {
+                switchToProviderB = () {
+                  setState(() {
+                    activeStream = controllerB.stream;
+                    activeInitial = null; // B hasn't polled yet
+                  });
+                };
+                return CodingPlanUsageDisplay(
+                  stream: activeStream,
+                  initialUsage: activeInitial,
+                );
+              },
+            ),
+          );
+
+          // Sanity: A's value is visible before the switch.
+          expect(readRow0(tester), contains('5h 88.0%'));
+
+          switchToProviderB();
+          await tester.pump();
+
+          // Placeholder — NOT a lerp toward `—`.
+          expect(readRow0(tester), contains('5h —'));
+
+          // B's stream emits its first snapshot. Since
+          // `_usage` was reset to null, there's no `prev`
+          // to lerp from — the value just paints, no flash.
+          controllerB.add(
+            CodingPlanUsage(
+              providerName: 'b',
               modelName: 'general',
-              intervalRemainingPct: 88,
-              weeklyRemainingPct: 88,
+              intervalRemainingPct: 60,
+              weeklyRemainingPct: 60,
               fetchedAt: DateTime.now(),
-            );
-            late void Function() switchToProviderB;
-
-            await tester.pumpComponent(
-              _RebuildOnDemand(
-                builder: (context, setState) {
-                  switchToProviderB = () {
-                    setState(() {
-                      activeStream = controllerB.stream;
-                      activeInitial = null; // B hasn't polled yet
-                    });
-                  };
-                  return CodingPlanUsageDisplay(
-                    stream: activeStream,
-                    initialUsage: activeInitial,
-                  );
-                },
-              ),
-            );
-
-            // Sanity: A's value is visible before the switch.
-            expect(readRow0(tester), contains('5h 88.0%'));
-
-            switchToProviderB();
-            await tester.pump();
-
-            // Placeholder — NOT a lerp toward `—`.
-            expect(readRow0(tester), contains('5h —'));
-
-            // B's stream emits its first snapshot. Since
-            // `_usage` was reset to null, there's no `prev`
-            // to lerp from — the value just paints, no flash.
-            controllerB.add(
-              CodingPlanUsage(
-                providerName: 'b',
-                modelName: 'general',
-                intervalRemainingPct: 60,
-                weeklyRemainingPct: 60,
-                fetchedAt: DateTime.now(),
-              ),
-            );
-            // Broadcast streams dispatch synchronously, but the
-            // `_onUsage` callback calls setState, which schedules
-            // a rebuild for the next frame. One pump advances the
-            // frame; a second lets any tail-end setState from
-            // hover-countdown re-sync (defensive — matches the
-            // cadence the production chat panel drives the widget
-            // at).
-            await tester.pump();
-            await tester.pump();
-            expect(
-              readRow0(tester),
-              contains('5h 60.0%'),
-              reason:
-                  'first event on B paints the value; no prior '
-                  'value to lerp from',
-            );
-          },
-          size: const Size(30, 1),
-        );
-      },
-    );
+            ),
+          );
+          // Broadcast streams dispatch synchronously, but the
+          // `_onUsage` callback calls setState, which schedules
+          // a rebuild for the next frame. One pump advances the
+          // frame; a second lets any tail-end setState from
+          // hover-countdown re-sync (defensive — matches the
+          // cadence the production chat panel drives the widget
+          // at).
+          await tester.pump();
+          await tester.pump();
+          expect(
+            readRow0(tester),
+            contains('5h 60.0%'),
+            reason:
+                'first event on B paints the value; no prior '
+                'value to lerp from',
+          );
+        },
+        size: const Size(30, 1),
+      );
+    });
   });
 
   // ─── Mixin lifecycle (using a fake provider) ───────────────

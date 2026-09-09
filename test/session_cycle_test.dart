@@ -19,22 +19,12 @@ Session _s(
 /// Canonical fixture: #1 is current (newest, running). Two more
 /// streaming sessions (#2, #3), one done (#4), one interrupted (#5).
 List<Session> fixture() => [
-      _s(1,
-          status: SessionStatus.running,
-          updatedAt: DateTime(2026, 1, 10)),
-      _s(2,
-          status: SessionStatus.running,
-          updatedAt: DateTime(2026, 1, 9)),
-      _s(3,
-          status: SessionStatus.needUserAction,
-          updatedAt: DateTime(2026, 1, 8)),
-      _s(4,
-          status: SessionStatus.done,
-          updatedAt: DateTime(2026, 1, 7)),
-      _s(5,
-          status: SessionStatus.interrupted,
-          updatedAt: DateTime(2026, 1, 6)),
-    ];
+  _s(1, status: SessionStatus.running, updatedAt: DateTime(2026, 1, 10)),
+  _s(2, status: SessionStatus.running, updatedAt: DateTime(2026, 1, 9)),
+  _s(3, status: SessionStatus.needUserAction, updatedAt: DateTime(2026, 1, 8)),
+  _s(4, status: SessionStatus.done, updatedAt: DateTime(2026, 1, 7)),
+  _s(5, status: SessionStatus.interrupted, updatedAt: DateTime(2026, 1, 6)),
+];
 
 void main() {
   group('buildTabCycleRing arrangement', () {
@@ -87,17 +77,28 @@ void main() {
       expect(ring.step(currentId: 1), isNull);
     });
 
-    test('walks between multiple streaming sessions one Tab at a time',
-        () {
-      final ring = () => buildTabCycleRing(sessions: fixture());
-      expect(ring().step(currentId: 1)!.session.id, 2,
-          reason: 'from #1 → next active #2');
-      expect(ring().step(currentId: 2)!.session.id, 3,
-          reason: 'from #2 → next active #3');
-      expect(ring().step(currentId: 3)!.session.id, 4,
-          reason: 'from #3 → done section');
-      expect(ring().step(currentId: 4)!.session.id, 5,
-          reason: 'from #4 → interrupted section');
+    test('walks between multiple streaming sessions one Tab at a time', () {
+      TabCycleRing ring() => buildTabCycleRing(sessions: fixture());
+      expect(
+        ring().step(currentId: 1)!.session.id,
+        2,
+        reason: 'from #1 → next active #2',
+      );
+      expect(
+        ring().step(currentId: 2)!.session.id,
+        3,
+        reason: 'from #2 → next active #3',
+      );
+      expect(
+        ring().step(currentId: 3)!.session.id,
+        4,
+        reason: 'from #3 → done section',
+      );
+      expect(
+        ring().step(currentId: 4)!.session.id,
+        5,
+        reason: 'from #4 → interrupted section',
+      );
     });
 
     test('wraps from the last stop back to the first', () {
@@ -116,7 +117,7 @@ void main() {
 
   group('TabCycleRing.step backward (Shift+Tab = previous session)', () {
     test('steps to the previous stop, wrapping to the last', () {
-      final ring = () => buildTabCycleRing(sessions: fixture());
+      TabCycleRing ring() => buildTabCycleRing(sessions: fixture());
       expect(
         ring().step(currentId: 1, forward: false)!.session.id,
         5,

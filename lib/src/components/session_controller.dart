@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+
 import '../models/image_attachment.dart';
 import '../models/message.dart';
 import '../models/message_queue.dart';

@@ -93,8 +93,7 @@ void main() {
       final result = ToolResult(title: '', output: output);
       final args = {
         'filePath': 'lib/foo.dart',
-        'content':
-            'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve',
+        'content': 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve',
       };
 
       final delta = tool.toolMetricsLineDelta(args, result);
@@ -107,8 +106,7 @@ void main() {
       final result = ToolResult(title: '', output: output);
       final args = {
         'filePath': 'lib/foo.dart',
-        'content':
-            'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve',
+        'content': 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve',
       };
 
       final delta = tool.toolMetricsLineDelta(args, result);

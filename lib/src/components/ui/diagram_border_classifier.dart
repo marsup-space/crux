@@ -1,4 +1,6 @@
 import 'package:characters/characters.dart';
+// This renderer-level integration intentionally shares Nocterm's width model.
+// ignore: implementation_imports
 import 'package:nocterm/src/utils/unicode_width.dart';
 
 /// Classifies diagram node and subgraph outlines in rendered character-grid art.
@@ -47,7 +49,12 @@ class _BorderClassifier {
     }
   }
 
-  void _markRectangle(int topY, _Cap top, String bottomLeft, String bottomRight) {
+  void _markRectangle(
+    int topY,
+    _Cap top,
+    String bottomLeft,
+    String bottomRight,
+  ) {
     for (var bottomY = topY + 2; bottomY < rows.length; bottomY++) {
       final bottom = rows[bottomY];
       if (!bottom.hasAt(top.left, bottomLeft) ||
@@ -84,13 +91,15 @@ class _BorderClassifier {
       for (final cap in top.caps(left: '╭', right: '╮')) {
         final leftWall = cap.left - 2;
         final rightWall = cap.right + 2;
-        if (leftWall < 0 || !rows[topY + 1].hasAt(leftWall + 1, '╱') ||
+        if (leftWall < 0 ||
+            !rows[topY + 1].hasAt(leftWall + 1, '╱') ||
             !rows[topY + 1].hasAt(rightWall - 1, '╲')) {
           continue;
         }
         for (var bottomY = topY + 4; bottomY < rows.length; bottomY++) {
           final bottom = rows[bottomY];
-          if (!bottom.hasAt(cap.left, '╰') || !bottom.hasAt(cap.right, '╯') ||
+          if (!bottom.hasAt(cap.left, '╰') ||
+              !bottom.hasAt(cap.right, '╯') ||
               !bottom.isHorizontalLine(cap.left, cap.right) ||
               !rows[bottomY - 1].hasAt(leftWall + 1, '╲') ||
               !rows[bottomY - 1].hasAt(rightWall - 1, '╱') ||

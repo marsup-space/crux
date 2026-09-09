@@ -114,14 +114,12 @@ class RpcPeer {
       completer: completer,
       sentAt: DateTime.now(),
     );
-    _writeMessage(_encode(id: id, method: method, params: params)).catchError((
-      Object e,
-      StackTrace st,
-    ) {
-      // If we can't even send, drop the pending entry and rethrow.
-      _pending.remove(id);
-      if (!completer.isCompleted) completer.completeError(e, st);
-    });
+    _writeMessage(_encode(id: id, method: method, params: params))
+        .catchError((Object e, StackTrace st) {
+          // If we can't even send, drop the pending entry and rethrow.
+          _pending.remove(id);
+          if (!completer.isCompleted) completer.completeError(e, st);
+        });
     return completer.future;
   }
 
@@ -131,12 +129,10 @@ class RpcPeer {
     // Fire-and-forget; we don't await the future, but we catch errors
     // so they don't become unhandled.
     unawaited(
-      _writeMessage(_encode(method: method, params: params)).catchError((
-        Object e,
-        StackTrace st,
-      ) {
-        _onFatal(e, st);
-      }),
+      _writeMessage(_encode(method: method, params: params))
+          .catchError((Object e, StackTrace st) {
+            _onFatal(e, st);
+          }),
     );
   }
 

@@ -1476,9 +1476,7 @@ void main() {
       () async {
         var setupOpened = false;
         final widget = SettingsHomeWidget();
-        final ctx = settingsCtx(
-          showSetup: () => setupOpened = true,
-        );
+        final ctx = settingsCtx(showSetup: () => setupOpened = true);
 
         expect(widget.activate(ctx), isNull);
         expect(widget.activateItem(ctx, 0), isNull);

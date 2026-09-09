@@ -4741,62 +4741,60 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
   ]);
 }
 
-typedef $$SessionsTableCreateCompanionBuilder =
-    SessionsCompanion Function({
-      Value<int> id,
-      Value<String> slug,
-      Value<String> title,
-      Value<String> model,
-      required SessionStatus status,
-      Value<String> agent,
-      Value<int?> parentId,
-      Value<String> projectPath,
-      Value<int> tokensIn,
-      Value<int> tokensOut,
-      Value<int> contextTokens,
-      Value<double> ttftMs,
-      Value<double> tokPerSec,
-      Value<int> promptCacheHitTokens,
-      Value<String> thinkingMode,
-      Value<String?> reasoningEffort,
-      Value<double?> temperatureOverride,
-      Value<String?> runningOwnerId,
-      Value<int?> runningHeartbeatAt,
-      Value<String?> kind,
-      required int createdAt,
-      required int updatedAt,
-      Value<int?> archivedAt,
-      Value<int?> pinnedAt,
-      Value<String?> systemPrompt,
-    });
-typedef $$SessionsTableUpdateCompanionBuilder =
-    SessionsCompanion Function({
-      Value<int> id,
-      Value<String> slug,
-      Value<String> title,
-      Value<String> model,
-      Value<SessionStatus> status,
-      Value<String> agent,
-      Value<int?> parentId,
-      Value<String> projectPath,
-      Value<int> tokensIn,
-      Value<int> tokensOut,
-      Value<int> contextTokens,
-      Value<double> ttftMs,
-      Value<double> tokPerSec,
-      Value<int> promptCacheHitTokens,
-      Value<String> thinkingMode,
-      Value<String?> reasoningEffort,
-      Value<double?> temperatureOverride,
-      Value<String?> runningOwnerId,
-      Value<int?> runningHeartbeatAt,
-      Value<String?> kind,
-      Value<int> createdAt,
-      Value<int> updatedAt,
-      Value<int?> archivedAt,
-      Value<int?> pinnedAt,
-      Value<String?> systemPrompt,
-    });
+typedef $$SessionsTableCreateCompanionBuilder = SessionsCompanion Function({
+  Value<int> id,
+  Value<String> slug,
+  Value<String> title,
+  Value<String> model,
+  required SessionStatus status,
+  Value<String> agent,
+  Value<int?> parentId,
+  Value<String> projectPath,
+  Value<int> tokensIn,
+  Value<int> tokensOut,
+  Value<int> contextTokens,
+  Value<double> ttftMs,
+  Value<double> tokPerSec,
+  Value<int> promptCacheHitTokens,
+  Value<String> thinkingMode,
+  Value<String?> reasoningEffort,
+  Value<double?> temperatureOverride,
+  Value<String?> runningOwnerId,
+  Value<int?> runningHeartbeatAt,
+  Value<String?> kind,
+  required int createdAt,
+  required int updatedAt,
+  Value<int?> archivedAt,
+  Value<int?> pinnedAt,
+  Value<String?> systemPrompt,
+});
+typedef $$SessionsTableUpdateCompanionBuilder = SessionsCompanion Function({
+  Value<int> id,
+  Value<String> slug,
+  Value<String> title,
+  Value<String> model,
+  Value<SessionStatus> status,
+  Value<String> agent,
+  Value<int?> parentId,
+  Value<String> projectPath,
+  Value<int> tokensIn,
+  Value<int> tokensOut,
+  Value<int> contextTokens,
+  Value<double> ttftMs,
+  Value<double> tokPerSec,
+  Value<int> promptCacheHitTokens,
+  Value<String> thinkingMode,
+  Value<String?> reasoningEffort,
+  Value<double?> temperatureOverride,
+  Value<String?> runningOwnerId,
+  Value<int?> runningHeartbeatAt,
+  Value<String?> kind,
+  Value<int> createdAt,
+  Value<int> updatedAt,
+  Value<int?> archivedAt,
+  Value<int?> pinnedAt,
+  Value<String?> systemPrompt,
+});
 
 final class $$SessionsTableReferences
     extends BaseReferences<_$CruxDatabase, $SessionsTable, Session> {
@@ -5831,54 +5829,52 @@ typedef $$SessionsTableProcessedTableManager =
         bool shellMonitorLogsRefs,
       })
     >;
-typedef $$MessagesTableCreateCompanionBuilder =
-    MessagesCompanion Function({
-      Value<int> id,
-      required int sessionId,
-      required String role,
-      Value<String> content,
-      Value<String> reasoningContent,
-      Value<String> reasoningSignature,
-      Value<int> reasoningTokens,
-      Value<int> thinkingDurationMs,
-      Value<String?> reasoningEffort,
-      Value<String> model,
-      Value<int> tokensIn,
-      Value<int> tokensOut,
-      Value<String> toolCalls,
-      Value<String> toolCallId,
-      Value<String> tldr,
-      Value<String?> error,
-      Value<int?> parentMsgId,
-      Value<String> images,
-      Value<int> parallelCount,
-      Value<String> meta,
-      required int createdAt,
-    });
-typedef $$MessagesTableUpdateCompanionBuilder =
-    MessagesCompanion Function({
-      Value<int> id,
-      Value<int> sessionId,
-      Value<String> role,
-      Value<String> content,
-      Value<String> reasoningContent,
-      Value<String> reasoningSignature,
-      Value<int> reasoningTokens,
-      Value<int> thinkingDurationMs,
-      Value<String?> reasoningEffort,
-      Value<String> model,
-      Value<int> tokensIn,
-      Value<int> tokensOut,
-      Value<String> toolCalls,
-      Value<String> toolCallId,
-      Value<String> tldr,
-      Value<String?> error,
-      Value<int?> parentMsgId,
-      Value<String> images,
-      Value<int> parallelCount,
-      Value<String> meta,
-      Value<int> createdAt,
-    });
+typedef $$MessagesTableCreateCompanionBuilder = MessagesCompanion Function({
+  Value<int> id,
+  required int sessionId,
+  required String role,
+  Value<String> content,
+  Value<String> reasoningContent,
+  Value<String> reasoningSignature,
+  Value<int> reasoningTokens,
+  Value<int> thinkingDurationMs,
+  Value<String?> reasoningEffort,
+  Value<String> model,
+  Value<int> tokensIn,
+  Value<int> tokensOut,
+  Value<String> toolCalls,
+  Value<String> toolCallId,
+  Value<String> tldr,
+  Value<String?> error,
+  Value<int?> parentMsgId,
+  Value<String> images,
+  Value<int> parallelCount,
+  Value<String> meta,
+  required int createdAt,
+});
+typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
+  Value<int> id,
+  Value<int> sessionId,
+  Value<String> role,
+  Value<String> content,
+  Value<String> reasoningContent,
+  Value<String> reasoningSignature,
+  Value<int> reasoningTokens,
+  Value<int> thinkingDurationMs,
+  Value<String?> reasoningEffort,
+  Value<String> model,
+  Value<int> tokensIn,
+  Value<int> tokensOut,
+  Value<String> toolCalls,
+  Value<String> toolCallId,
+  Value<String> tldr,
+  Value<String?> error,
+  Value<int?> parentMsgId,
+  Value<String> images,
+  Value<int> parallelCount,
+  Value<String> meta,
+  Value<int> createdAt,
+});
 
 final class $$MessagesTableReferences
     extends BaseReferences<_$CruxDatabase, $MessagesTable, Message> {
@@ -6493,17 +6489,15 @@ class $$MessagesTableTableManager
                     >
                   >(state) {
                     if (sessionId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.sessionId,
-                                referencedTable: $$MessagesTableReferences
-                                    ._sessionIdTable(db),
-                                referencedColumn: $$MessagesTableReferences
-                                    ._sessionIdTable(db)
-                                    .id,
-                              )
-                              as T;
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.sessionId,
+                        referencedTable: $$MessagesTableReferences
+                            ._sessionIdTable(db),
+                        referencedColumn: $$MessagesTableReferences
+                            ._sessionIdTable(db)
+                            .id,
+                      ) as T;
                     }
 
                     return state;
@@ -6543,24 +6537,22 @@ typedef $$MessagesTableProcessedTableManager =
       Message,
       PrefetchHooks Function({bool sessionId, bool partsRefs})
     >;
-typedef $$PartsTableCreateCompanionBuilder =
-    PartsCompanion Function({
-      Value<int> id,
-      required int messageId,
-      required int sessionId,
-      required String type,
-      Value<String> data,
-      required int createdAt,
-    });
-typedef $$PartsTableUpdateCompanionBuilder =
-    PartsCompanion Function({
-      Value<int> id,
-      Value<int> messageId,
-      Value<int> sessionId,
-      Value<String> type,
-      Value<String> data,
-      Value<int> createdAt,
-    });
+typedef $$PartsTableCreateCompanionBuilder = PartsCompanion Function({
+  Value<int> id,
+  required int messageId,
+  required int sessionId,
+  required String type,
+  Value<String> data,
+  required int createdAt,
+});
+typedef $$PartsTableUpdateCompanionBuilder = PartsCompanion Function({
+  Value<int> id,
+  Value<int> messageId,
+  Value<int> sessionId,
+  Value<String> type,
+  Value<String> data,
+  Value<int> createdAt,
+});
 
 final class $$PartsTableReferences
     extends BaseReferences<_$CruxDatabase, $PartsTable, Part> {
@@ -6905,30 +6897,28 @@ class $$PartsTableTableManager
                     >
                   >(state) {
                     if (messageId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.messageId,
-                                referencedTable: $$PartsTableReferences
-                                    ._messageIdTable(db),
-                                referencedColumn: $$PartsTableReferences
-                                    ._messageIdTable(db)
-                                    .id,
-                              )
-                              as T;
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.messageId,
+                        referencedTable: $$PartsTableReferences._messageIdTable(
+                          db,
+                        ),
+                        referencedColumn: $$PartsTableReferences
+                            ._messageIdTable(db)
+                            .id,
+                      ) as T;
                     }
                     if (sessionId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.sessionId,
-                                referencedTable: $$PartsTableReferences
-                                    ._sessionIdTable(db),
-                                referencedColumn: $$PartsTableReferences
-                                    ._sessionIdTable(db)
-                                    .id,
-                              )
-                              as T;
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.sessionId,
+                        referencedTable: $$PartsTableReferences._sessionIdTable(
+                          db,
+                        ),
+                        referencedColumn: $$PartsTableReferences
+                            ._sessionIdTable(db)
+                            .id,
+                      ) as T;
                     }
 
                     return state;
@@ -7204,17 +7194,15 @@ class $$FileReadStateTableTableManager
                     >
                   >(state) {
                     if (sessionId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.sessionId,
-                                referencedTable: $$FileReadStateTableReferences
-                                    ._sessionIdTable(db),
-                                referencedColumn: $$FileReadStateTableReferences
-                                    ._sessionIdTable(db)
-                                    .id,
-                              )
-                              as T;
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.sessionId,
+                        referencedTable: $$FileReadStateTableReferences
+                            ._sessionIdTable(db),
+                        referencedColumn: $$FileReadStateTableReferences
+                            ._sessionIdTable(db)
+                            .id,
+                      ) as T;
                     }
 
                     return state;
@@ -7515,18 +7503,15 @@ class $$FileLastWriterTableTableManager
                     >
                   >(state) {
                     if (writerSessionId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.writerSessionId,
-                                referencedTable: $$FileLastWriterTableReferences
-                                    ._writerSessionIdTable(db),
-                                referencedColumn:
-                                    $$FileLastWriterTableReferences
-                                        ._writerSessionIdTable(db)
-                                        .id,
-                              )
-                              as T;
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.writerSessionId,
+                        referencedTable: $$FileLastWriterTableReferences
+                            ._writerSessionIdTable(db),
+                        referencedColumn: $$FileLastWriterTableReferences
+                            ._writerSessionIdTable(db)
+                            .id,
+                      ) as T;
                     }
 
                     return state;
@@ -8023,19 +8008,15 @@ class $$ShellMonitorLogsTableTableManager
                     >
                   >(state) {
                     if (sessionId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.sessionId,
-                                referencedTable:
-                                    $$ShellMonitorLogsTableReferences
-                                        ._sessionIdTable(db),
-                                referencedColumn:
-                                    $$ShellMonitorLogsTableReferences
-                                        ._sessionIdTable(db)
-                                        .id,
-                              )
-                              as T;
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.sessionId,
+                        referencedTable: $$ShellMonitorLogsTableReferences
+                            ._sessionIdTable(db),
+                        referencedColumn: $$ShellMonitorLogsTableReferences
+                            ._sessionIdTable(db)
+                            .id,
+                      ) as T;
                     }
 
                     return state;

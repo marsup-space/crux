@@ -326,9 +326,8 @@ class ThemeLoader {
     required String key,
   }) {
     final value = raw is String ? raw : '';
-    final match = RegExp(
-      r'^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$',
-    ).firstMatch(value);
+    final match = RegExp(r'^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$')
+        .firstMatch(value);
     if (match == null) {
       throw FormatException(
         'Theme "$id": "$key" must be a #RRGGBB or #RGB color',

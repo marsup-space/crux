@@ -10,7 +10,10 @@ Future<void> executeAuxiliary(List<String> parts, CommandContext ctx) async {
       ctx.showToast(ctx.strings.t('toast.auxDisabled'), mode: ToastMode.status);
     } else if (ctx.providerServiceReady &&
         ctx.providerService.modelByCompositeKey(modelKey) == null) {
-      ctx.showToast(ctx.strings.t('toast.unknownModel', {'model': modelKey}), mode: ToastMode.error);
+      ctx.showToast(
+        ctx.strings.t('toast.unknownModel', {'model': modelKey}),
+        mode: ToastMode.error,
+      );
     } else {
       await ctx.providerService.setAuxiliaryModel(modelKey);
       ctx.resolveAuxiliaryModel();
@@ -19,7 +22,10 @@ Future<void> executeAuxiliary(List<String> parts, CommandContext ctx) async {
       final display = ctx.providerServiceReady
           ? ctx.providerService.displayLabelFor(modelKey)
           : modelKey;
-      ctx.showToast(ctx.strings.t('toast.auxSet', {'model': display}), mode: ToastMode.status);
+      ctx.showToast(
+        ctx.strings.t('toast.auxSet', {'model': display}),
+        mode: ToastMode.status,
+      );
     }
   } else {
     ctx.showToast(ctx.strings.t('toast.auxUsage'));

@@ -51,9 +51,9 @@ class SessionLeaseManager {
   /// for the next chunk that may never come.
   void cancelStream(int sessionId) {
     _cancelRequested.add(sessionId);
-    _roundCancelTokens.remove(sessionId)?.cancelActiveStream(
-      reason: 'user_interrupt',
-    );
+    _roundCancelTokens
+        .remove(sessionId)
+        ?.cancelActiveStream(reason: 'user_interrupt');
   }
 
   /// Mark [sessionId] as actively streaming and start the lease

@@ -1251,8 +1251,8 @@ void main() {
       );
       final session = await _createSession(store);
 
-      ChatTurnExecutor.debugRetryBudgetOverride =
-          () => const RetryBudget(maxRetries: 2, baseDelayMs: 1000);
+      ChatTurnExecutor.debugRetryBudgetOverride = () =>
+          const RetryBudget(maxRetries: 2, baseDelayMs: 1000);
 
       await _runTurn(executor, session, (cbs) async {
         await executor.sendMessage(
@@ -1275,7 +1275,8 @@ void main() {
       expect(
         _statusMessages.join('\n'),
         contains('Retrying (1/2)'),
-        reason: 'the status toast must show the per-provider '
+        reason:
+            'the status toast must show the per-provider '
             'denominator, not the global default 5',
       );
     });
@@ -1305,8 +1306,8 @@ void main() {
       );
       final session = await _createSession(store);
 
-      ChatTurnExecutor.debugRetryBudgetOverride =
-          () => const RetryBudget(maxRetries: 1, baseDelayMs: 1000);
+      ChatTurnExecutor.debugRetryBudgetOverride = () =>
+          const RetryBudget(maxRetries: 1, baseDelayMs: 1000);
 
       await _runTurn(executor, session, (cbs) async {
         await executor.sendMessage(
@@ -1340,33 +1341,35 @@ void main() {
       //   250ms, 500ms, ..., reaching the 30s cap at attempt 8.
       final List<int> waits = [];
       ChatTurnExecutor.debugBackoffOverride = null;
-      addTearDown(() => ChatTurnExecutor.debugBackoffOverride =
-          (_) => Duration.zero);
-      ChatTurnExecutor.debugRetryBudgetOverride =
-          () => const RetryBudget(maxRetries: 9, baseDelayMs: 250);
+      addTearDown(
+        () => ChatTurnExecutor.debugBackoffOverride = (_) => Duration.zero,
+      );
+      ChatTurnExecutor.debugRetryBudgetOverride = () =>
+          const RetryBudget(maxRetries: 9, baseDelayMs: 250);
 
       // All attempts fail fast (empty stream) so we can measure the
       // inter-attempt waits via the status messages' timing... but
       // wall-clock assertions are flaky; instead assert the ladder
       // arithmetic directly through the same formula the loop uses.
       for (var attempt = 1; attempt <= 9; attempt++) {
-        final ms =
-            (250 * (1 << (attempt - 1))).clamp(250, 30000);
+        final ms = (250 * (1 << (attempt - 1))).clamp(250, 30000);
         waits.add(ms);
       }
       expect(waits, [
         250, 500, 1000, 2000, 4000, 8000, 16000, 30000, 30000, //
       ]);
       // Sanity: the default base produces the historical ladder.
-      expect([
-        for (var attempt = 1; attempt <= 5; attempt++)
-          (1000 * (1 << (attempt - 1))).clamp(1000, 30000),
-      ], [1000, 2000, 4000, 8000, 16000]);
+      expect(
+        [
+          for (var attempt = 1; attempt <= 5; attempt++)
+            (1000 * (1 << (attempt - 1))).clamp(1000, 30000),
+        ],
+        [1000, 2000, 4000, 8000, 16000],
+      );
     });
   });
 
-  group(
-      'ChatTurnExecutor.sendMessage — provider usage mirrors onto the '
+  group('ChatTurnExecutor.sendMessage — provider usage mirrors onto the '
       'runtime', () {
     // Regression net for the home-dashboard "tokens_in=0 on every
     // interrupted turn" bug. The executor already updated its own
@@ -1388,8 +1391,7 @@ void main() {
       await providerService.initialize();
     });
 
-    test(
-        'on a clean stop the runtime carries the final usage block so '
+    test('on a clean stop the runtime carries the final usage block so '
         'abort / error paths downstream can read it', () async {
       // Three chunks: a text delta, a usage block (the trailing
       // "here's what you owe me" the provider emits on the last SSE
@@ -1415,25 +1417,20 @@ void main() {
       final session = await _createSession(store);
 
       final runtime = _newRuntime(session.id);
-      await _runTurn(
-        executor,
-        session,
-        (cbs) async {
-          await executor.sendMessage(
-            sessionId: session.id,
-            session: session,
-            runtime: cbs.runtime,
-            onDelta: (_) {},
-            onReasoning: (_) {},
-            onChunk: () {},
-            onComplete: cbs.onComplete,
-            onError: cbs.onError,
-            onStatus: cbs.onStatus,
-            userContent: 'hi',
-          );
-        },
-        runtime: runtime,
-      );
+      await _runTurn(executor, session, (cbs) async {
+        await executor.sendMessage(
+          sessionId: session.id,
+          session: session,
+          runtime: cbs.runtime,
+          onDelta: (_) {},
+          onReasoning: (_) {},
+          onChunk: () {},
+          onComplete: cbs.onComplete,
+          onError: cbs.onError,
+          onStatus: cbs.onStatus,
+          userContent: 'hi',
+        );
+      }, runtime: runtime);
 
       // Clean path: the runtime mirrors the trailing usage block
       // exactly. The orchestrator's abort / onError branches read
@@ -1453,8 +1450,7 @@ void main() {
       expect(_lastError, isNull);
     });
 
-    test(
-        'chunk without a trailing usage block leaves the runtime at the '
+    test('chunk without a trailing usage block leaves the runtime at the '
         "last seen values, not at 0 — the provider's mid-stream "
         'usage counts still matter', () async {
       // Some providers emit usage on an earlier chunk and a bare
@@ -1462,10 +1458,7 @@ void main() {
       // the first usage and the stop chunk must not blank it.
       final fakeLlm = FakeLlmClient([
         [
-          const LlmChunk(
-            promptTokens: 100,
-            completionTokens: 10,
-          ),
+          const LlmChunk(promptTokens: 100, completionTokens: 10),
           const LlmChunk(finishReason: 'stop'),
         ],
       ]);
@@ -1477,25 +1470,20 @@ void main() {
       final session = await _createSession(store);
       final runtime = _newRuntime(session.id);
 
-      await _runTurn(
-        executor,
-        session,
-        (cbs) async {
-          await executor.sendMessage(
-            sessionId: session.id,
-            session: session,
-            runtime: cbs.runtime,
-            onDelta: (_) {},
-            onReasoning: (_) {},
-            onChunk: () {},
-            onComplete: cbs.onComplete,
-            onError: cbs.onError,
-            onStatus: cbs.onStatus,
-            userContent: 'hi',
-          );
-        },
-        runtime: runtime,
-      );
+      await _runTurn(executor, session, (cbs) async {
+        await executor.sendMessage(
+          sessionId: session.id,
+          session: session,
+          runtime: cbs.runtime,
+          onDelta: (_) {},
+          onReasoning: (_) {},
+          onChunk: () {},
+          onComplete: cbs.onComplete,
+          onError: cbs.onError,
+          onStatus: cbs.onStatus,
+          userContent: 'hi',
+        );
+      }, runtime: runtime);
 
       expect(runtime.lastRoundPromptTokens, 100);
       expect(runtime.lastRoundCompletionTokens, 10);

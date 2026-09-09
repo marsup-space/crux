@@ -184,23 +184,20 @@ void main() {
       expect(streaming.streamingReasoningFor(999), '');
     });
 
-    test(
-      'clearStreamingFor on session B does not wipe session A (the original bug)',
-      () {
-        // Before the fix: streamingContent/streamingReasoning were shared
-        // String fields. When the round-end path cleared them for
-        // session B, it wiped session A's in-flight content.
-        streaming.appendStreamingContent(1, 'session 1 streaming');
-        streaming.appendStreamingReasoning(1, 'session 1 reasoning');
-        streaming.appendStreamingContent(2, 'session 2 streaming');
-        streaming.appendStreamingReasoning(2, 'session 2 reasoning');
+    test('clearStreamingFor on session B does not wipe session A (the original bug)', () {
+      // Before the fix: streamingContent/streamingReasoning were shared
+      // String fields. When the round-end path cleared them for
+      // session B, it wiped session A's in-flight content.
+      streaming.appendStreamingContent(1, 'session 1 streaming');
+      streaming.appendStreamingReasoning(1, 'session 1 reasoning');
+      streaming.appendStreamingContent(2, 'session 2 streaming');
+      streaming.appendStreamingReasoning(2, 'session 2 reasoning');
 
-        streaming.clearStreamingFor(2);
+      streaming.clearStreamingFor(2);
 
-        expect(streaming.streamingContentFor(1), 'session 1 streaming');
-        expect(streaming.streamingReasoningFor(1), 'session 1 reasoning');
-      },
-    );
+      expect(streaming.streamingContentFor(1), 'session 1 streaming');
+      expect(streaming.streamingReasoningFor(1), 'session 1 reasoning');
+    });
 
     test('interleaved appends across three sessions stay isolated', () {
       for (var i = 0; i < 100; i++) {

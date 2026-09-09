@@ -30,8 +30,7 @@ class WhitespaceMatcher extends Matcher {
     if (!replaceAll && positions.length > 1) {
       return MatchResult(
         positions: positions,
-        error:
-            'Found multiple matches for oldString (whitespace-normalized). Provide more surrounding context.',
+        error: 'Found multiple matches for oldString (whitespace-normalized). Provide more surrounding context.',
       );
     }
 

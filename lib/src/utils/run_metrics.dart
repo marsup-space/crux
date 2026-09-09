@@ -416,11 +416,7 @@ class RunMetrics {
       _SummaryCellKind valueKind,
     ) {
       // │  <label>...<value>  │
-      final pad = boxWidth -
-          2 -
-          4 -
-          stringWidth(label) -
-          stringWidth(value);
+      final pad = boxWidth - 2 - 4 - stringWidth(label) - stringWidth(value);
       final padding = pad < 1 ? 1 : pad;
       return <_SummaryCell>[
         _SummaryCell(vertical, _SummaryCellKind.border),
@@ -480,7 +476,7 @@ class RunMetrics {
         contentRow(
           s.t('summary.tokensIn'),
           '${_formatTokenCount(snap.totalTokensIn)}  '
-              '${_formatCacheSuffix(snap, s)}',
+          '${_formatCacheSuffix(snap, s)}',
           _SummaryCellKind.value,
         ),
       );
@@ -596,15 +592,10 @@ class RunMetrics {
   /// to avoid giving cache stats their own line — a turn
   /// with 0 tokens is a turn with 0 cache, so a separate
   /// row would always read 0 in degenerate cases.
-  static String _formatCacheSuffix(
-    RunMetricsSnapshot snap,
-    Strings strings,
-  ) {
+  static String _formatCacheSuffix(RunMetricsSnapshot snap, Strings strings) {
     final pct = snap.cacheHitPct;
     if (pct == null) return strings.t('summary.cacheSuffixNone');
-    return strings.t('summary.cacheSuffix', {
-      'pct': pct.toStringAsFixed(1),
-    });
+    return strings.t('summary.cacheSuffix', {'pct': pct.toStringAsFixed(1)});
   }
 
   /// `5m 23s`, `1h 12m 5s`, `42s`, `2h 0m`. Skips

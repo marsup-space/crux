@@ -70,7 +70,11 @@ void main() {
           break;
         }
       }
-      expect(markerRow, isNotNull, reason: 'marker should paint at the resolved offset');
+      expect(
+        markerRow,
+        isNotNull,
+        reason: 'marker should paint at the resolved offset',
+      );
 
       // Click it — the base should jump the controller to the resolved
       // offset (40.0, clamped to maxScrollExtent). The realistic
@@ -463,8 +467,11 @@ void main() {
         }
         if (markerRow != null) break;
       }
-      expect(markerRow, isNotNull,
-          reason: 'expected the marker on the shifted track');
+      expect(
+        markerRow,
+        isNotNull,
+        reason: 'expected the marker on the shifted track',
+      );
 
       await tester.sendMouseEvent(
         MouseEvent(

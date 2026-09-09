@@ -33,22 +33,18 @@ flowchart LR
 
   final buffer = StringBuffer();
   for (final entry in cases.entries) {
-    await testNocterm(
-      'demo ${entry.key}',
-      (tester) async {
-        await tester.pumpComponent(
-          Container(
-            width: 80,
-            height: 32,
-            child: HighlightedMarkdownText(entry.value),
-          ),
-        );
-        buffer.writeln('== ${entry.key} ==');
-        buffer.writeln(tester.renderToString(showBorders: false));
-        buffer.writeln();
-      },
-      size: const Size(80, 32),
-    );
+    await testNocterm('demo ${entry.key}', (tester) async {
+      await tester.pumpComponent(
+        Container(
+          width: 80,
+          height: 32,
+          child: HighlightedMarkdownText(entry.value),
+        ),
+      );
+      buffer.writeln('== ${entry.key} ==');
+      buffer.writeln(tester.renderToString(showBorders: false));
+      buffer.writeln();
+    }, size: const Size(80, 32));
   }
   File('/tmp/diagram_screen.txt').writeAsStringSync(buffer.toString());
 }

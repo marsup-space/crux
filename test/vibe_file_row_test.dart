@@ -166,10 +166,7 @@ void main() {
     test('false when the segment has no calls for the file', () {
       // The pre-feature case: ModBoxData exists (paths + counts came
       // from modSummaries) but the walker's modCalls list is empty.
-      expect(
-        hasReconstructableVibeFileDiff('lib/foo.dart', const []),
-        isFalse,
-      );
+      expect(hasReconstructableVibeFileDiff('lib/foo.dart', const []), isFalse);
     });
 
     test('false when calls only touch other files', () {
@@ -261,10 +258,7 @@ void main() {
           },
         ),
       ];
-      expect(
-        hasReconstructableVibeFileDiff('docs/plan.md', calls),
-        isTrue,
-      );
+      expect(hasReconstructableVibeFileDiff('docs/plan.md', calls), isTrue);
     });
   });
 
@@ -284,107 +278,95 @@ void main() {
     ];
 
     test('renders side-by-side (two columns) when wide', () async {
-      await testNocterm(
-        'diff split when wide',
-        (tester) async {
-          await tester.pumpComponent(
-            CruxTheme(
-              data: CruxThemeData.draculaFallback,
-              child: Container(
-                width: 140,
-                height: 30,
-                child: VibeDiffFullpane(
-                  request: VibeDiffRequest(files: [entry()], calls: calls()),
-                  onClose: () {},
-                ),
+      await testNocterm('diff split when wide', (tester) async {
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: Container(
+              width: 140,
+              height: 30,
+              child: VibeDiffFullpane(
+                request: VibeDiffRequest(files: [entry()], calls: calls()),
+                onClose: () {},
               ),
             ),
-          );
-          await tester.pump();
+          ),
+        );
+        await tester.pump();
 
-          // Split view renders the removed and added line on the same row,
-          // separated by the column divider glyph.
-          expect(tester.terminalState.findText('foo.dart'), isNotEmpty);
-          final text = tester.terminalState.getText();
-          expect(text, contains('old line'));
-          expect(text, contains('new line'));
-        },
-        size: const Size(160, 40),
-      );
+        // Split view renders the removed and added line on the same row,
+        // separated by the column divider glyph.
+        expect(tester.terminalState.findText('foo.dart'), isNotEmpty);
+        final text = tester.terminalState.getText();
+        expect(text, contains('old line'));
+        expect(text, contains('new line'));
+      }, size: const Size(160, 40));
     });
 
     test('renders unified (single column) when narrow', () async {
-      await testNocterm(
-        'diff unified when narrow',
-        (tester) async {
-          await tester.pumpComponent(
-            CruxTheme(
-              data: CruxThemeData.draculaFallback,
-              child: Container(
-                width: 80,
-                height: 30,
-                child: VibeDiffFullpane(
-                  request: VibeDiffRequest(files: [entry()], calls: calls()),
-                  onClose: () {},
-                ),
+      await testNocterm('diff unified when narrow', (tester) async {
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: Container(
+              width: 80,
+              height: 30,
+              child: VibeDiffFullpane(
+                request: VibeDiffRequest(files: [entry()], calls: calls()),
+                onClose: () {},
               ),
             ),
-          );
-          await tester.pump();
+          ),
+        );
+        await tester.pump();
 
-          // Unified view stacks the removed line above the added line,
-          // each with a `-`/`+` marker after its line-number gutter.
-          expect(tester.terminalState.findText('foo.dart'), isNotEmpty);
-          final text = tester.terminalState.getText();
-          expect(text, contains('- old line'));
-          expect(text, contains('+ new line'));
-        },
-        size: const Size(100, 40),
-      );
+        // Unified view stacks the removed line above the added line,
+        // each with a `-`/`+` marker after its line-number gutter.
+        expect(tester.terminalState.findText('foo.dart'), isNotEmpty);
+        final text = tester.terminalState.getText();
+        expect(text, contains('- old line'));
+        expect(text, contains('+ new line'));
+      }, size: const Size(100, 40));
     });
 
     test('shows old/new line numbers in the gutter', () async {
-      await testNocterm(
-        'diff line numbers',
-        (tester) async {
-          await tester.pumpComponent(
-            CruxTheme(
-              data: CruxThemeData.draculaFallback,
-              child: Container(
-                width: 80,
-                height: 30,
-                child: VibeDiffFullpane(
-                  request: VibeDiffRequest(
-                    files: const [ModFileEntry('lib/foo.dart', 1, 1)],
-                    calls: const [
-                      ToolCallData(
-                        callId: 'c1',
-                        name: 'edit',
-                        input: {
-                          'filePath': 'lib/foo.dart',
-                          'oldString': 'line one\nline two\nline three',
-                          'newString': 'line one\nline 2\nline three',
-                        },
-                      ),
-                    ],
-                  ),
-                  onClose: () {},
+      await testNocterm('diff line numbers', (tester) async {
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: Container(
+              width: 80,
+              height: 30,
+              child: VibeDiffFullpane(
+                request: VibeDiffRequest(
+                  files: const [ModFileEntry('lib/foo.dart', 1, 1)],
+                  calls: const [
+                    ToolCallData(
+                      callId: 'c1',
+                      name: 'edit',
+                      input: {
+                        'filePath': 'lib/foo.dart',
+                        'oldString': 'line one\nline two\nline three',
+                        'newString': 'line one\nline 2\nline three',
+                      },
+                    ),
+                  ],
                 ),
+                onClose: () {},
               ),
             ),
-          );
-          await tester.pump();
+          ),
+        );
+        await tester.pump();
 
-          // Context rows carry both old and new numbers (1 and 3); the
-          // changed row shows old 2 on the removed side and new 2 on the
-          // added side. The gutter renders each number right-aligned.
-          expect(tester.terminalState.findText('line one'), isNotEmpty);
-          expect(tester.terminalState.findText('line two'), isNotEmpty);
-          expect(tester.terminalState.findText('line 2'), isNotEmpty);
-          expect(tester.terminalState.findText('line three'), isNotEmpty);
-        },
-        size: const Size(100, 40),
-      );
+        // Context rows carry both old and new numbers (1 and 3); the
+        // changed row shows old 2 on the removed side and new 2 on the
+        // added side. The gutter renders each number right-aligned.
+        expect(tester.terminalState.findText('line one'), isNotEmpty);
+        expect(tester.terminalState.findText('line two'), isNotEmpty);
+        expect(tester.terminalState.findText('line 2'), isNotEmpty);
+        expect(tester.terminalState.findText('line three'), isNotEmpty);
+      }, size: const Size(100, 40));
     });
 
     test('highlights a multi-line block comment across every line', () async {
@@ -393,84 +375,80 @@ void main() {
       // block comment were re-tokenized as plain code. The whole snapshot
       // must be highlighted once and sliced per line.
       await HighlightService.initialize();
-      await testNocterm(
-        'block comment highlight',
-        (tester) async {
-          await tester.pumpComponent(
-            CruxTheme(
-              data: CruxThemeData.draculaFallback,
-              child: Container(
-                width: 80,
-                height: 24,
-                child: VibeDiffFullpane(
-                  request: VibeDiffRequest(
-                    files: const [ModFileEntry('lib/foo.dart', 3, 1)],
-                    calls: const [
-                      ToolCallData(
-                        callId: 'c1',
-                        name: 'edit',
-                        input: {
-                          'filePath': 'lib/foo.dart',
-                          'oldString': 'int x = 1;',
-                          'newString': '/*\n * block comment\n */\nint x = 1;',
-                        },
-                      ),
-                    ],
-                  ),
-                  onClose: () {},
+      await testNocterm('block comment highlight', (tester) async {
+        await tester.pumpComponent(
+          CruxTheme(
+            data: CruxThemeData.draculaFallback,
+            child: Container(
+              width: 80,
+              height: 24,
+              child: VibeDiffFullpane(
+                request: VibeDiffRequest(
+                  files: const [ModFileEntry('lib/foo.dart', 3, 1)],
+                  calls: const [
+                    ToolCallData(
+                      callId: 'c1',
+                      name: 'edit',
+                      input: {
+                        'filePath': 'lib/foo.dart',
+                        'oldString': 'int x = 1;',
+                        'newString': '/*\n * block comment\n */\nint x = 1;',
+                      },
+                    ),
+                  ],
                 ),
+                onClose: () {},
               ),
             ),
-          );
-          await tester.pump();
+          ),
+        );
+        await tester.pump();
 
-          // All three comment lines should carry the comment color
-          // (draculaFallback's highlightComment), not the plain default.
-          final commentColor = CruxThemeData.draculaFallback.highlightComment;
-          final state = tester.terminalState;
-          final lines = state.getText().split('\n');
-          final commentRows = <int>[];
-          for (var i = 0; i < lines.length; i++) {
-            if (lines[i].contains('* block comment') ||
-                lines[i].contains('*/') ||
-                lines[i].contains('+ /*')) {
-              // Find the first code glyph after the marker and assert its
-              // color is the comment color.
-              for (var x = 0; x < lines[i].length; x++) {
-                final cell = state.getCellAt(x, i);
-                final ch = cell?.char ?? ' ';
-                if (RegExp(r'[/*a-z]').hasMatch(ch)) {
-                  expect(
-                    cell?.style.color,
-                    equals(commentColor),
-                    reason: 'comment line $i should use the comment color',
-                  );
-                  commentRows.add(i);
-                  break;
-                }
+        // All three comment lines should carry the comment color
+        // (draculaFallback's highlightComment), not the plain default.
+        final commentColor = CruxThemeData.draculaFallback.highlightComment;
+        final state = tester.terminalState;
+        final lines = state.getText().split('\n');
+        final commentRows = <int>[];
+        for (var i = 0; i < lines.length; i++) {
+          if (lines[i].contains('* block comment') ||
+              lines[i].contains('*/') ||
+              lines[i].contains('+ /*')) {
+            // Find the first code glyph after the marker and assert its
+            // color is the comment color.
+            for (var x = 0; x < lines[i].length; x++) {
+              final cell = state.getCellAt(x, i);
+              final ch = cell?.char ?? ' ';
+              if (RegExp(r'[/*a-z]').hasMatch(ch)) {
+                expect(
+                  cell?.style.color,
+                  equals(commentColor),
+                  reason: 'comment line $i should use the comment color',
+                );
+                commentRows.add(i);
+                break;
               }
             }
           }
-          // The opener, the middle, and the closer must all be found.
-          expect(commentRows.length, greaterThanOrEqualTo(3));
-        },
-        size: const Size(90, 26),
-      );
+        }
+        // The opener, the middle, and the closer must all be found.
+        expect(commentRows.length, greaterThanOrEqualTo(3));
+      }, size: const Size(90, 26));
     });
 
-    test('a comment at the end of the snapshot stays comment-colored', () async {
-      // Regression: the TextMate parser (span_parser) scanned grammar
-      // regexes against the full remaining text rather than the current
-      // line, so a `while`-match on a trailing `///` doc comment lost its
-      // line boundary and re-tokenized the comment prose as code —
-      // `Full` rendered cyan, `for` pink, `'s` / `` `files` `` yellow-
-      // string. The parser now scopes every regex to the current line
-      // (matching upstream DevTools), so a trailing comment keeps its
-      // doc-comment scope and reads as a comment on every line.
-      await HighlightService.initialize();
-      await testNocterm(
-        'trailing comment highlight',
-        (tester) async {
+    test(
+      'a comment at the end of the snapshot stays comment-colored',
+      () async {
+        // Regression: the TextMate parser (span_parser) scanned grammar
+        // regexes against the full remaining text rather than the current
+        // line, so a `while`-match on a trailing `///` doc comment lost its
+        // line boundary and re-tokenized the comment prose as code —
+        // `Full` rendered cyan, `for` pink, `'s` / `` `files` `` yellow-
+        // string. The parser now scopes every regex to the current line
+        // (matching upstream DevTools), so a trailing comment keeps its
+        // doc-comment scope and reads as a comment on every line.
+        await HighlightService.initialize();
+        await testNocterm('trailing comment highlight', (tester) async {
           await tester.pumpComponent(
             CruxTheme(
               data: CruxThemeData.draculaFallback,
@@ -486,10 +464,8 @@ void main() {
                         name: 'edit',
                         input: {
                           'filePath': 'lib/foo.dart',
-                          'oldString':
-                              "/// How many cells.\nconst double _k = 4;\n\n/// Full-screen diff view for a vibe segment's `files` box.",
-                          'newString':
-                              "/// Full-screen diff view for a vibe segment's `files` box.",
+                          'oldString': "/// How many cells.\nconst double _k = 4;\n\n/// Full-screen diff view for a vibe segment's `files` box.",
+                          'newString': "/// Full-screen diff view for a vibe segment's `files` box.",
                         },
                       ),
                     ],
@@ -524,9 +500,8 @@ void main() {
             }
           }
           expect(checked, greaterThanOrEqualTo(2));
-        },
-        size: const Size(140, 26),
-      );
-    });
+        }, size: const Size(140, 26));
+      },
+    );
   });
 }

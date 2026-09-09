@@ -63,26 +63,23 @@ void main() {
     expect(rendered, isNot(contains('ask://')));
   });
 
-  test(
-    'markdown link wiring: source `[label](url)` is parsed when onLinkTap is wired',
-    () async {
-      const source = 'See ses://42 and the [docs](https://example.com).';
-      final rendered = await _renderWith(
-        source: source,
-        onSessionLinkTap: (id) {},
-        onLinkTap: (link) {},
-      );
+  test('markdown link wiring: source `[label](url)` is parsed when onLinkTap is wired', () async {
+    const source = 'See ses://42 and the [docs](https://example.com).';
+    final rendered = await _renderWith(
+      source: source,
+      onSessionLinkTap: (id) {},
+      onLinkTap: (link) {},
+    );
 
-      // Markdown link parser RUNS when `onLinkTap` is wired — the
-      // label `docs` survives and the raw `[docs](https://…)` form
-      // is replaced (the URL is hidden when a label is present).
-      // Session-link refs (ses://42) keep the source text and get
-      // only a style overlay, so the substring `42` is enough to
-      // assert the parser matched.
-      expect(rendered, contains('docs'));
-      expect(rendered, isNot(contains('[docs](')));
-      expect(rendered, isNot(contains('https://')));
-      expect(rendered, contains('42'));
-    },
-  );
+    // Markdown link parser RUNS when `onLinkTap` is wired — the
+    // label `docs` survives and the raw `[docs](https://…)` form
+    // is replaced (the URL is hidden when a label is present).
+    // Session-link refs (ses://42) keep the source text and get
+    // only a style overlay, so the substring `42` is enough to
+    // assert the parser matched.
+    expect(rendered, contains('docs'));
+    expect(rendered, isNot(contains('[docs](')));
+    expect(rendered, isNot(contains('https://')));
+    expect(rendered, contains('42'));
+  });
 }

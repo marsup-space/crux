@@ -35,7 +35,11 @@ class VibeTurnDivider extends StatelessComponent {
   final Duration sinceLastTurn;
   final Strings strings;
 
-  const VibeTurnDivider({required this.sinceLastTurn, this.strings = kEnglishStrings, super.key});
+  const VibeTurnDivider({
+    required this.sinceLastTurn,
+    this.strings = kEnglishStrings,
+    super.key,
+  });
 
   @override
   Component build(BuildContext context) {
@@ -57,7 +61,8 @@ class VibeTurnDivider extends StatelessComponent {
             final maxWidth = constraints.maxWidth.isFinite
                 ? constraints.maxWidth.toInt()
                 : 0;
-            final label = ' ${formatAgentTurnGap(sinceLastTurn, strings: strings)} ';
+            final label =
+                ' ${formatAgentTurnGap(sinceLastTurn, strings: strings)} ';
             // Use nocterm's display-width util so the math here
             // matches what the inner `Text` widget actually paints
             // to the terminal. Plain `label.length` would be off

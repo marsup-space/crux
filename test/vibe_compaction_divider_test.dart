@@ -208,35 +208,29 @@ void main() {
     },
   );
 
-  test(
-    'vibe mode renders the compaction divider when compaction is the latest row',
-    () async {
-      final messages = <Message>[
-        Message(id: 1, sessionId: 2, role: 'user', content: 'only question'),
-        Message(id: 2, sessionId: 2, role: 'ai', content: 'only answer'),
-        Message(
-          id: 3,
-          sessionId: 2,
-          role: 'compaction',
-          content: 'compacted chat log',
-        ),
-      ];
-
-      final rendered = await renderVibeHistory(
+  test('vibe mode renders the compaction divider when compaction is the latest row', () async {
+    final messages = <Message>[
+      Message(id: 1, sessionId: 2, role: 'user', content: 'only question'),
+      Message(id: 2, sessionId: 2, role: 'ai', content: 'only answer'),
+      Message(
+        id: 3,
         sessionId: 2,
-        messages: messages,
-      );
+        role: 'compaction',
+        content: 'compacted chat log',
+      ),
+    ];
 
-      expect(
-        RegExp(r'\bCompaction\b').allMatches(rendered),
-        hasLength(1),
-        reason: rendered,
-      );
-      // Falls after the only turn's prose.
-      final compactionAt = rendered.indexOf('Compaction');
-      final answerAt = rendered.indexOf('only answer');
-      expect(answerAt, greaterThanOrEqualTo(0), reason: rendered);
-      expect(compactionAt, greaterThan(answerAt), reason: rendered);
-    },
-  );
+    final rendered = await renderVibeHistory(sessionId: 2, messages: messages);
+
+    expect(
+      RegExp(r'\bCompaction\b').allMatches(rendered),
+      hasLength(1),
+      reason: rendered,
+    );
+    // Falls after the only turn's prose.
+    final compactionAt = rendered.indexOf('Compaction');
+    final answerAt = rendered.indexOf('only answer');
+    expect(answerAt, greaterThanOrEqualTo(0), reason: rendered);
+    expect(compactionAt, greaterThan(answerAt), reason: rendered);
+  });
 }

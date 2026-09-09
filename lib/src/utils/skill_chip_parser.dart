@@ -143,10 +143,11 @@ List<SkillChipMatch> findAllSkillChips(String text, Set<String> skillNames) {
   return matches;
 }
 
-/// A complete `$<skill-name>` chip found in text. [dollarOffset]
+/// A complete `` $<skill-name> `` chip found in text. [dollarOffset]
 /// points at the `$`; [nameEndOffset] is one past the last
-/// character of the skill name (so `text.substring(dollarOffset,
-/// nameEndOffset)` is the full `$<name>` token).
+/// character of the skill name (so calling
+/// `text.substring(dollarOffset, nameEndOffset)` returns the full
+/// `$&lt;name&gt;` token).
 class SkillChipMatch {
   final int dollarOffset;
   final int nameEndOffset;

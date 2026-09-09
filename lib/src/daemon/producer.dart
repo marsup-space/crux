@@ -80,13 +80,13 @@ class SupervisedProducer {
   bool _teardown = false;
 
   ProducerState snapshot() => ProducerState(
-        decl: decl,
-        pid: pid,
-        startedAt: _startedAt,
-        restarts: _consecutiveCrashes,
-        status: _status,
-        lastExit: _lastExit,
-      );
+    decl: decl,
+    pid: pid,
+    startedAt: _startedAt,
+    restarts: _consecutiveCrashes,
+    status: _status,
+    lastExit: _lastExit,
+  );
 
   // ── Lifecycle ───────────────────────────────────────────────────
 
@@ -95,13 +95,10 @@ class SupervisedProducer {
   /// Unknown placeholders stay literal (visible = debuggable, same
   /// convention as plugin labels).
   static String renderCommand(String template, Map<String, dynamic> data) =>
-      template.replaceAllMapped(
-        RegExp(r'\{([a-zA-Z0-9_.]+)\}'),
-        (m) {
-          final v = _dig(data, m.group(1)!);
-          return v?.toString() ?? m.group(0)!;
-        },
-      );
+      template.replaceAllMapped(RegExp(r'\{([a-zA-Z0-9_.]+)\}'), (m) {
+        final v = _dig(data, m.group(1)!);
+        return v?.toString() ?? m.group(0)!;
+      });
 
   static dynamic _dig(Map<String, dynamic> data, String dotted) {
     var cur = data;
@@ -135,18 +132,14 @@ class SupervisedProducer {
     try {
       // setsid trampoline: own session => process group leader =>
       // group-killable without collateral damage (see header).
-      final proc = await Process.start(
-        '/usr/bin/perl',
-        [
-          '-MPOSIX=setsid',
-          '-e',
-          r'setsid() or die "setsid: $!\n"; exec @ARGV or die "exec: $!\n";',
-          '/bin/sh',
-          '-c',
-          command,
-        ],
-        workingDirectory: decl.cwd,
-      );
+      final proc = await Process.start('/usr/bin/perl', [
+        '-MPOSIX=setsid',
+        '-e',
+        r'setsid() or die "setsid: $!\n"; exec @ARGV or die "exec: $!\n";',
+        '/bin/sh',
+        '-c',
+        command,
+      ], workingDirectory: decl.cwd);
       _process = proc;
       _startedAt = DateTime.now();
       _status = 'running';
@@ -164,9 +157,7 @@ class SupervisedProducer {
           .transform(const LineSplitter())
           .listen((l) => _appendLog(l), onError: (Object e) {});
 
-      unawaited(
-        proc.exitCode.then((code) => _onExit(code, onChanged)),
-      );
+      unawaited(proc.exitCode.then((code) => _onExit(code, onChanged)));
     } catch (e) {
       // Spawn itself failed (bad path, exec format…) — treat as a
       // crash for backoff purposes.
@@ -177,7 +168,9 @@ class SupervisedProducer {
 
   void _appendLog(String line) {
     _log.add(line);
-    if (_log.length > _maxLogLines) _log.removeRange(0, _log.length - _maxLogLines);
+    if (_log.length > _maxLogLines) {
+      _log.removeRange(0, _log.length - _maxLogLines);
+    }
   }
 
   void _onExit(int code, void Function(SupervisedProducer)? onChanged) {
@@ -207,8 +200,10 @@ class SupervisedProducer {
     _status = 'backoff';
     onChanged?.call(this);
     final delay = backoff.delayFor(_consecutiveCrashes);
-    _appendLog('restarting in ${delay.inSeconds}s '
-        '(crash #$_consecutiveCrashes)');
+    _appendLog(
+      'restarting in ${delay.inSeconds}s '
+      '(crash #$_consecutiveCrashes)',
+    );
     _restartTimer = Timer(delay, () {
       _restartTimer = null;
       unawaited(start(onChanged: onChanged));
@@ -259,10 +254,10 @@ class SupervisedProducer {
     // (killPid targets a single pid — wrong tool for a group.)
     final name = sig == ProcessSignal.sigkill ? 'KILL' : 'TERM';
     try {
-      Process.runSync(
-        '/bin/sh',
-        ['-c', 'kill -$name -- -$pgid 2>/dev/null || true'],
-      );
+      Process.runSync('/bin/sh', [
+        '-c',
+        'kill -$name -- -$pgid 2>/dev/null || true',
+      ]);
     } catch (_) {}
   }
 

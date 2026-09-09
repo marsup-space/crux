@@ -53,14 +53,11 @@ jobs:
       - name: Fetch native tools
         run: dart run tool/third_party.dart fetch
 
-      - name: Check formatting (report only)
-        run: |
-          dart format --output=none --set-exit-if-changed bin lib test tool || {
-            echo "::warning::Formatting drift found. Run: dart format bin lib test tool"
-          }
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed bin lib test tool
 
       - name: Analyze
-        run: dart analyze --no-fatal-warnings bin lib test tool
+        run: dart analyze --fatal-infos
 
       - name: Smoke tests
         run: >

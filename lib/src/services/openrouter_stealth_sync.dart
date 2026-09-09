@@ -114,7 +114,9 @@ class OpenRouterStealthSync {
 
     // Whatever remains upstream and unseen is a new stealth candidate.
     added.addAll(
-      catalog.values.where((m) => _isStealthId(m.id) && !knownIds.contains(m.id)),
+      catalog.values.where(
+        (m) => _isStealthId(m.id) && !knownIds.contains(m.id),
+      ),
     );
 
     return StealthSyncPlan(
@@ -158,7 +160,9 @@ class OpenRouterStealthSync {
       ..writeln(
         '# them are overwritten on the next sync. The non-stealth entries',
       )
-      ..writeln('# (nemotron, the free router) are yours; sync never touches them.')
+      ..writeln(
+        '# (nemotron, the free router) are yours; sync never touches them.',
+      )
       ..writeln()
       ..writeln('type = "${current.type}"')
       ..writeln('endpoint_url = "${current.endpointUrl}"');
@@ -206,9 +210,7 @@ class OpenRouterStealthSync {
       } else {
         buf.writeln('thinking = false');
       }
-      buf.writeln(
-        'reasoning_effort = "${m.reasoningEffort?.name ?? 'none'}"',
-      );
+      buf.writeln('reasoning_effort = "${m.reasoningEffort?.name ?? 'none'}"');
       if (m.maxTokens != null) buf.writeln('max_tokens = ${m.maxTokens}');
       if (m.expirationDate != null) {
         buf.writeln('expiration_date = "${m.expirationDate}"');
@@ -251,7 +253,9 @@ class OpenRouterStealthSync {
 
   /// Fetch the raw `/models` JSON body. Key-free endpoint.
   Future<String> _fetchModelsBody(String endpointUrl) async {
-    final uri = Uri.parse('${endpointUrl.replaceAll(RegExp(r'/$'), '')}/models');
+    final uri = Uri.parse(
+      '${endpointUrl.replaceAll(RegExp(r'/$'), '')}/models',
+    );
     final req = await _httpClient.getUrl(uri);
     req.headers.set(HttpHeaders.acceptHeader, 'application/json');
     final resp = await req.close().timeout(const Duration(seconds: 30));
@@ -282,8 +286,7 @@ class OpenRouterStealthSync {
         id: id,
         name: m['name'] as String? ?? id,
         contextLength: (m['context_length'] as num?)?.toInt() ?? 200000,
-        isStealth:
-            id.startsWith('stealth/') || desc.contains('stealth model'),
+        isStealth: id.startsWith('stealth/') || desc.contains('stealth model'),
         isFree: pricing['prompt'] == '0' && pricing['completion'] == '0',
         imageSupport: inputs.contains('image'),
         reasoningEfforts:
@@ -418,10 +421,7 @@ class StealthSyncPlan {
           lines.add('  ! ${t('sync.warnExpired', args)}');
         case SyncWarningKind.expiringSoon:
           lines.add(
-            '  ! ${t('sync.warnExpiringSoon', {
-              ...args,
-              'days': '${OpenRouterStealthSync.expiryWarningDays}',
-            })}',
+            '  ! ${t('sync.warnExpiringSoon', {...args, 'days': '${OpenRouterStealthSync.expiryWarningDays}'})}',
           );
         case SyncWarningKind.vanished:
           lines.add('  ! ${t('sync.warnVanished', args)}');

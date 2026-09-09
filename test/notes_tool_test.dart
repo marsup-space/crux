@@ -63,18 +63,20 @@ void main() {
     expect(result.metadata['updatedAt'], isA<int>());
   });
 
-  test('reads the live row — a later save is reflected on the next call',
-      () async {
-    await store.notesStore.save(tempProject.path, 'v1');
-    final first = await tool.execute({}, ctx());
-    expect(first.output, contains('v1'));
-    expect(first.output, isNot(contains('v2')));
+  test(
+    'reads the live row — a later save is reflected on the next call',
+    () async {
+      await store.notesStore.save(tempProject.path, 'v1');
+      final first = await tool.execute({}, ctx());
+      expect(first.output, contains('v1'));
+      expect(first.output, isNot(contains('v2')));
 
-    await store.notesStore.save(tempProject.path, 'v2');
-    final second = await tool.execute({}, ctx());
-    expect(second.output, contains('v2'));
-    expect(second.output, isNot(contains('v1')));
-  });
+      await store.notesStore.save(tempProject.path, 'v2');
+      final second = await tool.execute({}, ctx());
+      expect(second.output, contains('v2'));
+      expect(second.output, isNot(contains('v1')));
+    },
+  );
 
   test('only reads the note for the current project', () async {
     await store.notesStore.save(

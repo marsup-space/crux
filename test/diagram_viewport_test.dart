@@ -38,16 +38,15 @@ void main() {
       () {
         // An end-to-end TD case ensures the fix cannot regress vertical
         // Mermaid output while correcting the LR branch-trunk false positive.
-        final data = tryBuildDiagramViewportData(
-          '''flowchart TD
+        final data = tryBuildDiagramViewportData('''flowchart TD
 Start[收到工具调用] --> Check{命令包含 git?}
 Check -->|否| Keep[保持原逻辑]
 Check -->|是| Done[本工具轮完成]
 Done --> Refresh[刷新当前 workspace Git 状态]
-Refresh --> Sidebar[侧栏立即更新]''',
-          'mermaid',
-        )!;
-        final startRow = data.lines.indexWhere((line) => line.contains('收到工具调用'));
+Refresh --> Sidebar[侧栏立即更新]''', 'mermaid')!;
+        final startRow = data.lines.indexWhere(
+          (line) => line.contains('收到工具调用'),
+        );
         final startLine = data.lines[startRow];
         final leftBorder = startLine.indexOf('│');
         final shaftRow = data.lines.indexWhere((line) => line.trim() == '│');

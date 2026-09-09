@@ -122,11 +122,10 @@ void main() {
       final all = await messages.getMessages(sessionId);
       // tool_call row should still exist (a + b kept the row alive).
       final toolCallRow = all.firstWhere((m) => m.role == 'tool_call');
-      expect(
-        toolCallRow.toolCalls.map((c) => c.callId).toList(),
-        ['a', 'b'],
-        reason: "orphan 'c' must be pruned from the tool_call row",
-      );
+      expect(toolCallRow.toolCalls.map((c) => c.callId).toList(), [
+        'a',
+        'b',
+      ], reason: "orphan 'c' must be pruned from the tool_call row");
       // Both surviving tool rows stay.
       final toolRows = all.where((m) => m.role == 'tool').toList();
       expect(toolRows, hasLength(2));
@@ -199,11 +198,9 @@ void main() {
 
       final all = await messages.getMessages(sessionId);
       final toolCallRow = all.firstWhere((m) => m.role == 'tool_call');
-      expect(
-        toolCallRow.toolCalls.map((c) => c.callId).toList(),
-        ['a'],
-        reason: "'b' is dropped — its tool_use is interrupted",
-      );
+      expect(toolCallRow.toolCalls.map((c) => c.callId).toList(), [
+        'a',
+      ], reason: "'b' is dropped — its tool_use is interrupted");
       // The ai row survives unchanged.
       final aiRows = all.where((m) => m.role == 'ai').toList();
       expect(aiRows.map((m) => m.content).toList(), ['half-thought']);

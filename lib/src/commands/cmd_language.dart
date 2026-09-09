@@ -11,17 +11,16 @@ import 'command_executor.dart';
 Future<void> executeLanguage(List<String> parts, CommandContext ctx) async {
   final controller = ctx.localeController;
   if (controller == null) {
-    ctx.showToast(
-      kEnglishStrings.t('lang.unavailable'),
-      mode: ToastMode.error,
-    );
+    ctx.showToast(kEnglishStrings.t('lang.unavailable'), mode: ToastMode.error);
     return;
   }
 
   final code = parts.length > 1 ? parts[1].trim() : '';
   if (code.isEmpty) {
     ctx.showToast(
-      controller.strings.t('lang.current', {'lang': controller.activeLocale.label}),
+      controller.strings.t('lang.current', {
+        'lang': controller.activeLocale.label,
+      }),
     );
     return;
   }

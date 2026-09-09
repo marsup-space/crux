@@ -347,9 +347,8 @@ void main() {
         name: 'broken',
         description: 'valid',
       );
-      File(
-        p.join(projectRoot.path, '.crux', 'skills', 'broken', 'SKILL.md'),
-      ).writeAsStringSync('---\nname: broken\n---\nbody\n');
+      File(p.join(projectRoot.path, '.crux', 'skills', 'broken', 'SKILL.md'))
+          .writeAsStringSync('---\nname: broken\n---\nbody\n');
       // Global — good.
       _writeSkill(
         Directory(p.join(fakeHome.path, '.claude', 'skills')),

@@ -13,10 +13,7 @@ import 'package:crux/src/daemon/producer.dart';
 void main() {
   group('producer keys', () {
     test('project plugin keys namespace by project + id', () {
-      expect(
-        producerKey(projectPath: '/a', pluginId: 'gold'),
-        '/a:gold',
-      );
+      expect(producerKey(projectPath: '/a', pluginId: 'gold'), '/a:gold');
       expect(
         producerKey(projectPath: '/b', pluginId: 'gold'),
         isNot(producerKey(projectPath: '/a', pluginId: 'gold')),
@@ -42,16 +39,16 @@ void main() {
     test('substitutes flat and dotted fields', () {
       final cmd = SupervisedProducer.renderCommand(
         'fetch --unit {unit} --port {net.port}',
-        {'unit': 'oz', 'net': {'port': 8080}},
+        {
+          'unit': 'oz',
+          'net': {'port': 8080},
+        },
       );
       expect(cmd, 'fetch --unit oz --port 8080');
     });
 
     test('unknown placeholders stay literal (visible typos)', () {
-      expect(
-        SupervisedProducer.renderCommand('{nope}', const {}),
-        '{nope}',
-      );
+      expect(SupervisedProducer.renderCommand('{nope}', const {}), '{nope}');
     });
   });
 
@@ -115,8 +112,7 @@ void main() {
       } catch (_) {}
     });
 
-    test('spawns via setsid, kills the group, no orphan children',
-        () async {
+    test('spawns via setsid, kills the group, no orphan children', () async {
       final script = File('${tmp.path}/worker.sh');
       script.writeAsStringSync('#!/bin/bash\nsleep 30 &\nsleep 30\n');
       Process.runSync('chmod', ['+x', script.path]);
@@ -137,10 +133,10 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 500));
       await p.kill();
       await Future<void>.delayed(const Duration(milliseconds: 300));
-      final probe = Process.runSync(
-        '/bin/sh',
-        ['-c', 'kill -0 -- -${pgid} 2>/dev/null; echo rc=\$?'],
-      );
+      final probe = Process.runSync('/bin/sh', [
+        '-c',
+        'kill -0 -- -$pgid 2>/dev/null; echo rc=\$?',
+      ]);
       // Group gone (or never had members): kill -0 -- -PGID fails.
       expect(probe.stdout.toString(), contains('rc=1'));
     }, timeout: const Timeout(Duration(seconds: 20)));

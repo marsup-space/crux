@@ -29,15 +29,11 @@ What it does:
 - Restores pub and third-party tool caches
 - Runs `dart pub get`
 - Runs `dart run tool/third_party.dart fetch`
-- Reports formatting drift
-- Runs `dart analyze --no-fatal-warnings bin lib test tool`
+- Verifies Dart formatting
+- Runs `dart analyze --fatal-infos`
 - Runs a stable smoke-test suite
 
-Current policy:
-
-- Analyzer warnings are reported but do not fail CI.
-- Formatting drift is reported but does not fail CI.
-- The smoke-test suite must pass.
+Formatting drift, analyzer diagnostics, and smoke-test failures all fail CI.
 
 Why not full `dart test` in CI:
 
@@ -138,12 +134,10 @@ extra configuration.
 
 When the repository is ready, upgrade CI in this order:
 
-1. Fix analyzer warnings and make `dart analyze` strict again.
-2. Format the codebase and make formatting fail CI.
-3. Expand the smoke-test list toward the full `dart test` suite.
-4. Add per-platform smoke tests after release packaging.
-5. Add release checksums once the artifact set stabilizes.
-6. Add `windows-arm64` once GitHub makes private-repo Windows ARM runners
+1. Expand the smoke-test list toward the full `dart test` suite.
+2. Add per-platform smoke tests after release packaging.
+3. Add release checksums once the artifact set stabilizes.
+4. Add `windows-arm64` once GitHub makes private-repo Windows ARM runners
    generally available, or after moving release builds to a paid larger runner.
 
 The current workflows are a practical starting point, not the final ceiling.

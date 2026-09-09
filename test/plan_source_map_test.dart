@@ -40,7 +40,8 @@ void main() {
     });
 
     test('multi-line doc: selection in a later block maps to its line', () {
-      const src = '# Title\n'
+      const src =
+          '# Title\n'
           '\n'
           'A paragraph.\n';
       final r = parsePlanDocument(src, theme);
@@ -68,12 +69,14 @@ void main() {
     });
 
     test('a paragraph on source line 2 maps to its rendered row', () {
-      const src = '# Title\n'
+      const src =
+          '# Title\n'
           '\n'
           'A paragraph.\n';
       final r = parsePlanDocument(src, theme);
       final rows = r.sourceMap.sourceLinesToRenderedRows(2, 2);
-      final expectedRow = r.renderedText
+      final expectedRow =
+          r.renderedText
               .substring(0, r.renderedText.indexOf('A paragraph'))
               .split('\n')
               .length -
@@ -82,7 +85,8 @@ void main() {
     });
 
     test('code block source lines map to rendered rows inside the box', () {
-      const src = '```dart\n'
+      const src =
+          '```dart\n'
           'code();\n'
           '```\n';
       final r = parsePlanDocument(src, theme);
@@ -91,12 +95,15 @@ void main() {
       final rows = r.sourceMap.sourceLinesToRenderedRows(1, 1);
       expect(rows, isNotEmpty);
       final rowStart = r.renderedText.split('\n');
-      final hit = rows.any((row) => row < rowStart.length && rowStart[row].contains('code();'));
+      final hit = rows.any(
+        (row) => row < rowStart.length && rowStart[row].contains('code();'),
+      );
       expect(hit, isTrue, reason: 'rows=$rows rendered=${r.renderedText}');
     });
 
     test('table body line maps to a rendered row', () {
-      const src = '| A | B |\n'
+      const src =
+          '| A | B |\n'
           '| - | - |\n'
           '| 1 | 2 |\n';
       final r = parsePlanDocument(src, theme);
@@ -107,7 +114,8 @@ void main() {
     test('wrapped table cell line maps to its exact source slice', () {
       // Force a wrap: two columns, narrow maxWidth, long body cell.
       const cell = 'aaa bbb ccc ddd eee';
-      final src = '| H | Long |\n'
+      final src =
+          '| H | Long |\n'
           '| - | - |\n'
           '| x | $cell |\n';
       // Column widths from _distributeColumnWidths over natural [3,19]
@@ -121,10 +129,7 @@ void main() {
       for (final s in r.sourceMap.spans) {
         if (!s.isMarker && s.renderedLength > 0) {
           // Look up the rendered text via renderedText.
-          final text = r.renderedText.substring(
-            s.renderedStart,
-            s.renderedEnd,
-          );
+          final text = r.renderedText.substring(s.renderedStart, s.renderedEnd);
           if (text.contains(' ') || text == 'aaa' || text == 'ddd') {
             // Word content from the long cell.
           }
@@ -140,7 +145,8 @@ void main() {
     });
 
     test('table rows keep zebra rendering integrity (borders intact)', () {
-      const src = '| A | B |\n'
+      const src =
+          '| A | B |\n'
           '| - | - |\n'
           '| 1 | 2 |\n'
           '| 3 | 4 |\n';
@@ -149,7 +155,9 @@ void main() {
       // All grid lines have consistent width: border + 2 content rows
       // + separator + bottom border.
       final gridLines = lines
-          .where((l) => l.startsWith('┌') || l.startsWith('├') || l.startsWith('└'))
+          .where(
+            (l) => l.startsWith('┌') || l.startsWith('├') || l.startsWith('└'),
+          )
           .toList();
       expect(gridLines, hasLength(3));
       final w = gridLines.first.length;
@@ -173,8 +181,11 @@ void main() {
       final r = parsePlanDocument('# T\n\npara `code`\n', theme);
       var pos = 0;
       for (final span in r.sourceMap.spans) {
-        expect(span.renderedStart, greaterThanOrEqualTo(pos),
-            reason: 'span at ${span.renderedStart} overlaps previous end $pos');
+        expect(
+          span.renderedStart,
+          greaterThanOrEqualTo(pos),
+          reason: 'span at ${span.renderedStart} overlaps previous end $pos',
+        );
         pos = span.renderedEnd > pos ? span.renderedEnd : pos;
       }
     });

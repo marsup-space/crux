@@ -9,7 +9,10 @@ import 'command_executor.dart';
 /// the switch so they render in the active UI language. Also rebuilds the
 /// current session's system prompt (the prompt caches its language section)
 /// so the change takes effect on the very next turn.
-Future<void> executeReplyLanguage(List<String> parts, CommandContext ctx) async {
+Future<void> executeReplyLanguage(
+  List<String> parts,
+  CommandContext ctx,
+) async {
   final controller = ctx.localeController;
   if (controller == null) {
     ctx.showToast(
@@ -21,18 +24,18 @@ Future<void> executeReplyLanguage(List<String> parts, CommandContext ctx) async 
 
   final code = parts.length > 1 ? parts[1].trim() : '';
   if (code.isEmpty) {
-    final label =
-        controller.strings.t('replylang.${controller.replyLanguageCode}');
-    ctx.showToast(
-      controller.strings.t('replylang.current', {'mode': label}),
+    final label = controller.strings.t(
+      'replylang.${controller.replyLanguageCode}',
     );
+    ctx.showToast(controller.strings.t('replylang.current', {'mode': label}));
     return;
   }
 
   final result = await controller.switchReplyLanguage(code);
   if (!result.found) {
-    final list =
-        controller.availableReplyLanguageModes.map((m) => m.code).join(', ');
+    final list = controller.availableReplyLanguageModes
+        .map((m) => m.code)
+        .join(', ');
     ctx.showToast(
       controller.strings.t('replylang.unknown', {'mode': code, 'list': list}),
       mode: ToastMode.error,

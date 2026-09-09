@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:nocterm/nocterm.dart';
+
 import '../models/message.dart';
 import '../theme/crux_theme.dart';
 import 'ui/highlighted_markdown_text.dart';

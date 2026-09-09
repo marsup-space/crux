@@ -9,8 +9,8 @@ import '../syntax.dart';
 
 /// Matches stuff that should just be passed through as straight text.
 class TextSyntax extends InlineSyntax {
-  TextSyntax(String pattern, {int? startCharacter})
-      : super(RegExp(pattern, multiLine: true), startCharacter: startCharacter);
+  TextSyntax(String pattern, {super.startCharacter})
+      : super(RegExp(pattern, multiLine: true));
 
   @override
   InlineElement? parse(InlineParser parser, Match match) {

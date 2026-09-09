@@ -14,11 +14,11 @@ void main() {
   late PluginsTool tool;
 
   ToolContext ctxOf() => ToolContext(
-        sessionId: 1,
-        messageId: 0,
-        abort: AbortSignal(),
-        workingDirectory: project.path,
-      );
+    sessionId: 1,
+    messageId: 0,
+    abort: AbortSignal(),
+    workingDirectory: project.path,
+  );
 
   setUp(() {
     project = Directory.systemTemp.createTempSync('plugin_tool_test_');
@@ -73,17 +73,18 @@ url = "http://127.0.0.1:{controlPort}/reload"
   }) {
     final f = File('${project.path}/s.json');
     f.parent.createSync(recursive: true);
-    f.writeAsStringSync(jsonEncode({
-      'pid': 1,
-      if (heartbeat != null)
-        'heartbeatAt': heartbeat.toUtc().toIso8601String(),
-      if (reloadResult != null)
-        'lastReload': {
-          'at': DateTime(2026, 8, 4, 16, 53).toUtc().toIso8601String(),
-          'result': reloadResult,
-        },
-      if (controlPort != null) 'controlPort': controlPort,
-    }));
+    f.writeAsStringSync(
+      jsonEncode({
+        'pid': 1,
+        'heartbeatAt': ?heartbeat?.toUtc().toIso8601String(),
+        if (reloadResult != null)
+          'lastReload': {
+            'at': DateTime(2026, 8, 4, 16, 53).toUtc().toIso8601String(),
+            'result': reloadResult,
+          },
+        'controlPort': ?controlPort,
+      }),
+    );
   }
 
   group('plugins tool — list', () {
@@ -112,9 +113,8 @@ url = "http://127.0.0.1:{controlPort}/reload"
     test('invalid spec files are skipped', () async {
       final dir = Directory('${project.path}/.crux/plugins');
       dir.createSync(recursive: true);
-      File('${dir.path}/broken.toml').writeAsStringSync(
-        'id = "mismatch"\nlabel = "x"\n',
-      );
+      File('${dir.path}/broken.toml')
+          .writeAsStringSync('id = "mismatch"\nlabel = "x"\n');
 
       final result = await tool.execute({'action': 'list'}, ctxOf());
       expect(result.output, isNot(contains('broken')));
@@ -127,10 +127,10 @@ url = "http://127.0.0.1:{controlPort}/reload"
       writeSpec('dev-harness');
       writeStatus(heartbeat: DateTime.now(), controlPort: 1234);
 
-      final result = await tool.execute(
-        {'action': 'inspect', 'id': 'dev-harness'},
-        ctxOf(),
-      );
+      final result = await tool.execute({
+        'action': 'inspect',
+        'id': 'dev-harness',
+      }, ctxOf());
 
       expect(result.output, contains('dev-harness'));
       expect(result.output, contains('alive'));
@@ -141,10 +141,10 @@ url = "http://127.0.0.1:{controlPort}/reload"
 
     test('unknown id errors with available ids', () async {
       writeSpec('a');
-      final result = await tool.execute(
-        {'action': 'inspect', 'id': 'nope'},
-        ctxOf(),
-      );
+      final result = await tool.execute({
+        'action': 'inspect',
+        'id': 'nope',
+      }, ctxOf());
       expect(result.title, 'Error');
       expect(result.output, contains('nope'));
       expect(result.output, contains('a'));
@@ -164,10 +164,11 @@ url = "http://127.0.0.1:{controlPort}/reload"
       writeSpec('dev-harness');
       writeStatus(heartbeat: DateTime.now(), controlPort: server.port);
 
-      final result = await tool.execute(
-        {'action': 'trigger', 'id': 'dev-harness', 'action_label': 'reload'},
-        ctxOf(),
-      );
+      final result = await tool.execute({
+        'action': 'trigger',
+        'id': 'dev-harness',
+        'action_label': 'reload',
+      }, ctxOf());
 
       expect(hits, contains('POST /reload'));
       expect(result.output, contains('ok'));
@@ -179,10 +180,11 @@ url = "http://127.0.0.1:{controlPort}/reload"
 
     test('refuses to trigger while the widget is not alive', () async {
       writeSpec('dev-harness');
-      final result = await tool.execute(
-        {'action': 'trigger', 'id': 'dev-harness', 'action_label': 'reload'},
-        ctxOf(),
-      );
+      final result = await tool.execute({
+        'action': 'trigger',
+        'id': 'dev-harness',
+        'action_label': 'reload',
+      }, ctxOf());
       expect(result.title, 'Error');
       expect(result.output, contains('absent'));
     });
@@ -190,10 +192,11 @@ url = "http://127.0.0.1:{controlPort}/reload"
     test('unknown action label errors', () async {
       writeSpec('dev-harness');
       writeStatus(heartbeat: DateTime.now(), controlPort: 1);
-      final result = await tool.execute(
-        {'action': 'trigger', 'id': 'dev-harness', 'action_label': 'nope'},
-        ctxOf(),
-      );
+      final result = await tool.execute({
+        'action': 'trigger',
+        'id': 'dev-harness',
+        'action_label': 'nope',
+      }, ctxOf());
       expect(result.title, 'Error');
       expect(result.output, contains('nope'));
       expect(result.output, contains('reload'));
@@ -207,10 +210,11 @@ url = "http://127.0.0.1:{controlPort}/reload"
       writeSpec('dev-harness');
       writeStatus(heartbeat: DateTime.now(), controlPort: port);
 
-      final result = await tool.execute(
-        {'action': 'trigger', 'id': 'dev-harness', 'action_label': 'reload'},
-        ctxOf(),
-      );
+      final result = await tool.execute({
+        'action': 'trigger',
+        'id': 'dev-harness',
+        'action_label': 'reload',
+      }, ctxOf());
       expect(result.metadata['ok'], isFalse);
       expect(result.output, contains('Failed'));
     });
@@ -225,10 +229,11 @@ url = "http://127.0.0.1:{controlPort}/reload"
       );
       writeSpec('dev-harness');
 
-      final result = await fakeTool.execute(
-        {'action': 'trigger', 'id': 'dev-harness', 'action_label': 'start'},
-        ctxOf(),
-      );
+      final result = await fakeTool.execute({
+        'action': 'trigger',
+        'id': 'dev-harness',
+        'action_label': 'start',
+      }, ctxOf());
 
       expect(launched, hasLength(1));
       expect(launched.first, contains('dart tool/crux_dev.dart home'));
@@ -241,10 +246,11 @@ url = "http://127.0.0.1:{controlPort}/reload"
         launchFn: (action, projectPath) async => false,
       );
       writeSpec('dev-harness');
-      final result = await fakeTool.execute(
-        {'action': 'trigger', 'id': 'dev-harness', 'action_label': 'start'},
-        ctxOf(),
-      );
+      final result = await fakeTool.execute({
+        'action': 'trigger',
+        'id': 'dev-harness',
+        'action_label': 'start',
+      }, ctxOf());
       expect(result.metadata['ok'], isFalse);
       expect(result.output, contains('Failed to launch'));
     });
@@ -271,10 +277,11 @@ prompt = "Review the config on port {controlPort}."
 ''');
       writeStatus(heartbeat: DateTime.now(), controlPort: 9090);
 
-      final result = await tool.execute(
-        {'action': 'trigger', 'id': 'dev-harness', 'action_label': 'review'},
-        ctxOf(),
-      );
+      final result = await tool.execute({
+        'action': 'trigger',
+        'id': 'dev-harness',
+        'action_label': 'review',
+      }, ctxOf());
 
       expect(result.metadata['ok'], isTrue);
       expect(result.metadata['prompt'], 'Review the config on port 9090.');
@@ -297,10 +304,11 @@ command = "echo from-shell-action"
 ''');
       writeStatus(heartbeat: DateTime.now());
 
-      final result = await tool.execute(
-        {'action': 'trigger', 'id': 'dev-harness', 'action_label': 'test'},
-        ctxOf(),
-      );
+      final result = await tool.execute({
+        'action': 'trigger',
+        'id': 'dev-harness',
+        'action_label': 'test',
+      }, ctxOf());
 
       expect(result.metadata['ok'], isTrue);
       expect(result.metadata['exitCode'], 0);

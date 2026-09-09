@@ -140,8 +140,8 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
     final title = files.isEmpty
         ? component.strings.t('chat.vibe.diffTitle')
         : multiple
-            ? '${files[_index].path}  ${_index + 1}/${files.length}'
-            : files[_index].path;
+        ? '${files[_index].path}  ${_index + 1}/${files.length}'
+        : files[_index].path;
     return Fullpane(
       title: title,
       onClose: component.onClose,
@@ -288,9 +288,7 @@ class _VibeDiffFullpaneState extends State<VibeDiffFullpane> {
     );
     final language = languageFromPath(entry.path);
 
-    final body = result == null
-        ? null
-        : _highlighted(result, language, theme);
+    final body = result == null ? null : _highlighted(result, language, theme);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -419,7 +417,9 @@ List<List<TextSpan>> _highlightLines(
 ) {
   if (lines.isEmpty) return const [];
   if (language.isEmpty) {
-    return [for (final l in lines) [TextSpan(text: l)]];
+    return [
+      for (final l in lines) [TextSpan(text: l)],
+    ];
   }
   final joined = lines.join('\n');
   final spans = highlightCode(joined, language, theme);
@@ -550,10 +550,7 @@ class _UnifiedDiff extends StatelessComponent {
     // The inner horizontal scroll view already gives this column unbounded
     // width, so it shrink-wraps to its longest row and the viewport pans
     // over it; in wrap mode each row wraps to the viewport width instead.
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: rows,
-    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows);
   }
 
   Component _gap(String glyph, int count) {
@@ -656,10 +653,7 @@ class _SplitDiff extends StatelessComponent {
                     ),
                     SizedBox(
                       width: 1,
-                      child: Text(
-                        '│',
-                        style: TextStyle(color: theme.outline),
-                      ),
+                      child: Text('│', style: TextStyle(color: theme.outline)),
                     ),
                     SizedBox(
                       width: colWidth,
@@ -838,13 +832,7 @@ class _SplitRow {
   final bool isGap;
   final int gapCount;
 
-  const _SplitRow({this.left, this.right})
-    : isGap = false,
-      gapCount = 0;
+  const _SplitRow({this.left, this.right}) : isGap = false, gapCount = 0;
 
-  const _SplitRow.gap(this.gapCount)
-    : left = null,
-      right = null,
-      isGap = true;
+  const _SplitRow.gap(this.gapCount) : left = null, right = null, isGap = true;
 }
-

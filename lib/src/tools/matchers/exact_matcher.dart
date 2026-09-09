@@ -17,8 +17,7 @@ class ExactMatcher extends Matcher {
     if (!replaceAll && positions.length > 1) {
       return MatchResult(
         positions: positions,
-        error:
-            'Found multiple matches for oldString. Provide more surrounding lines in oldString to identify the correct match.',
+        error: 'Found multiple matches for oldString. Provide more surrounding lines in oldString to identify the correct match.',
       );
     }
 

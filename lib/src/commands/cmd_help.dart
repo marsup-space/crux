@@ -47,7 +47,9 @@ String buildHelpText([Strings? strings]) {
     ..writeln('- `Tab` — autocomplete commands, params, mentions · 补全命令、参数与引用')
     ..writeln('- `@` — attach project files to the prompt · 在输入中引用项目文件')
     ..writeln(r'- `$` — invoke a skill · 调用技能')
-    ..writeln('- model button — click the flashing model name to interrupt the response · 点击闪烁的模型按钮中断回复')
+    ..writeln(
+      '- model button — click the flashing model name to interrupt the response · 点击闪烁的模型按钮中断回复',
+    )
     ..writeln(
       '- `Ctrl+C` — exit Crux; double-press when a session is running '
       '· 退出 Crux；有会话运行时需快速双击',

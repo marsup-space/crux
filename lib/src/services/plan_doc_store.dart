@@ -9,7 +9,7 @@ import '../models/plan_selection.dart';
 ///
 /// Layout on disk:
 ///
-///   <projectPath>/.crux/plans/<sessionId>/<planName>/
+///   `<projectPath>/.crux/plans/<sessionId>/<planName>/`
 ///     v1.md
 ///     v2.md
 ///     …
@@ -37,9 +37,8 @@ class PlanDocStore {
     required this.planName,
   });
 
-  Directory get _dir => Directory(
-        p.join(projectPath, '.crux', 'plans', '$sessionId', planName),
-      );
+  Directory get _dir =>
+      Directory(p.join(projectPath, '.crux', 'plans', '$sessionId', planName));
 
   File get _indexFile => File(p.join(_dir.path, 'index.json'));
 
@@ -91,18 +90,22 @@ class PlanDocStore {
     DateTime? at,
   }) {
     final index = List<PlanVersionEntry>.from(readIndex());
-    final version =
-        index.isEmpty ? 1 : index.map((e) => e.version).reduce((a, b) => a > b ? a : b) + 1;
+    final version = index.isEmpty
+        ? 1
+        : index.map((e) => e.version).reduce((a, b) => a > b ? a : b) + 1;
     _dir.createSync(recursive: true);
     _versionFile(version).writeAsStringSync(content);
-    index.add(PlanVersionEntry(
-      version: version,
-      at: at ?? DateTime.now(),
-      kind: kind,
-      revertedTo: revertedTo,
-    ));
+    index.add(
+      PlanVersionEntry(
+        version: version,
+        at: at ?? DateTime.now(),
+        kind: kind,
+        revertedTo: revertedTo,
+      ),
+    );
     _indexFile.writeAsStringSync(
-      const JsonEncoder.withIndent('  ').convert([for (final e in index) e.toJson()]),
+      const JsonEncoder.withIndent('  ')
+          .convert([for (final e in index) e.toJson()]),
     );
     return version;
   }

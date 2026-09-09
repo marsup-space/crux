@@ -876,7 +876,8 @@ void main() {
       expect(
         finishReason,
         'done',
-        reason: 'an empty [DONE] must look like a natural close so the '
+        reason:
+            'an empty [DONE] must look like a natural close so the '
             'executor empty-stream retry fires, not a deliberate stop',
       );
     });
@@ -916,7 +917,8 @@ void main() {
       expect(
         finishReason,
         'stop',
-        reason: 'a [DONE] after content is a real termination — '
+        reason:
+            'a [DONE] after content is a real termination — '
             'must not trigger the empty-stream retry',
       );
     });
@@ -1069,10 +1071,7 @@ void main() {
       return 'http://127.0.0.1:${server.port}';
     }
 
-    ProviderConfig configWithWatchdog(
-      String base, {
-      int? dataIdleTimeoutMs,
-    }) {
+    ProviderConfig configWithWatchdog(String base, {int? dataIdleTimeoutMs}) {
       return ProviderConfig(
         name: 'p',
         type: 'openai_compatible',
@@ -1111,14 +1110,14 @@ void main() {
       expect(
         chunks.single.error!.message,
         contains('No data received'),
-        reason: 'the message must name the data-idle watchdog, '
+        reason:
+            'the message must name the data-idle watchdog, '
             'not the byte-level idle timeout',
       );
     });
 
     test('watchdog disabled by default (dataIdleTimeoutMs null) — '
-        'keepalive-only stream does not error within the window',
-        () async {
+        'keepalive-only stream does not error within the window', () async {
       final base = await startKeepaliveServer();
       final client = LlmClient();
       addTearDown(client.dispose);
@@ -1145,8 +1144,7 @@ void main() {
       await sub.cancel();
     });
 
-    test('a real data event resets the countdown; comments do not',
-        () async {
+    test('a real data event resets the countdown; comments do not', () async {
       // Server sends one real delta at t=200ms, then only comments.
       // With a 500ms watchdog armed at t≈0:
       //   - comments never reset it;
@@ -1167,9 +1165,7 @@ void main() {
         await req.response.flush();
         // t=200ms: real data event (MUST reset).
         await Future<void>.delayed(const Duration(milliseconds: 100));
-        req.response.write(
-          'data: {"choices":[{"delta":{"content":"x"}}]}\n\n',
-        );
+        req.response.write('data: {"choices":[{"delta":{"content":"x"}}]}\n\n');
         await req.response.flush();
         // Then comments forever.
         while (true) {
@@ -1182,9 +1178,10 @@ void main() {
 
       final client = LlmClient();
       addTearDown(client.dispose);
-      final config = configWithWatchdog(server.port.toString().isEmpty
-          ? ''
-          : 'http://127.0.0.1:${server.port}', dataIdleTimeoutMs: 500);
+      final config = configWithWatchdog(
+        server.port.toString().isEmpty ? '' : 'http://127.0.0.1:${server.port}',
+        dataIdleTimeoutMs: 500,
+      );
 
       final watch = Stopwatch()..start();
       LlmChunk? errorChunk;
@@ -1209,9 +1206,13 @@ void main() {
       // Fired ≈ 200ms (delta) + 500ms (watchdog) = 700ms. Allow
       // generous slop for CI scheduling but keep the lower bound
       // tight enough to prove the reset pushed it past 500ms.
-      expect(watch.elapsedMilliseconds, greaterThan(550),
-          reason: 'the data event at t=200ms must have restarted '
-              'the countdown (otherwise fire ≈ t=500ms)');
+      expect(
+        watch.elapsedMilliseconds,
+        greaterThan(550),
+        reason:
+            'the data event at t=200ms must have restarted '
+            'the countdown (otherwise fire ≈ t=500ms)',
+      );
     });
   });
 }

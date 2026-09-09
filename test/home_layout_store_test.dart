@@ -56,8 +56,7 @@ void main() {
     expect(config.layout, [const HomeLayoutEntry('tokens', 1)]);
   });
 
-  test('null layout removes the layout key but keeps show_on_launch',
-      () async {
+  test('null layout removes the layout key but keeps show_on_launch', () async {
     await store.write(
       const HomeLayoutConfig(
         showOnLaunch: false,

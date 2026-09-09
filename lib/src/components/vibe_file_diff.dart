@@ -125,10 +125,7 @@ VibeFileDiffResult? computeVibeFileDiff(VibeFileDiffInput input) {
 /// read-shaped payload — see the June-2026 `limit`/`offset` arg mixup that
 /// prompted this helper). Gating the action up front is better than
 /// opening the fullpane to its "(no reconstructable changes)" placeholder.
-bool hasReconstructableVibeFileDiff(
-  String path,
-  List<ToolCallData> allCalls,
-) {
+bool hasReconstructableVibeFileDiff(String path, List<ToolCallData> allCalls) {
   final calls = allCalls
       .where((c) => vibeToolCallTouchesPath(c, path))
       .toList();

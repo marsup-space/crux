@@ -473,8 +473,7 @@ void main() {
           style: text,
         ),
         const TextSpan(
-          text:
-              '`export CRUX_THIRD_PARTY_BIN=/Users/developer/Projects/crux/.research/.venv-semble/bin`',
+          text: '`export CRUX_THIRD_PARTY_BIN=/Users/developer/Projects/crux/.research/.venv-semble/bin`',
           style: code,
         ),
         const TextSpan(text: ',最干净}\n', style: text),
@@ -483,8 +482,7 @@ void main() {
           style: text,
         ),
         const TextSpan(
-          text:
-              '`ln -sf .../venv-semble/bin/semble ~/.crux/bin/third_party/bin/semble`',
+          text: '`ln -sf .../venv-semble/bin/semble ~/.crux/bin/third_party/bin/semble`',
           style: code,
         ),
         const TextSpan(text: ',跟着 install 走}\n', style: text),
@@ -570,14 +568,12 @@ void main() {
         const TextSpan(text: 'ask://keep guards, but add ', style: text),
         const TextSpan(text: 'localPlayer.CurrentRoom = room', style: code),
         const TextSpan(
-          text:
-              ' defensive sync before the guard in the encounter path{不删 guard, 加防御 sync}\n',
+          text: ' defensive sync before the guard in the encounter path{不删 guard, 加防御 sync}\n',
           style: text,
         ),
         // Token 3: no code spans → 1 inline span.
         const TextSpan(
-          text:
-              'ask://hold off on code change — first let me trace runtime to see which guard actually fails in your test{先调查，不动代码}',
+          text: 'ask://hold off on code change — first let me trace runtime to see which guard actually fails in your test{先调查，不动代码}',
           style: text,
         ),
       ];

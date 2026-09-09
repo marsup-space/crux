@@ -41,8 +41,7 @@ class TodoItem {
   });
 
   @override
-  String toString() =>
-      'TodoItem(${done ? 'x' : ' '}, line $lineIndex: $text)';
+  String toString() => 'TodoItem(${done ? 'x' : ' '}, line $lineIndex: $text)';
 }
 
 /// Summary of the todos in a markdown document.
@@ -57,8 +56,7 @@ class TodoSummary {
       items.where((i) => !i.done).toList(growable: false);
 
   /// Items already done (`- [x]`), in document order.
-  List<TodoItem> get done =>
-      items.where((i) => i.done).toList(growable: false);
+  List<TodoItem> get done => items.where((i) => i.done).toList(growable: false);
 
   int get openCount => open.length;
   int get totalCount => items.length;
@@ -107,11 +105,7 @@ TodoSummary parseTodos(String markdown) {
     final marker = m.group(1) ?? ' ';
     final text = (m.group(2) ?? '').trim();
     items.add(
-      TodoItem(
-        text: text,
-        done: marker.toLowerCase() == 'x',
-        lineIndex: i,
-      ),
+      TodoItem(text: text, done: marker.toLowerCase() == 'x', lineIndex: i),
     );
   }
   return TodoSummary(items);

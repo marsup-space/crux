@@ -87,7 +87,6 @@ void main() {
       expect(catalog['nvidia/nemotron-nano-9b-v2:free']!.isStealth, isFalse);
       expect(catalog['openai/gpt-4o']!.isStealth, isFalse);
     });
-
   });
 
   group('diff — expiry warnings', () {
@@ -125,8 +124,10 @@ void main() {
           ),
         ]),
       );
-      expect(plan.warnings.where((w) => w.kind != SyncWarningKind.vanished),
-          isEmpty);
+      expect(
+        plan.warnings.where((w) => w.kind != SyncWarningKind.vanished),
+        isEmpty,
+      );
       // Managed survivor still refreshed with expiry persisted.
       expect(plan.updated.single.expirationDate, '2098-12-31');
       expect(plan.removed, isEmpty);
@@ -143,21 +144,18 @@ void main() {
       expect(plan.kept.single.expirationDate, isNull);
     });
 
-    test('hand-maintained model gone upstream warns vanished, not removed',
-        () {
+    test('hand-maintained model gone upstream warns vanished, not removed', () {
       final plan = sync.diff(
         catalog: catalog,
         current: _config([
-          ModelConfig(
-            id: 'gone/model:free',
-            name: 'Gone',
-            contextSize: 8192,
-          ),
+          ModelConfig(id: 'gone/model:free', name: 'Gone', contextSize: 8192),
         ]),
       );
       expect(plan.removed, isEmpty); // never auto-remove hand-maintained
-      expect(plan.warnings.map((w) => w.kind),
-          contains(SyncWarningKind.vanished));
+      expect(
+        plan.warnings.map((w) => w.kind),
+        contains(SyncWarningKind.vanished),
+      );
     });
 
     test('managed stealth gone upstream is removed without warning', () {
@@ -203,9 +201,12 @@ void main() {
     });
 
     test('empty plan renders no-changes line', () {
-      final lines =
-          StealthSyncPlan(kept: [], updated: [], removed: [], added: [])
-              .previewLines(kEnglishStrings);
+      final lines = StealthSyncPlan(
+        kept: [],
+        updated: [],
+        removed: [],
+        added: [],
+      ).previewLines(kEnglishStrings);
       expect(lines, hasLength(1));
       expect(lines.single, contains('no changes'));
     });

@@ -50,13 +50,13 @@ Future<(List<int>, List<int>)> _pumpPanel(NoctermTester tester) async {
         onSwitchSession: switched.add,
         onDismiss: () {},
       ),
-          ),
-    );
-    // Let the async candidates loader in initState complete and the
-    // post-load setState paint (microtask flush + frame).
-    await tester.pump();
-    await tester.pump();
-    return (opened, switched);
+    ),
+  );
+  // Let the async candidates loader in initState complete and the
+  // post-load setState paint (microtask flush + frame).
+  await tester.pump();
+  await tester.pump();
+  return (opened, switched);
 }
 
 void main() {
@@ -71,8 +71,7 @@ void main() {
       });
     });
 
-    test('typing enters search mode and filters to the archived row',
-        () async {
+    test('typing enters search mode and filters to the archived row', () async {
       await testNocterm('search matches archived', (tester) async {
         await _pumpPanel(tester);
 
@@ -85,22 +84,24 @@ void main() {
       });
     });
 
-    test('enter on the filtered archived row opens via onOpenSession',
-        () async {
-      await testNocterm('field owns keys', (tester) async {
-        final (opened, switched) = await _pumpPanel(tester);
+    test(
+      'enter on the filtered archived row opens via onOpenSession',
+      () async {
+        await testNocterm('field owns keys', (tester) async {
+          final (opened, switched) = await _pumpPanel(tester);
 
-        await tester.enterText('old');
-        await tester.pump();
+          await tester.enterText('old');
+          await tester.pump();
 
-        // Filtered to the one matching row; Enter resolves through
-        // the field's interceptor to onOpenSession (archived-aware).
-        await tester.sendKey(LogicalKey.enter);
-        await tester.pump();
-        expect(opened, [2]);
-        expect(switched.length, 0);
-      });
-    });
+          // Filtered to the one matching row; Enter resolves through
+          // the field's interceptor to onOpenSession (archived-aware).
+          await tester.sendKey(LogicalKey.enter);
+          await tester.pump();
+          expect(opened, [2]);
+          expect(switched.length, 0);
+        });
+      },
+    );
 
     test('#id search finds an archived session by number', () async {
       await testNocterm('hash id search', (tester) async {

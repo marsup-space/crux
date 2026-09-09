@@ -300,7 +300,10 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
     // hover `detail`). The aggregate row excludes them so the counts
     // stay accurate; non-shell executing calls keep the old row.
     final executingShells = _executingToolCalls
-        .where((tc) => tc.name == 'bash' || tc.name == 'cmd' || tc.name == 'powershell')
+        .where(
+          (tc) =>
+              tc.name == 'bash' || tc.name == 'cmd' || tc.name == 'powershell',
+        )
         .toList();
     if (allToolNames.isNotEmpty) {
       // Render as rich-text spans so the LSP outcome glyph (`⎇`) can be
@@ -310,7 +313,9 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
       for (final e in allToolNames.entries) {
         // Skip aggregated rows whose every call has broken out into a
         // live shell row below.
-        final breakoutCount = executingShells.where((tc) => tc.name == e.key).length;
+        final breakoutCount = executingShells
+            .where((tc) => tc.name == e.key)
+            .length;
         final remaining = e.value - breakoutCount;
         if (remaining <= 0) continue;
         final completedTokens = completedToolTokens[e.key];
@@ -331,7 +336,12 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
         rowSpans.add(
           glyph == null
               ? TextSpan(text: label)
-              : TextSpan(children: [TextSpan(text: label), glyph]),
+              : TextSpan(
+                  children: [
+                    TextSpan(text: label),
+                    glyph,
+                  ],
+                ),
         );
       }
       // Live shell rows: one per executing shell call, in call order.
@@ -367,7 +377,8 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
               ...shellRows,
             ],
             active:
-                _streamingToolCalls.isNotEmpty || _executingToolCalls.isNotEmpty,
+                _streamingToolCalls.isNotEmpty ||
+                _executingToolCalls.isNotEmpty,
             mutedColor: theme.toolPrefix,
             activeColor: theme.accent,
           ),

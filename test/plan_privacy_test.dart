@@ -12,7 +12,8 @@ import 'package:crux/src/utils/strip_skill_bodies.dart';
 import 'package:nocterm/nocterm.dart' hide isEmpty, isNotEmpty;
 import 'package:test/test.dart';
 
-const planBlock = '<plan-context>\n'
+const planBlock =
+    '<plan-context>\n'
     'plan_path: PLAN.md\n'
     'mode: follow\n'
     'viewing_version: 3\n'
@@ -51,8 +52,11 @@ void main() {
       final content = 'Do it\n\nSkill: widget\nbody text\n\n$planBlock';
       final out = stripPlanContext(stripSkillBodies(content));
       expect(out.text, 'Do it');
-      expect(out.stripped, isFalse,
-          reason: 'the skill strip already removed the trailing content');
+      expect(
+        out.stripped,
+        isFalse,
+        reason: 'the skill strip already removed the trailing content',
+      );
 
       // Without skill bodies the plan strip owns the tail.
       final solo = stripPlanContext('Do it\n\n$planBlock');

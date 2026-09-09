@@ -193,9 +193,8 @@ void main() {
 
   group('IsolateChannel', () {
     test('spawn handshake completes within timeout', () async {
-      final channel = await IsolateChannel.spawn(
-        _EchoActor.new,
-      ).timeout(const Duration(seconds: 5));
+      final channel = await IsolateChannel.spawn(_EchoActor.new)
+          .timeout(const Duration(seconds: 5));
       expect(channel, isNotNull);
       await channel.shutdown();
     });

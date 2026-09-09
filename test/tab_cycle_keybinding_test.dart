@@ -85,9 +85,7 @@ void main() {
   // StreamingController needs no explicit teardown here — these tests
   // never start its timers.
 
-  InputKeyHandler buildHandler({
-    required void Function() onCycle,
-  }) {
+  InputKeyHandler buildHandler({required void Function() onCycle}) {
     final controller = TextEditingController();
     final overlayController = OverlayController(
       maxVisibleItems: 6,
@@ -110,9 +108,7 @@ void main() {
 
   test('plain Tab invokes onCycleSessions and is consumed', () {
     var cycles = 0;
-    final handler = buildHandler(
-      onCycle: () => cycles++,
-    );
+    final handler = buildHandler(onCycle: () => cycles++);
 
     final handled = handler.handleKeyEvent(
       KeyboardEvent(logicalKey: LogicalKey.tab),
@@ -159,9 +155,7 @@ void main() {
 
   test('Shift+Tab with a null previous callback falls through', () {
     var cycles = 0;
-    final handler = buildHandler(
-      onCycle: () => cycles++,
-    );
+    final handler = buildHandler(onCycle: () => cycles++);
 
     final handled = handler.handleKeyEvent(
       KeyboardEvent(
@@ -176,9 +170,7 @@ void main() {
 
   test('Ctrl+Tab does not cycle', () {
     var cycles = 0;
-    final handler = buildHandler(
-      onCycle: () => cycles++,
-    );
+    final handler = buildHandler(onCycle: () => cycles++);
 
     final handled = handler.handleKeyEvent(
       KeyboardEvent(
@@ -191,8 +183,7 @@ void main() {
     expect(cycles, 0);
   });
 
-  test('Tab with an open command overlay falls through to the picker',
-      () {
+  test('Tab with an open command overlay falls through to the picker', () {
     var cycles = 0;
     final controller = TextEditingController();
     final overlayController = OverlayController(
@@ -225,8 +216,7 @@ void main() {
     expect(cycles, 0);
   });
 
-  test('null onCycleSessions keeps Tab falling through (home quick-chat)',
-      () {
+  test('null onCycleSessions keeps Tab falling through (home quick-chat)', () {
     // No onCycleSessions callback, mirroring home's quick-chat wiring.
     final controller = TextEditingController();
     final overlayController = OverlayController(

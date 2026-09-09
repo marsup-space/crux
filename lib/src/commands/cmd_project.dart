@@ -1,6 +1,9 @@
 import '../components/ui/toast.dart';
+
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
+
 import 'command_executor.dart';
 
 Future<void> executeProject(List<String> parts, CommandContext ctx) async {
@@ -9,15 +12,23 @@ Future<void> executeProject(List<String> parts, CommandContext ctx) async {
     final target = p.normalize(p.absolute(expanded));
     final dir = Directory(target);
     if (!dir.existsSync()) {
-      ctx.showToast(ctx.strings.t('toast.dirNotFound', {'path': target}), mode: ToastMode.error);
+      ctx.showToast(
+        ctx.strings.t('toast.dirNotFound', {'path': target}),
+        mode: ToastMode.error,
+      );
     } else {
       Directory.current = dir;
       await ctx.recentProjectsStore?.add(target);
       await ctx.initSessions();
-      ctx.showToast(ctx.strings.t('toast.switchedProject', {'path': target}), mode: ToastMode.status);
+      ctx.showToast(
+        ctx.strings.t('toast.switchedProject', {'path': target}),
+        mode: ToastMode.status,
+      );
     }
   } else {
-    ctx.showToast(ctx.strings.t('toast.projectUsage', {'path': ctx.projectPath}));
+    ctx.showToast(
+      ctx.strings.t('toast.projectUsage', {'path': ctx.projectPath}),
+    );
   }
 }
 

@@ -37,10 +37,10 @@ class DelimiterSyntax extends InlineSyntax {
   DelimiterSyntax(
     String pattern, {
     this.requiresDelimiterRun = false,
-    int? startCharacter,
+    super.startCharacter,
     this.allowIntraWord = false,
     this.tags,
-  }) : super(RegExp(pattern), startCharacter: startCharacter);
+  }) : super(RegExp(pattern));
 
   @override
   InlineObject? parse(InlineParser parser, Match match) {

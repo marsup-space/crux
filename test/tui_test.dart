@@ -412,28 +412,31 @@ void main() {
       });
     });
 
-    test('highlightText applies background color to matching excerpt', () async {
-      await testNocterm('highlight', (tester) async {
-        await tester.pumpComponent(
-          Container(
-            width: 80,
-            height: 10,
-            child: HighlightedMarkdownText(
-              'The function returns early if the input buffer is empty and exits',
-              highlightText: 'returns early if the input buffer is empty',
+    test(
+      'highlightText applies background color to matching excerpt',
+      () async {
+        await testNocterm('highlight', (tester) async {
+          await tester.pumpComponent(
+            Container(
+              width: 80,
+              height: 10,
+              child: HighlightedMarkdownText(
+                'The function returns early if the input buffer is empty and exits',
+                highlightText: 'returns early if the input buffer is empty',
+              ),
             ),
-          ),
-        );
-        expect(tester.terminalState, containsText('returns early'));
-        final matches = tester.terminalState.findText('returns early');
-        expect(matches.length, greaterThan(0));
-        final cell = tester.terminalState.getCellAt(
-          matches.first.x,
-          matches.first.y,
-        );
-        expect(cell?.style.backgroundColor, isNotNull);
-      });
-    });
+          );
+          expect(tester.terminalState, containsText('returns early'));
+          final matches = tester.terminalState.findText('returns early');
+          expect(matches.length, greaterThan(0));
+          final cell = tester.terminalState.getCellAt(
+            matches.first.x,
+            matches.first.y,
+          );
+          expect(cell?.style.backgroundColor, isNotNull);
+        });
+      },
+    );
 
     test('horizontal rule renders as dashes', () async {
       await testNocterm('hr', (tester) async {

@@ -32,11 +32,9 @@ Future<void> main() async {
   ]) {
     final completer = Completer<Map<String, dynamic>>();
     pending[id] = completer;
-    process.stdin.writeln(jsonEncode({
-      'id': id,
-      'method': method,
-      if (params != null) 'params': params,
-    }));
+    process.stdin.writeln(
+      jsonEncode({'id': id, 'method': method, 'params': ?params}),
+    );
     return completer.future.timeout(const Duration(seconds: 10));
   }
 
@@ -54,7 +52,9 @@ Future<void> main() async {
     if (accountData is! Map || accountData['type'] != 'chatgpt') return;
 
     final limits = await request(3, 'account/rateLimits/read');
-    stdout.writeln('rate_limits=${limits['rateLimits'] is Map ? 'available' : 'absent'}');
+    stdout.writeln(
+      'rate_limits=${limits['rateLimits'] is Map ? 'available' : 'absent'}',
+    );
   } catch (_) {
     stdout.writeln('app_server_result=failed');
   } finally {

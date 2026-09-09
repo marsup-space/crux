@@ -71,14 +71,13 @@ void main() {
     statusFile().writeAsStringSync(
       jsonEncode({
         'pid': 1,
-        if (heartbeat != null)
-          'heartbeatAt': heartbeat.toUtc().toIso8601String(),
+        'heartbeatAt': ?heartbeat?.toUtc().toIso8601String(),
         if (reloadResult != null)
           'lastReload': {
             'at': DateTime(2026, 8, 4, 16, 53).toUtc().toIso8601String(),
             'result': reloadResult,
           },
-        if (controlPort != null) 'controlPort': controlPort,
+        'controlPort': ?controlPort,
       }),
     );
   }
@@ -403,7 +402,7 @@ void main() {
                 plugin: promptSpec(),
                 host: PluginHost(
                   projectPath: project.path,
-                  onPromptAction: (_, __) {},
+                  onPromptAction: (_, _) {},
                 ),
               ),
             ),

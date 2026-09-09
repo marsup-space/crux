@@ -1,5 +1,6 @@
 import 'dart:ffi';
 import 'dart:io';
+
 import 'package:ffi/ffi.dart';
 
 /// Windows console handle ID for STDOUT, matching the C `STD_OUTPUT_HANDLE`

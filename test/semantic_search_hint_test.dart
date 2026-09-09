@@ -40,13 +40,10 @@ void main() {
       expect(out, isNotEmpty);
     });
 
-    test(
-      'wraps the body in the `[Crux system note — prefer semantic_search]` marker',
-      () {
-        final out = renderSemanticSearchHintEmbedded();
-        expect(out, contains(semanticSearchHintMarker));
-      },
-    );
+    test('wraps the body in the `[Crux system note — prefer semantic_search]` marker', () {
+      final out = renderSemanticSearchHintEmbedded();
+      expect(out, contains(semanticSearchHintMarker));
+    });
 
     test('mentions semantic_search by name (semantic search)', () {
       final out = renderSemanticSearchHintEmbedded();
@@ -279,39 +276,36 @@ void main() {
       );
     });
 
-    test(
-      'mixed round: hint fires on the first grep, not on later read/semantic_search',
-      () {
-        // LLM called grep, read, semantic_search all in one round. Hint
-        // fires on grep; the others (including semantic_search, which is
-        // already the right tool) get no hint.
-        final results = <String, ToolResult>{
-          'a': const ToolResult(title: 'Grep: auth', output: 'matches'),
-          'b': const ToolResult(title: 'Read: auth.dart', output: 'file'),
-          'c': const ToolResult(
-            title: 'semantic_search: auth',
-            output: 'snippets',
-          ),
-        };
-        final out = injectHint(
-          results: results,
-          toolNamesInOrder: ['grep', 'read', 'semantic_search'],
-          flagBefore: false,
-        );
-        expect(
-          out.results['a']!.output,
-          contains(renderSemanticSearchHintEmbedded()),
-        );
-        expect(
-          out.results['b']!.output,
-          isNot(contains(renderSemanticSearchHintEmbedded())),
-        );
-        expect(
-          out.results['c']!.output,
-          isNot(contains(renderSemanticSearchHintEmbedded())),
-        );
-      },
-    );
+    test('mixed round: hint fires on the first grep, not on later read/semantic_search', () {
+      // LLM called grep, read, semantic_search all in one round. Hint
+      // fires on grep; the others (including semantic_search, which is
+      // already the right tool) get no hint.
+      final results = <String, ToolResult>{
+        'a': const ToolResult(title: 'Grep: auth', output: 'matches'),
+        'b': const ToolResult(title: 'Read: auth.dart', output: 'file'),
+        'c': const ToolResult(
+          title: 'semantic_search: auth',
+          output: 'snippets',
+        ),
+      };
+      final out = injectHint(
+        results: results,
+        toolNamesInOrder: ['grep', 'read', 'semantic_search'],
+        flagBefore: false,
+      );
+      expect(
+        out.results['a']!.output,
+        contains(renderSemanticSearchHintEmbedded()),
+      );
+      expect(
+        out.results['b']!.output,
+        isNot(contains(renderSemanticSearchHintEmbedded())),
+      );
+      expect(
+        out.results['c']!.output,
+        isNot(contains(renderSemanticSearchHintEmbedded())),
+      );
+    });
   });
 
   // ===========================================================================

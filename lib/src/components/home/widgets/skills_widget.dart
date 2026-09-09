@@ -120,9 +120,9 @@ class SkillsHomeWidget extends HomeWidget {
     final all = skills();
     if (all.isEmpty) {
       return homeSurface(
-        declaration: SurfaceBuilder(
-          surfaceId: 'home.skills.empty',
-        ).text('root', ctx.strings.t('home.skills.empty')).build(),
+        declaration: SurfaceBuilder(surfaceId: 'home.skills.empty')
+            .text('root', ctx.strings.t('home.skills.empty'))
+            .build(),
         strings: ctx.strings,
       );
     }

@@ -48,7 +48,8 @@ void main() {
     });
 
     test('multi-line doc maps blocks to correct source lines', () {
-      const src = '# Title\n'
+      const src =
+          '# Title\n'
           '\n'
           'A paragraph.\n'
           '\n'
@@ -82,7 +83,8 @@ void main() {
     });
 
     test('table maps to source lines', () {
-      const src = '| A | B |\n'
+      const src =
+          '| A | B |\n'
           '| - | - |\n'
           '| 1 | 2 |\n';
       final doc = dm.Markdown(enableTable: true).parse(src);

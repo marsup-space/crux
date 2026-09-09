@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:test/test.dart';
 import 'package:crux/src/tools/file_read_tracker.dart';
 
@@ -27,14 +28,21 @@ void main() {
       expect(guard, isNull, reason: 'Empty file should not trigger guard');
     });
 
-    test('whitespace-only file should NOT trigger guard on first write', () async {
-      // Create whitespace-only file (truly empty except for whitespace)
-      File(testFile).writeAsStringSync('  \n\n\t\t\n  ');
+    test(
+      'whitespace-only file should NOT trigger guard on first write',
+      () async {
+        // Create whitespace-only file (truly empty except for whitespace)
+        File(testFile).writeAsStringSync('  \n\n\t\t\n  ');
 
-      // Check guard — should pass (no guard) even without prior read
-      final guard = await tracker.checkWriteGuard(testFile);
-      expect(guard, isNull, reason: 'Whitespace-only file should not trigger guard');
-    });
+        // Check guard — should pass (no guard) even without prior read
+        final guard = await tracker.checkWriteGuard(testFile);
+        expect(
+          guard,
+          isNull,
+          reason: 'Whitespace-only file should not trigger guard',
+        );
+      },
+    );
 
     test('non-empty file SHOULD trigger guard on first write', () async {
       // Create non-empty file
