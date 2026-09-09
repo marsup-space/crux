@@ -21,6 +21,12 @@ include: package:lints/recommended.yaml
 
 analyzer:
   exclude:
+    # Git submodules are standalone packages with their own dependency graphs
+    # and analyzer configurations. Analyze them from their own package roots.
+    - dart-jieba/**
+    - nocterm/**
+    - semble-dart/**
+    - textmate_highlight/**
     # Vendored packages ship with their own dev tooling that depends on
     # packages we don't vendor (e.g. package:html). Don't analyze those.
     - third_party/**/tool/**

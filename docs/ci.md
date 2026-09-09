@@ -30,7 +30,8 @@ What it does:
 - Runs `dart pub get`
 - Runs `dart run tool/third_party.dart fetch`
 - Verifies Dart formatting
-- Runs `dart analyze --fatal-infos`
+- Runs `dart analyze --fatal-infos` for the root package (Git submodules keep
+  their own analyzer configuration and dependency graph)
 - Runs a stable smoke-test suite
 
 Formatting drift, analyzer diagnostics, and smoke-test failures all fail CI.
