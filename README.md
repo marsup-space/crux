@@ -44,3 +44,12 @@ crux
 ```
 
 Follow the first-run **Setup** prompts to connect your model, then describe what you want to build or change. Use `/plan` to plan first, `/project` to switch projects, or `/setup` to revisit configuration.
+
+## Contributing
+
+Focused bug fixes are welcome. Please discuss new features and larger changes in
+an issue before opening a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for the project scope and development checks.
+
+Please report security issues privately as described in
+[SECURITY.md](SECURITY.md).
