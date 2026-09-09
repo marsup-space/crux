@@ -18,7 +18,6 @@ Runs automatically on:
 
 - Pull requests
 - Pushes to `main`
-- Pushes to `master`
 
 It can also be started manually from the **Actions** tab (select **CI**, then
 **Run workflow**); it takes no inputs.
@@ -57,7 +56,7 @@ dart run tool/prepare_release.dart 0.15.0
 git add pubspec.yaml lib/src/version.dart README.md
 git commit -m "chore(release): v0.15.0 — <summary>"
 git tag -a v0.15.0 -m "Release v0.15.0 — <summary>"
-git push origin master
+git push origin main
 git push origin v0.15.0
 ```
 

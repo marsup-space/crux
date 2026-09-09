@@ -34,7 +34,7 @@ Run phases in order. Do not skip gates.
 
 ```bash
 git status                     # tree must be clean; commit or stash in-flight work first
-git log origin/master..HEAD    # local/remote in sync
+git log origin/main..HEAD      # local/remote in sync
 dart run tool/third_party.dart fetch
 
 # Submodule gitlinks MUST exist on their remotes — CI checkout does a
@@ -95,11 +95,11 @@ git tag -a vX.Y.Z -m "Release vX.Y.Z — <summary>"
 ### Phase 6 — Push → CI publishes
 
 ```bash
-git push origin master && git push origin vX.Y.Z
+git push origin main && git push origin vX.Y.Z
 gh run list --workflow=release.yml --limit 1   # then: gh run watch
 ```
 
-**Rehearse before tagging when the workflow changed**: a tag-triggered run uses the workflow YAML *from the tag commit* — fixing `release.yml` on master does nothing for an already-pushed tag. If `release.yml` was touched since the last release, first dry-run it via Actions → Release → Run workflow (no `publish_tag`) from master. If a tag-triggered run still fails on workflow bugs minutes after tagging and the Release is incomplete, fix master, then move the tag: `git tag -fa vX.Y.Z -m "…" && git push -f origin vX.Y.Z`. Never move a tag once the release is old enough to have consumers.
+**Rehearse before tagging when the workflow changed**: a tag-triggered run uses the workflow YAML *from the tag commit* — fixing `release.yml` on main does nothing for an already-pushed tag. If `release.yml` was touched since the last release, first dry-run it via Actions → Release → Run workflow (no `publish_tag`) from main. If a tag-triggered run still fails on workflow bugs minutes after tagging and the Release is incomplete, fix main, then move the tag: `git tag -fa vX.Y.Z -m "…" && git push -f origin vX.Y.Z`. Never move a tag once the release is old enough to have consumers.
 
 ### Phase 7 — Post-release verification
 

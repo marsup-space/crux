@@ -21,7 +21,7 @@ constant stays a plain semver string.
 With --tag, it also creates the matching annotated git tag, for example
 v0.7.1 (`git tag -a v0.7.1 -m "Release v0.7.1"`).
 Push the commit and tag to trigger GitHub release packaging:
-  git push origin master
+  git push origin main
   git push origin v0.7.1
 ''';
 
@@ -91,7 +91,7 @@ void main(List<String> args) {
   if (!createTag) {
     stdout.writeln('  git tag -a $tag -m "Release $tag"');
   }
-  stdout.writeln('  git push origin master');
+  stdout.writeln('  git push origin main');
   stdout.writeln('  git push origin $tag');
 }
 

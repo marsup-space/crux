@@ -210,7 +210,7 @@ if [[ "$DO_COMMIT" == "true" ]]; then
     git commit -m "Release $EXPECTED_VERSION"
     git tag "$EXPECTED_VERSION"
     echo "    Committed. Push with:"
-    echo "      git push origin master"
+    echo "      git push origin main"
     echo "      git push origin $EXPECTED_VERSION"
   fi
 fi
