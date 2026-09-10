@@ -8,6 +8,17 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-10
+
+677b4764
+
+### Features
+
+- **Stable 1.0 release** (`677b4764`) — promotes the RC2 feature set to the
+  first stable Crux release, including the terminal-native workbench, GenUI
+  surfaces, provider setup, Git review flow, and the open-source-ready
+  documentation and CI baseline.
+
 ## [1.0.0-rc.2] - 2026-09-07
 
 1666787e

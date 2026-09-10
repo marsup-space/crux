@@ -1,7 +1,7 @@
-# Native Windows installer. Example: & .\install.ps1 -Version 1.0.0-rc.1
+# Native Windows installer. Example: & .\install.ps1 -Version 1.0.0
 [CmdletBinding()]
 param(
-    [string]$Version = '1.0.0-rc.1',
+    [string]$Version = '1.0.0',
     [string]$InstallDirectory = (Join-Path $env:USERPROFILE '.crux\bin'),
     [switch]$NoModifyPath
 )
@@ -12,7 +12,7 @@ $architecture = $env:PROCESSOR_ARCHITEW6432
 if (-not $architecture) { $architecture = $env:PROCESSOR_ARCHITECTURE }
 if ($architecture -ne 'AMD64') { throw "No native Windows release is available for $architecture. This installer supports Windows x64." }
 $Version = $Version -replace '^v', ''
-if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw 'Version must be a release number, for example 1.0.0-rc.1.' }
+if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw 'Version must be a release number, for example 1.0.0.' }
 $InstallDirectory = [IO.Path]::GetFullPath($InstallDirectory)
 $destination = Join-Path $InstallDirectory 'crux.exe'
 $work = Join-Path ([IO.Path]::GetTempPath()) ('crux-install-' + [guid]::NewGuid().ToString('N'))
