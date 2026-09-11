@@ -11,7 +11,7 @@ Your AI coding workbench in the terminal. Rich interactions. Immediate feedback.
 - **A terminal can show more than text.** Read Mermaid diagrams alongside the conversation.
 - **Time and context. Spent where they matter.** Semantic code search, prefix caching, and parallel tools.
 
-Your model. Your workbench. DeepSeek · Kimi · MiniMax · Codex · Custom compatible APIs.
+Your model. Your workbench. DeepSeek · Kimi K2.8 Preview · MiniMax · Codex · Custom compatible APIs.
 
 [Download for macOS, Linux & Windows](https://github.com/marsup-space/crux/releases) · [中文](README.zh-CN.md)
 
@@ -20,13 +20,13 @@ Your model. Your workbench. DeepSeek · Kimi · MiniMax · Codex · Custom compa
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/marsup-space/crux/v1.0.0/install.sh | bash -s -- --version v1.0.0
+curl -fsSL https://raw.githubusercontent.com/marsup-space/crux/v1.0.1/install.sh | bash -s -- --version v1.0.1
 ```
 
 **Windows (PowerShell)** — download [install.ps1](install.ps1), then run:
 
 ```powershell
-& .\install.ps1 -Version 1.0.0
+& .\install.ps1 -Version 1.0.1
 ```
 
 Prebuilt binaries; no Dart SDK required. Open a new terminal after installation if `crux` is not found.

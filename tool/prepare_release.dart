@@ -10,7 +10,8 @@ Examples:
 This updates the version in:
   - pubspec.yaml            (single source of truth)
   - lib/src/version.dart    (generated from pubspec.yaml)
-  - README.md, when matching version text exists
+  - README.md / README.zh-CN.md install commands
+  - install.sh examples and install.ps1's default version
 
 The compiled `crux --version` output reads from the
 generated `lib/src/version.dart`, so the runtime version
@@ -49,13 +50,16 @@ void main(List<String> args) {
 
   final tag = 'v$version';
   final root = _repoRoot();
-  final files = [
-    File('${root.path}/pubspec.yaml'),
-    File('${root.path}/lib/src/version.dart'),
+  final pubspec = File('${root.path}/pubspec.yaml');
+  final versionDart = File('${root.path}/lib/src/version.dart');
+  final readmes = [
     File('${root.path}/README.md'),
+    File('${root.path}/README.zh-CN.md'),
   ];
+  final installSh = File('${root.path}/install.sh');
+  final installPs1 = File('${root.path}/install.ps1');
 
-  _replace(files[0], [
+  _replace(pubspec, [
     (RegExp(r'^version:\s+.+$', multiLine: true), 'version: $version'),
   ]);
   // Regenerate the compile-time version constant from the
@@ -64,15 +68,38 @@ void main(List<String> args) {
   // (see bin/crux.dart), so this file stays a plain semver
   // string — matching what pubspec.yaml declares, so `pub`
   // and `crux --version` can never disagree.
-  files[1].writeAsStringSync(_versionDartContents(version));
-  _replace(files[2], [
+  versionDart.writeAsStringSync(_versionDartContents(version));
+  for (final readme in readmes) {
+    _replace(readme, [
+      (
+        RegExp(
+          r'raw\.githubusercontent\.com/marsup-space/crux/v[0-9A-Za-z.+-]+/install\.sh',
+        ),
+        'raw.githubusercontent.com/marsup-space/crux/$tag/install.sh',
+      ),
+      (RegExp(r'--version v[0-9A-Za-z.+-]+'), '--version $tag'),
+      (RegExp(r'-Version [0-9A-Za-z.+-]+'), '-Version $version'),
+    ]);
     // The narrative "Current version" / "当前版本" lines in
     // the README are documentation, not code — they describe
     // the project state for a human reader. The `CRUX_VERSION`
     // example IS code (it's what users put in their CI env),
     // so it must stay in sync with the tag, which is `v`-prefixed.
-    (RegExp(r'CRUX_VERSION=v[0-9A-Za-z.+-]+'), 'CRUX_VERSION=$tag'),
-  ], requireAll: false);
+    _replace(readme, [
+      (RegExp(r'CRUX_VERSION=v[0-9A-Za-z.+-]+'), 'CRUX_VERSION=$tag'),
+    ], requireAll: false);
+  }
+  _replace(installSh, [
+    (RegExp(r'--version v[0-9A-Za-z.+-]+'), '--version $tag'),
+    (RegExp(r'\(e\.g\.?[,]? v[0-9A-Za-z.+-]+\)'), '(e.g. $tag)'),
+  ]);
+  _replace(installPs1, [
+    (RegExp(r'-Version [0-9A-Za-z.+-]+'), '-Version $version'),
+    (
+      RegExp(r"\[string\]\$Version = '[0-9A-Za-z.+-]+'"),
+      "[string]\$Version = '$version'",
+    ),
+  ]);
 
   stdout.writeln('Prepared Crux $tag.');
 
@@ -85,8 +112,12 @@ void main(List<String> args) {
 
   stdout.writeln('');
   stdout.writeln('Next steps:');
-  stdout.writeln('  git diff -- pubspec.yaml lib/src/version.dart README.md');
-  stdout.writeln('  git add pubspec.yaml lib/src/version.dart README.md');
+  stdout.writeln(
+    '  git diff -- pubspec.yaml lib/src/version.dart README*.md install.sh install.ps1',
+  );
+  stdout.writeln(
+    '  git add pubspec.yaml lib/src/version.dart README.md README.zh-CN.md install.sh install.ps1',
+  );
   stdout.writeln('  git commit -m "Release $tag"');
   if (!createTag) {
     stdout.writeln('  git tag -a $tag -m "Release $tag"');

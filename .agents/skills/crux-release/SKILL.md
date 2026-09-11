@@ -11,7 +11,7 @@ Single source of truth for cutting a Crux release. Repo root: the project contai
 
 | Tool | Role |
 |------|------|
-| `tool/prepare_release.dart <X.Y.Z>` | Bumps `pubspec.yaml`, regenerates `lib/src/version.dart`, syncs README `CRUX_VERSION=` lines. `--tag` creates an annotated tag, but prefer the manual Phase 5 flow. Does NOT touch CHANGELOG or git. |
+| `tool/prepare_release.dart <X.Y.Z>` | The only version-bump command: updates `pubspec.yaml`, regenerates `lib/src/version.dart`, and synchronizes version-pinned README install commands plus `install.sh` / `install.ps1` examples and defaults. `--tag` creates an annotated tag, but prefer the manual Phase 5 flow. Does NOT touch CHANGELOG or git. |
 | `tool/build_release.dart [--target <os-arch>]` | Builds `build/releases/crux-<target>/` bundle. `--target` must equal the host platform (`dart build cli` cannot cross-compile). |
 | `release.sh <X.Y.Z>` | Local-only: bump + build + install to `~/.crux/bin`. Not part of the GitHub release path. |
 | `.github/workflows/ci.yml` | PR/push gate: analyze + smoke tests on Ubuntu. |
@@ -72,7 +72,17 @@ Rewrite `## [Unreleased]` → `## [X.Y.Z] - <today>` + SHA line per the conventi
 dart run tool/prepare_release.dart X.Y.Z
 ```
 
-Verify: `pubspec.yaml` version, `lib/src/version.dart`, README `CRUX_VERSION=` lines all show X.Y.Z.
+Do not hand-edit individual version strings. Verify the complete release surface
+immediately after running the command:
+
+```bash
+rg -n "v?X\.Y\.Z" pubspec.yaml lib/src/version.dart README.md README.zh-CN.md install.sh install.ps1
+rg -n "v[0-9]+\.[0-9]+\.[0-9]+" README.md README.zh-CN.md install.sh install.ps1
+```
+
+Every user-facing pinned command and installer default must name `X.Y.Z`; the
+second command must have no stale version in its output. This is a release gate,
+not a cosmetic documentation review.
 
 ### Phase 4 — Local build verification (mandatory; CI publishes without a draft)
 
@@ -108,6 +118,14 @@ gh release view vX.Y.Z --repo marsup-space/crux          # all platform zips pre
 ```
 
 Then smoke-test the real installer in a clean environment (`curl … install.sh | bash -s -- --version vX.Y.Z`) and open a fresh empty `## [Unreleased]` section at the top of CHANGELOG.
+
+Also fetch the tagged README and confirm its pinned installer command names the
+tag that was released. A main-branch README is not evidence for a tag-based
+installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/marsup-space/crux/vX.Y.Z/README.md | rg 'install\.sh.*--version vX\.Y\.Z'
+```
 
 ### Phase 8 — Update the local install
 
