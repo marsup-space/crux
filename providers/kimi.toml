@@ -6,7 +6,7 @@
 # platform from Moonshot (https://www.kimi.com/code/). Crux
 # talks to it as a regular OpenAI-compatible endpoint with
 # Bearer auth; the KimiProvider class handles the two Kimi-
-# specific wire-format quirks (K3 model-ID remap, K2.7 binary
+# specific wire-format quirks (K3 model-ID remap, K2.7 HighSpeed binary
 # thinking — see providers/kimi_provider.dart's class doc).
 #
 # The custom `type = "kimi"` value is registered in
@@ -18,8 +18,8 @@
 #     live quota from `${endpoint_url}/usages`;
 #   - remaps the two K3 Crux-side IDs (k3-1m, k3-256k) to the
 #     single upstream `k3` model;
-#   - drops the `reasoning_effort` field on K2.7 models
-#     (`kimi-for-coding` and `kimi-for-coding-highspeed`)
+#   - drops the `reasoning_effort` field only on K2.7 HighSpeed
+#     (`kimi-for-coding-highspeed`)
 #     because K2.7 is documented as a binary Thinking:ON/OFF
 #     knob — see https://www.kimi.com/code/docs/kimi-code/models.
 #
@@ -33,23 +33,23 @@
 # grants is determined by the user's plan tier, not the
 # request — there is no `context_size` field on the wire.
 #
-# K2.7 Code comes in two variants: `kimi-for-coding` (standard)
-# and `kimi-for-coding-highspeed` (6x speed, 3x cost). Both
-# share the same 256K context window and the same binary
-# thinking toggle. Allegretto+ is required for the highspeed
-# variant.
+# `kimi-for-coding` now serves K2.8 Preview (1M context), with
+# `low` / `high` / `max` reasoning effort. K2.7 remains available
+# only as `kimi-for-coding-highspeed` (6x speed, 3x cost), with a
+# 256K context window and binary thinking. Allegretto+ is required
+# for the highspeed variant.
 #
 # Reasoning effort
 # ----------------
-# Per the Kimi docs, K3 accepts `reasoning_effort` of `low`,
-# `high`, and `max` (default `max`); unknown values 400. Crux's
+# Per the Kimi docs, K3 and K2.8 Preview accept `reasoning_effort`
+# of `low`, `high`, and `max`; unknown values 400. Crux's
 # five-level internal scale is mapped onto K3's three levels:
 # `normal` is renamed to `high` on the wire (K3 has no middle
 # tier between low and high), and `off` disables thinking
 # (`thinking.type: disabled`). The picker shows
 # [off, low, high, max].
 #
-# K2.7 has no reasoning-effort knob at all — it's a binary
+# K2.7 HighSpeed has no reasoning-effort knob at all — it's a binary
 # on/off "Thinking" toggle. We expose `off` (raw) and rename
 # `max` → `on` so the user sees `[off, on]` and the picker
 # cycles between the two states. The KimiProvider drops
@@ -59,7 +59,7 @@
 #
 # Temperature / top_p
 # -------------------
-# Kimi Code models (K3 and the K2.7 Code family) are documented
+# Kimi Code models (K3, K2.8 Preview, and K2.7 HighSpeed) are documented
 # as having `temperature` **fixed at 1.0** — the API rejects
 # any other value with
 # `400 invalid temperature: only 1 is allowed for this model`.
@@ -99,7 +99,7 @@ id = "k3-1m"
 name = "Kimi K3 (1M context)"
 context_size = 1048576
 image_support = true
-reasoning_effort = "max"
+reasoning_effort = "high"
 thinking = true
 temperature = 0
 stream_lerp = true
@@ -115,7 +115,7 @@ id = "k3-256k"
 name = "Kimi K3 (256K context)"
 context_size = 262144
 image_support = true
-reasoning_effort = "max"
+reasoning_effort = "high"
 thinking = true
 temperature = 0
 stream_lerp = true
@@ -125,23 +125,14 @@ stream_lerp = true
 [models.reasoning_labels]
 normal = "high"
 
-# === K2.7 Code — binary on/off thinking ===
-# Two wire-distinct models with the same UX shape. Both have
-# a 256K context window. Per the Kimi docs, K2.7 requires
-# Thinking:ON to actually invoke the K2.7 model — sending
-# `thinking.type: disabled` routes the request to the older
-# K2.6 model — but the toggle is still exposed so users can
-# see and pick their state.
-#
-# We rename the internal `max` → display `on` so the picker
-# reads `[off, on]` (binary) instead of `[off, max]`. The
-# KimiProvider drops the `reasoning_effort` field on the
-# wire, so the server only sees `thinking.type: enabled` (or
-# `disabled`) regardless of which label the user picks.
+# === K2.8 Preview — standard Kimi Code ===
+# K2.8 Preview is served through the existing `kimi-for-coding`
+# ID, so existing Crux sessions automatically use it. It supports
+# 1M context and the same three reasoning effort levels as K3.
 [[models]]
 id = "kimi-for-coding"
-name = "Kimi K2.7 Code"
-context_size = 262144
+name = "Kimi K2.8 Preview"
+context_size = 1048576
 image_support = true
 max_tokens = 32768
 reasoning_effort = "max"
@@ -150,10 +141,12 @@ temperature = 0
 stream_lerp = true
 
 [models.reasoning_labels]
-low = "disabled"
-normal = "disabled"
-high = "disabled"
-max = "on"
+normal = "high"
+
+# === K2.7 Code HighSpeed — binary on/off thinking ===
+# K2.7 requires Thinking:ON to invoke K2.7; disabling it routes to
+# K2.8 Preview without thinking. Keep the binary picker so users see
+# the actual protocol shape.
 
 [[models]]
 id = "kimi-for-coding-highspeed"

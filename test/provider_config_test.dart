@@ -1168,9 +1168,9 @@ context_size = 8192
         expect(kimi.type, 'kimi');
         expect(kimi.wireFamily, WireFamily.openaiCompatible);
         expect(providerFor(kimi), isA<KimiProvider>());
-        // K3 exposes two context variants that both map to the
-        // same upstream model; K2.7 has two speed variants that
-        // are distinct upstream model IDs. All four must load.
+        // K3 exposes two context variants; K2.8 Preview retains
+        // `kimi-for-coding` and K2.7 HighSpeed keeps its distinct
+        // upstream ID. All four must load.
         final ids = kimi.models.map((m) => m.id).toSet();
         expect(
           ids,
@@ -1181,6 +1181,10 @@ context_size = 8192
             'kimi-for-coding-highspeed',
           ]),
         );
+        final k28 = kimi.modelById('kimi-for-coding')!;
+        expect(k28.name, 'Kimi K2.8 Preview');
+        expect(k28.contextSize, 1048576);
+        expect(k28.reasoningLabels['normal'], 'high');
         // All four models opt into `stream_lerp = true` — Kimi
         // streams very chatty chunks and the chat executor's
         // 60Hz drain timer is the difference between

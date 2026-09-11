@@ -26,18 +26,19 @@ import 'openai_compatible_provider.dart';
 ///    decides the server-side context cap. We translate both
 ///    Crux-side IDs to `k3` on the wire.
 ///
-/// 2. **K2.7 binary thinking.** The K2.7 Code family
-///    (`kimi-for-coding` and `kimi-for-coding-highspeed`) is
+/// 2. **K2.7 HighSpeed binary thinking.** Only
+///    `kimi-for-coding-highspeed` remains on K2.7 and is
 ///    documented as a binary `thinking.type: enabled/disabled` knob
 ///    (see [Kimi's model docs](https://www.kimi.com/code/docs/kimi-code/models)).
 ///    The upstream kosong SDK used by kimi-cli never sends
 ///    `reasoning_effort` for these models — it only flips
 ///    `thinking.type`. We drop any `reasoning_effort` field the
-///    generic OpenAI-compatible builder would emit, so a future
-///    tightening of the Kimi API can't 400 on us.
+///    generic OpenAI-compatible builder would emit. The standard
+///    `kimi-for-coding` ID now serves K2.8 Preview, which supports
+///    `low` / `high` / `max`, so its effort is kept on the wire.
 ///
 /// 3. **`temperature` is fixed at 1.0** for every Kimi Code model
-///    (K3 and the K2.7 Code family). The Kimi API rejects any
+///    (K3, K2.8 Preview, and K2.7 HighSpeed). The Kimi API rejects any
 ///    other value with
 ///    `400 invalid temperature: only 1 is allowed for this model`.
 ///    Crux's default sampling is `temperature = 0.0` (deterministic
@@ -51,8 +52,8 @@ import 'openai_compatible_provider.dart';
 ///    provider config so users aren't surprised by the
 ///    /temperature command having no effect.
 ///
-/// K3 (the flagship) accepts `reasoning_effort` of `low`,
-/// `high`, and `max` (default `max`; unknown values 400).
+/// K3 and K2.8 Preview accept `reasoning_effort` of `low`,
+/// `high`, and `max` (defaults: K3 `high`, K2.8 `max`; unknown values 400).
 /// Crux's five-level internal scale is mapped onto K3's
 /// three levels by [mapEffort]: `normal` collapses onto
 /// `high` (K3 has no middle tier), and `low` passes through
@@ -93,12 +94,12 @@ class KimiProvider extends OpenAICompatibleProvider with CodingPlanProvider {
   /// granted context window.
   static const Set<String> _k3CruxIds = {'k3-1m', 'k3-256k'};
 
-  /// Upstream model IDs that are K2.7 (binary thinking, no
-  /// `reasoning_effort` field on the wire).
-  static bool _isK27(String upstreamId) =>
-      upstreamId.startsWith('kimi-for-coding');
+  /// The K2.7 HighSpeed model is binary-thinking only. The standard
+  /// `kimi-for-coding` ID was upgraded server-side to K2.8 Preview.
+  static bool _isK27HighSpeed(String upstreamId) =>
+      upstreamId == 'kimi-for-coding-highspeed';
 
-  /// Kimi's recommended sampling defaults for the K2.7 Code / K3
+  /// Kimi's recommended sampling defaults for K3, K2.8 Preview, and K2.7 HighSpeed.
   /// family. The platform's [model parameter reference](https://platform.kimi.ai/docs/api/models-overview)
   /// documents `temperature = 1.0` as fixed for every Kimi Code
   /// model and pairs it with `top_p = 0.95` (the API silently
@@ -164,11 +165,11 @@ class KimiProvider extends OpenAICompatibleProvider with CodingPlanProvider {
       userId: userId,
     );
 
-    // K2.7 is a binary Thinking:ON/OFF knob. The kimi-cli kosong
+    // K2.7 HighSpeed is a binary Thinking:ON/OFF knob. The kimi-cli kosong
     // SDK never sends `reasoning_effort` for these models — strip
     // it from our generic OpenAI-compatible body so we match the
     // reference implementation's wire shape.
-    if (_isK27(upstreamId)) {
+    if (_isK27HighSpeed(upstreamId)) {
       body.remove('reasoning_effort');
     }
 

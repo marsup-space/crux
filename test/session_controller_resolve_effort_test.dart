@@ -31,11 +31,10 @@ void main() {
   late SessionController controller;
 
   /// Set up a `kimi` provider matching the production TOML —
-  /// K3 exposes the full `[off, low, high, max]` scale
-  /// (`normal` is renamed to `high` on the wire because K3
-  /// has no middle tier), K2.7 exposes `[off, on]` (max
-  /// renamed to "on" + low/normal/high hidden). The
-  /// `reasoning_effort` defaults are `max` for both.
+  /// K3 and K2.8 Preview expose the full `[off, low, high, max]`
+  /// scale (`normal` is renamed to `high` on the wire because no
+  /// middle tier exists). The default is `high` for K3 and `max`
+  /// for K2.8 Preview.
   Future<void> installKimiProvider() async {
     await File('${tempDir.path}/kimi.toml').writeAsString('''
 type = "kimi"
@@ -45,7 +44,7 @@ endpoint_url = "https://api.kimi.com/coding/v1"
 id = "k3-1m"
 name = "Kimi K3 (1M context)"
 context_size = 1048576
-reasoning_effort = "max"
+reasoning_effort = "high"
 thinking = true
 
 [models.reasoning_labels]
@@ -53,16 +52,13 @@ normal = "high"
 
 [[models]]
 id = "kimi-for-coding"
-name = "Kimi K2.7 Code"
-context_size = 262144
+name = "Kimi K2.8 Preview"
+context_size = 1048576
 reasoning_effort = "max"
 thinking = true
 
 [models.reasoning_labels]
-low = "disabled"
-normal = "disabled"
-high = "disabled"
-max = "on"
+normal = "high"
 ''');
     await providerService.reload();
   }
@@ -193,22 +189,14 @@ reasoning_effort = "high"
     );
   });
 
-  test('Kimi K2.7: stored "normal" falls back to "max" (which displays '
-      'as "on")', () async {
+  test('Kimi K2.8 Preview: stored "normal" remains supported', () async {
     await installKimiProvider();
     final id = await createAndLoad('kimi/kimi-for-coding');
     final session = controller.findSession(id)!;
     session.reasoningEffort = 'normal';
     await store.update(id, reasoningEffort: 'normal');
     final rt = controller.runtime(id);
-    // Internal value stays "max"; the picker maps it to
-    // "on" via reasoning_labels at display time. The wire
-    // request is built from the internal value, so the
-    // server sees "max" (which K2.7 accepts).
-    expect(rt.reasoningEffort, 'max');
-    // The picker is filtered: the chip is rendered from
-    // reasoningPresetsFor, which is the source of truth for
-    // what the user can see + pick.
+    expect(rt.reasoningEffort, 'normal');
     final presets = providerService
         .llmProviderByName('kimi')!
         .reasoningPresetsFor(
@@ -221,25 +209,36 @@ reasoning_effort = "high"
               .modelById('kimi-for-coding')!
               .reasoningLabels,
         );
-    expect(presets.map((p) => p.internalValue).toList(), ['off', 'max']);
-    expect(presets.map((p) => p.displayLabel).toList(), ['off', 'on']);
+    expect(presets.map((p) => p.internalValue).toList(), [
+      'off',
+      'low',
+      'normal',
+      'high',
+      'max',
+    ]);
+    expect(presets.map((p) => p.displayLabel).toList(), [
+      'off',
+      'low',
+      'high',
+      'high',
+      'max',
+    ]);
   });
 
   test('stored value in preset list passes through even on Kimi (case 1, '
       'Kimi variant)', () async {
     await installKimiProvider();
     // Session was created on Kimi K3, so the stored effort
-    // was already "max" (model's TOML default). After
-    // loading, the runtime should keep "max" — no fallback
+    // was already "high" (model's TOML default). After
+    // loading, the runtime should keep "high" — no fallback
     // needed.
     final id = await createAndLoad('kimi/k3-1m');
     final rt = controller.runtime(id);
     expect(
       rt.reasoningEffort,
-      'max',
+      'high',
       reason:
-          'stored value already matches the model default — '
-          'no fallback needed',
+          'stored value already matches the model default — no fallback needed',
     );
   });
 

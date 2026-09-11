@@ -283,9 +283,9 @@ void main() {
     // job is two model-ID-level adjustments:
     //   - map the two Crux-side K3 IDs (k3-1m, k3-256k) to the
     //     single upstream `k3` model;
-    //   - drop the `reasoning_effort` field on K2.7 models
-    //     (kimi-for-coding, kimi-for-coding-highspeed)
-    //     because K2.7 is a binary Thinking:ON/OFF knob.
+    //   - keep `reasoning_effort` for K2.8 Preview
+    //     (`kimi-for-coding`) but drop it on K2.7 HighSpeed
+    //     (`kimi-for-coding-highspeed`), which is binary-thinking.
     final provider = KimiProvider();
 
     test('remaps k3-1m to upstream "k3" on the wire', () {
@@ -314,9 +314,8 @@ void main() {
       expect(body['model'], 'k3');
     });
 
-    test('passes K2.7 model IDs through unchanged', () {
-      // K2.7 model IDs (`kimi-for-coding`, `kimi-for-coding-
-      // highspeed`) are the actual upstream names; the wire
+    test('passes K2.8 and K2.7 HighSpeed model IDs through unchanged', () {
+      // The K2.8 Preview and K2.7 HighSpeed IDs are upstream names; the wire
       // body must not remap them.
       for (final id in const ['kimi-for-coding', 'kimi-for-coding-highspeed']) {
         final body = provider.buildRequestBody(
@@ -328,7 +327,7 @@ void main() {
         expect(
           body['model'],
           id,
-          reason: 'K2.7 model IDs are upstream-facing; no remap',
+          reason: 'Kimi model IDs are upstream-facing; no remap',
         );
       }
     });
@@ -360,50 +359,33 @@ void main() {
       }
     });
 
-    test('K2.7: strips reasoning_effort (binary Thinking:ON/OFF only)', () {
-      // The kimi-cli kosong SDK never sends `reasoning_effort`
-      // for K2.7 — only `thinking.type: enabled/disabled`. We
-      // mirror that wire shape so a future API tightening
-      // can't 400 on us for the spurious field.
-      for (final id in const ['kimi-for-coding', 'kimi-for-coding-highspeed']) {
-        final body = provider.buildRequestBody(
-          id,
-          userMsg,
-          thinkingMode: 'enabled',
-          reasoningEffort: 'max',
-        );
-        expect(
-          body.containsKey('reasoning_effort'),
-          isFalse,
-          reason:
-              'K2.7 must not send reasoning_effort; '
-              'only $id\'s thinking.type matters',
-        );
-        expect(body['thinking'], {
-          'type': 'enabled',
-        }, reason: 'thinking.type stays enabled for K2.7');
-      }
+    test('K2.8 Preview keeps its supported reasoning_effort', () {
+      final body = provider.buildRequestBody(
+        'kimi-for-coding',
+        userMsg,
+        thinkingMode: 'enabled',
+        reasoningEffort: 'low',
+      );
+      expect(body['reasoning_effort'], 'low');
+      expect(body['thinking'], {'type': 'enabled'});
     });
 
-    test(
-      'K2.7 thinking off sends thinking.type=disabled, no reasoning_effort',
-      () {
-        // Belt-and-braces: even when the user has the picker on
-        // "off" and the runtime passes `reasoning_effort: max`,
-        // the wire body for K2.7 should be a pure
-        // thinking.type=disabled with no effort field. This is
-        // what makes K2.7's picker actually binary at the
-        // protocol level.
-        final body = provider.buildRequestBody(
-          'kimi-for-coding',
-          userMsg,
-          thinkingMode: 'disabled',
-          reasoningEffort: 'max',
-        );
-        expect(body['thinking'], {'type': 'disabled'});
-        expect(body.containsKey('reasoning_effort'), isFalse);
-      },
-    );
+    test('K2.7 HighSpeed thinking off sends thinking.type=disabled, no reasoning_effort', () {
+      // Belt-and-braces: even when the user has the picker on
+      // "off" and the runtime passes `reasoning_effort: max`,
+      // the wire body for K2.7 should be a pure
+      // thinking.type=disabled with no effort field. This is
+      // what makes K2.7's picker actually binary at the
+      // protocol level.
+      final body = provider.buildRequestBody(
+        'kimi-for-coding-highspeed',
+        userMsg,
+        thinkingMode: 'disabled',
+        reasoningEffort: 'max',
+      );
+      expect(body['thinking'], {'type': 'disabled'});
+      expect(body.containsKey('reasoning_effort'), isFalse);
+    });
 
     test(
       'all four Kimi models opt into stream_lerp for smoother rendering',
