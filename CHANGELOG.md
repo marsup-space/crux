@@ -8,6 +8,24 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-11
+
+723e2cfa
+
+### Features
+
+- **Kimi K2.8 Preview** (`e7883474`) — update the standard
+  `kimi-for-coding` entry in place, so existing sessions automatically
+  use K2.8 Preview with its 1M context window and low/high/max thinking
+  levels; retain K2.7's binary-thinking behavior only for HighSpeed.
+
+### Fixes
+
+- **Release installer version sync** (`723e2cfa`) — make the release
+  preparation command update both READMEs and the Bash/PowerShell installer
+  examples and defaults, preventing a release tag from publishing stale
+  install commands.
+
 ## [1.0.0] - 2026-09-10
 
 677b4764
