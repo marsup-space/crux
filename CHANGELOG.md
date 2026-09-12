@@ -6,7 +6,15 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
-## [Unreleased]
+## [1.0.2] - 2026-09-12
+
+ff4dd008
+
+### Fixes
+
+- **Windows Semble runtime** (`ff4dd008`) — export the Tree-sitter and Dart
+  FFI symbols from the MinGW grammar DLL, and make the Windows release build
+  load that DLL and parse real Dart and Python code before packaging.
 
 ## [1.0.1] - 2026-09-11
 
