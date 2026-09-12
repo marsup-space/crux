@@ -152,6 +152,9 @@ jobs:
           cd semble-dart
           dart run tool/build_native.dart --target "$TARGET"
           test -f "third_party/bin/${TARGET}/libcrux_grammars.dll"
+          # A DLL can exist while omitting the symbols Dart FFI needs. Load the
+          # release artifact and parse real Dart/Python code before packaging.
+          dart test test/treesitter_bindings_test.dart test/chunker_test.dart
 
       # CI runners start with an empty HuggingFace cache, and
       # `build_release.dart` only warns when the embedding model is
