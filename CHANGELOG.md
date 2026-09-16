@@ -6,7 +6,22 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
-## [Unreleased]
+## [1.1.0] - 2026-09-16
+
+aafc70d, fc3917e, 2fa8937
+
+### Features
+
+- **Subagent status bar** (`aafc70d`) — label Workers and Advisor groups,
+  render Worker chips as names only, and keep compact chips flowing horizontally
+  before wrapping on narrow layouts.
+- **Worker constellation names** (`fc3917e`) — automatically assign the first
+  available IAU constellation name when creating or forking an unnamed Worker,
+  while retaining explicit naming and duplicate-name protection.
+- **Worker domain constraints and v35 migration** (`2fa8937`) — add Worker
+  domains to runtime, tools, prompts, and persistence; enforce domain-aware
+  delegation, preserve domains across forks, and migrate existing Workers to
+  the default `general` domain.
 
 ## [1.0.2] - 2026-09-12
 
