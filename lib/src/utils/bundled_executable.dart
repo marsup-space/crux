@@ -21,6 +21,23 @@ String currentRuntimeTarget({Abi? abi}) {
   };
 }
 
+/// The targets `.github/workflows/release.yml` actually publishes.
+///
+/// This is the single Dart-side home for that fact. Three consumers have to
+/// agree on it — `/upgrade`, `install.sh`, and the local release builder — and
+/// each used to carry its own copy, which is how one of them ends up listing a
+/// platform no asset exists for.
+///
+/// Deliberately narrower than [currentRuntimeTarget], which answers "what
+/// machine is this". This answers "what do we ship": a builder can still produce
+/// a local bundle for a target outside this set (see `tool/build_release.dart`),
+/// but it cannot be distributed or installed.
+const Set<String> kPublishedCruxTargets = {
+  'macos-arm64',
+  'linux-x64',
+  'windows-x64',
+};
+
 Future<String> resolveBundledExecutable(
   String executableName, {
   String? executablePath,

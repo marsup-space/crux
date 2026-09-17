@@ -138,11 +138,17 @@ if [ -z "$binary_path" ]; then
     # Only these three are published by .github/workflows/release.yml. Gate here
     # so an unpublished target fails with something actionable instead of a
     # confusing 404 from the asset download below.
-    case "${os}-${arch}" in
-        macos-arm64|linux-x64|windows-x64) ;;
+    #
+    # The Dart-side authority is kPublishedCruxTargets in
+    # lib/src/utils/bundled_executable.dart, and test/published_targets_test.dart
+    # fails when any of these lists drifts from the workflow matrix. Held in one
+    # variable so the gate and the message cannot disagree with each other.
+    published_targets="macos-arm64 linux-x64 windows-x64"
+    case " ${published_targets} " in
+        *" ${os}-${arch} "*) ;;
         *)
             fail "no published build for ${os}-${arch}.
-       Published targets: macos-arm64, linux-x64, windows-x64.
+       Published targets: ${published_targets// /, }.
        (Apple Silicon under Rosetta is already handled — it installs the arm64 build.)
        To build it yourself: dart pub get && dart run tool/build_release.dart --target ${os}-${arch}"
             ;;

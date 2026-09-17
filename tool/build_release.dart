@@ -4,6 +4,11 @@ import 'package:path/path.dart' as p;
 
 import 'package:crux/src/utils/bundled_executable.dart';
 
+/// Every target this builder can produce, and the OS each one builds for.
+///
+/// Not the published set — see [kPublishedCruxTargets] for what actually ships.
+/// The two differ on purpose: macOS on Intel and Linux on ARM are buildable so
+/// those machines can self-host, but CI publishes only the three common ones.
 const _targetSettings = <String, ({String os})>{
   'macos-arm64': (os: 'macos'),
   'macos-x64': (os: 'macos'),
@@ -46,6 +51,31 @@ Future<void> main(List<String> args) async {
     stderr.writeln('Run this target on a compatible host to build $target.');
     exitCode = 64;
     return;
+  }
+
+  // `_targetSettings` below covers every target this builder *can* produce; the
+  // published set is narrower. Building an unpublished one is legitimate — the
+  // bundle runs fine from `build/releases/` — so locally this is a warning. In
+  // CI it is an error, because the release matrix has to be exactly the
+  // published set: if the two drift, a platform silently stops being shipped.
+  if (!kPublishedCruxTargets.contains(target)) {
+    final published = (kPublishedCruxTargets.toList()..sort()).join(', ');
+    stderr.writeln(
+      'Target $target is not published by .github/workflows/release.yml '
+      '($published).',
+    );
+    if (Platform.environment['CI'] == 'true') {
+      stderr.writeln(
+        'CI must build exactly the published targets: keep the release matrix '
+        'and kPublishedCruxTargets in step.',
+      );
+      exitCode = 64;
+      return;
+    }
+    stderr.writeln(
+      'The bundle will work locally, but install.sh and /upgrade refuse this '
+      'target because no release asset exists to download.',
+    );
   }
 
   final root = p.normalize(

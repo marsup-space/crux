@@ -160,7 +160,7 @@ jobs:
       # `build_release.dart` only warns when the embedding model is
       # missing — without this step the published bundle silently
       # ships without the semantic-search model. Download
-      # `minishlab/potion-code-16M` before building (all 5 matrix
+      # `minishlab/potion-code-16M` before building (all three matrix
       # targets need it). Cached by model name across runs; bump the
       # key suffix to force a re-fetch.
       - name: Cache embedding model

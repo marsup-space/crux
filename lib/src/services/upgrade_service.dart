@@ -23,23 +23,13 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 
-import '../utils/bundled_executable.dart' show currentRuntimeTarget;
+import '../utils/bundled_executable.dart'
+    show currentRuntimeTarget, kPublishedCruxTargets;
 import '../utils/github_release_transport.dart';
 import '../utils/system_proxy.dart';
 
 /// GitHub coordinates the release assets are published under.
 const String kCruxReleaseRepo = 'marsup-space/crux';
-
-/// The targets `.github/workflows/release.yml` actually publishes.
-///
-/// Kept in step with the workflow's matrix. Both this and `install.sh` refuse an
-/// unpublished target with an actionable message instead of requesting an asset
-/// that doesn't exist and surfacing a bare download failure.
-const Set<String> kPublishedCruxTargets = {
-  'macos-arm64',
-  'linux-x64',
-  'windows-x64',
-};
 
 /// Why an upgrade stopped, or that it succeeded.
 ///
