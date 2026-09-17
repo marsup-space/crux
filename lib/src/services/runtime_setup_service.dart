@@ -8,6 +8,8 @@ import 'package:toml/toml.dart';
 import '../tools/semble_warmup.dart';
 import '../utils/bundled_directory.dart';
 import '../utils/bundled_executable.dart';
+import '../utils/github_release_transport.dart';
+import '../utils/system_proxy.dart';
 import '../utils/user_data_directory.dart';
 import 'semble_client.dart';
 
@@ -52,11 +54,28 @@ class RuntimeSetupService {
   static const _probeBytes = 256 * 1024;
 
   final List<String>? sembleEndpoints;
+
+  /// Mirrors tried when `github.com` is unreachable, overriding the
+  /// `CRUX_GITHUB_PROXIES` / `CRUX_NO_GITHUB_PROXY` environment pair.
+  ///
+  /// A mirror is the *last* transport, behind a direct connection and the user's
+  /// own system proxy, because it is a third-party relay — see
+  /// `utils/github_release_transport.dart` for the ordering rationale.
+  final List<String>? githubMirrors;
+
+  /// Where the system proxy comes from for the transport chain. `null` uses
+  /// [SystemProxyDetector], which is what production wants; a caller can supply
+  /// its own so the proxy transport can be exercised without depending on the
+  /// machine's real proxy settings.
+  final SystemProxy? Function()? systemProxy;
+
   final HttpClient Function() _httpClientFactory;
   final Map<String, String> Function() _environment;
 
   RuntimeSetupService({
     this.sembleEndpoints,
+    this.githubMirrors,
+    this.systemProxy,
     HttpClient Function()? httpClientFactory,
     Map<String, String> Function()? environment,
   }) : _httpClientFactory = httpClientFactory ?? HttpClient.new,
@@ -291,26 +310,13 @@ class RuntimeSetupService {
       throw StateError('ripgrep is unavailable for ${currentRuntimeTarget()}');
     }
 
-    final bytes = await _downloadBytes(
-      config['url'] as String,
-      onProgress: (progress, received, total, bytesPerSecond) =>
-          onProgress?.call(
-            0.05 + progress * 0.75,
-            'downloading',
-            RuntimeTransferStats(
-              receivedBytes: received,
-              totalBytes: total,
-              bytesPerSecond: bytesPerSecond,
-              source: Uri.parse(config['url'] as String).host,
-            ),
-          ),
+    final bytes = await downloadVerifiedAsset(
+      url: config['url'] as String,
+      expectedSha256: config['sha256'] as String,
+      onProgress: (progress, stage, [stats]) =>
+          onProgress?.call(0.05 + progress * 0.75, stage, stats),
     );
     onProgress?.call(0.82, 'verifying');
-    final expected = config['sha256'] as String;
-    final actual = sha256.convert(bytes).toString();
-    if (actual != expected) {
-      throw StateError('ripgrep download checksum mismatch');
-    }
     final archiveType = config['archive'] as String;
     onProgress?.call(0.88, 'extracting');
     final archive = archiveType == 'zip'
@@ -407,6 +413,7 @@ class RuntimeSetupService {
 
   Future<List<int>> _downloadBytes(
     String url, {
+    SystemProxy? proxy,
     void Function(
       double progress,
       int receivedBytes,
@@ -415,7 +422,7 @@ class RuntimeSetupService {
     )?
     onProgress,
   }) async {
-    final client = _newHttpClient();
+    final client = _newHttpClient(proxy: proxy);
     try {
       final response = await _openResponse(client, url);
       final chunks = <int>[];
@@ -449,6 +456,57 @@ class RuntimeSetupService {
       client.close(force: true);
     }
   }
+
+  /// Downloads [url] through the GitHub transport chain, returning the bytes
+  /// only if they hash to [expectedSha256].
+  ///
+  /// This is the download step of [ensureRipgrep], separated out because
+  /// `ensureRipgrep` resolves its manifest from the bundled `third_party/`
+  /// directory and installs into the real user data directory — neither of which
+  /// a test should touch, and both of which a release directory can legitimately
+  /// move.
+  ///
+  /// The checksum is verified *inside* each transport attempt. A relay that
+  /// answers with something other than the asset — a download-only mirror
+  /// replying to a page request, or an HTML error page served as a plain 200 —
+  /// then moves the chain on instead of aborting an install that another
+  /// transport could have completed. It also means bytes from a third-party
+  /// relay are never handed to the installer unverified, which matters because
+  /// the release workflow publishes no checksum of its own.
+  Future<List<int>> downloadVerifiedAsset({
+    required String url,
+    required String expectedSha256,
+    RuntimeProgressCallback? onProgress,
+  }) => withGithubTransports<List<int>>(
+    url: url,
+    mirrors: githubMirrors,
+    detectProxy: systemProxy,
+    attempt: (candidate, proxy) async {
+      final host = Uri.parse(candidate).host;
+      final bytes = await _downloadBytes(
+        candidate,
+        proxy: proxy,
+        onProgress: (progress, received, total, bytesPerSecond) =>
+            onProgress?.call(
+              progress,
+              'downloading',
+              RuntimeTransferStats(
+                receivedBytes: received,
+                totalBytes: total,
+                bytesPerSecond: bytesPerSecond,
+                source: host,
+              ),
+            ),
+      );
+      if (sha256.convert(bytes).toString() != expectedSha256) {
+        throw HttpException(
+          'checksum mismatch from $host',
+          uri: Uri.parse(candidate),
+        );
+      }
+      return bytes;
+    },
+  );
 
   Future<HttpClientResponse> _openResponse(
     HttpClient client,
@@ -488,9 +546,22 @@ class RuntimeSetupService {
     throw StateError('too many download redirects');
   }
 
-  HttpClient _newHttpClient() => _httpClientFactory()
-    ..connectionTimeout = const Duration(seconds: 20)
-    ..autoUncompress = false;
+  /// Builds a client for one download, routed through [proxy] when given.
+  ///
+  /// The proxy has to be applied here rather than left to the caller: Dart's
+  /// `HttpClient` ignores the OS proxy settings on its own, so a transport that
+  /// "retries through the proxy" without setting `findProxy` simply makes
+  /// another direct connection — a fallback that cannot work and does not
+  /// report that it didn't.
+  HttpClient _newHttpClient({SystemProxy? proxy}) {
+    final client = _httpClientFactory()
+      ..connectionTimeout = const Duration(seconds: 20)
+      ..autoUncompress = false;
+    if (proxy != null && proxy.isNotEmpty) {
+      client.findProxy = proxy.findProxyFor;
+    }
+    return client;
+  }
 
   int? _responseTotalBytes(HttpClientResponse response) {
     final contentRange = response.headers.value(HttpHeaders.contentRangeHeader);

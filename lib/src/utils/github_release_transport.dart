@@ -85,11 +85,16 @@ String mirrorUrl(String mirror, String url) =>
 /// The last error is rethrown when every transport is exhausted, which keeps the
 /// caller's failure message about the real reason rather than about the last
 /// mirror.
+///
+/// [detectProxy] overrides where the system proxy comes from, so a caller can
+/// point the proxy transport at a known server. `null` uses
+/// [SystemProxyDetector], which is what every production caller wants.
 Future<T> withGithubTransports<T>({
   required String url,
   required Future<T> Function(String url, SystemProxy? proxy) attempt,
   bool Function(Object error)? isRetriableError,
   List<String>? mirrors,
+  SystemProxy? Function()? detectProxy,
 }) async {
   final retriable = isRetriableError ?? isConnectionError;
   Object? lastError;
@@ -108,7 +113,7 @@ Future<T> withGithubTransports<T>({
   if (direct != null) return direct;
 
   if (isSystemProxyFallbackGloballyEnabled()) {
-    final proxy = SystemProxyDetector.detect();
+    final proxy = (detectProxy ?? SystemProxyDetector.detect)();
     if (proxy != null && proxy.isNotEmpty) {
       final viaProxy = await tryTransport(url, proxy);
       if (viaProxy != null) return viaProxy;
