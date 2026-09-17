@@ -26,6 +26,19 @@ pubspec.lock
 .research/
 design/
 
+# The product website is a separate repository — its own history and deploy
+# origin — checked out inside this tree. crux has never tracked it, and it is
+# deliberately NOT a submodule: `git add .` would stage it as a gitlink with no
+# .gitmodules entry, i.e. an empty shell for everyone else.
+#
+# It has to stay at this path: its build scripts read `../install.sh` /
+# `../install.ps1` and `git -C .. tag` from this checkout, and write the manual
+# back to `../docs/manual` (see website/README.md).
+#
+# Ignoring it spares it from `git clean -fd`; `git clean -fdx` still removes it,
+# and its `main` has no upstream branch.
+/website/
+
 # Local scratch output
 .worktrees/
 *.log
