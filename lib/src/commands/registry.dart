@@ -182,6 +182,15 @@ const List<SlashCommand> _baseCommands = [
     description: 'cmd.home.desc',
     availableDuringResponse: true,
   ),
+  // Replace the installed binary with the latest release. Deliberately
+  // NOT available during a response: swapping the executable mid-turn is
+  // technically safe (the running process keeps its inode) but leaves the
+  // user unsure which version is answering them.
+  SlashCommand(
+    name: '/upgrade',
+    description: 'cmd.upgrade.desc',
+    aliases: ['/升级'],
+  ),
   SlashCommand(
     name: '/setup',
     description: 'cmd.setup.desc',

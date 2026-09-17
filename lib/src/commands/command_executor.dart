@@ -47,6 +47,7 @@ import 'cmd_rename.dart';
 import 'cmd_quit.dart';
 import 'cmd_home.dart';
 import 'cmd_setup.dart';
+import 'cmd_upgrade.dart';
 
 typedef ShowToastCallback = void Function(String message, {ToastMode mode});
 
@@ -247,6 +248,9 @@ class CommandExecutor {
         await executeHome(ctx);
       case '/setup':
         await executeSetup(ctx);
+      case '/upgrade':
+      case '/升级':
+        await executeUpgrade(ctx);
       case '/project':
         await executeProject(parts, ctx);
       case '/debug':

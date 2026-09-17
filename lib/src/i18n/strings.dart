@@ -228,6 +228,20 @@ const Map<String, String> _en = {
   'toast.nothingContinue': 'Nothing to continue — session is empty',
   'toast.helpWritten': 'Help written to the chat history',
   'toast.homeUnavailable': 'Home screen not available',
+
+  // ── /upgrade command ──
+  'cmd.upgrade.desc': 'Download and install the latest release',
+  'toast.upgradeChecking': 'Checking for the latest version…',
+  'toast.upgradeDone': 'Upgraded to v{version} — restart Crux to run it',
+  'toast.upgradeUpToDate': 'Already on the latest version (v{version})',
+  'toast.upgradeDevBuild':
+      'This is a development build — /upgrade only manages installed '
+      'release binaries',
+  'toast.upgradeUnsupported':
+      'No published build for {target} (published: {published})',
+  'toast.upgradeInstallMissing': 'Install directory not found: {directory}',
+  'toast.upgradeNotWritable': 'Install directory is not writable: {directory}',
+  'toast.upgradeFailed': 'Upgrade failed: {detail}',
   'toast.modelSwitched': 'Model switched to {model}',
   'toast.modelUsage': 'Usage: /model <name>',
   'toast.alreadyNewSession': 'Already on a new session',
@@ -919,6 +933,17 @@ const Map<String, String> _zh = {
   'toast.nothingContinue': '没有可继续的内容——会话为空',
   'toast.helpWritten': '帮助已写入对话历史',
   'toast.homeUnavailable': '主页不可用',
+
+  // ── /upgrade 命令 ──
+  'cmd.upgrade.desc': '下载并安装最新版本',
+  'toast.upgradeChecking': '正在检查最新版本…',
+  'toast.upgradeDone': '已升级到 v{version} —— 重启 Crux 生效',
+  'toast.upgradeUpToDate': '已经是最新版本（v{version}）',
+  'toast.upgradeDevBuild': '这是开发构建 —— /upgrade 只能管理已安装的发布版二进制',
+  'toast.upgradeUnsupported': '没有 {target} 的发布包（已发布：{published}）',
+  'toast.upgradeInstallMissing': '找不到安装目录：{directory}',
+  'toast.upgradeNotWritable': '安装目录不可写：{directory}',
+  'toast.upgradeFailed': '升级失败：{detail}',
   'toast.modelSwitched': '已切换到模型 {model}',
   'toast.modelUsage': '用法：/model <name>',
   'toast.alreadyNewSession': '已经是新会话了',
