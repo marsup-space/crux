@@ -540,6 +540,13 @@ class ChatTurnExecutor {
       history,
       wireFamily,
       systemPrompt: systemPrompt,
+      // A text-only model 400s the entire request over an image part, and the
+      // parts live on persisted history rows — so the gate has to be applied
+      // here, at the one place the model's payload is assembled, rather than
+      // only where an image is attached. Dropping the answer is what makes an
+      // already-poisoned session (one that stored a screenshot before this
+      // gate existed) usable again.
+      includeImages: modelConfig?.imageSupport ?? true,
     );
     final toolDefs = toolExecutor.getApiToolDefinitions();
 

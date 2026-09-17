@@ -24,6 +24,12 @@ normal = "disabled"
 id = "deepseek-v4-flash"
 name = "DeepSeek V4 Flash"
 context_size = 1048576
+# Accepts image input on the wire. The flag defaults to false, and Crux's
+# clipboard/drag-drop gate plus the send-time gate both read it — a
+# screenshot pasted onto this model was being dropped (or, before that
+# gate existed, sent to models that reject it). Real turns carrying
+# `image_url` content parts are served normally here, so declare it.
+image_support = true
 reasoning_effort = "high"
 thinking = true
 temperature = 0
