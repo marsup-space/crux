@@ -99,6 +99,18 @@ Future<void> main(List<String> args) async {
 
   await cliOutput.delete(recursive: true);
 
+  // The daemon sidecar ships in the same bundle. Crux resolves it as a sibling
+  // of its own executable (after install: `~/.crux/bin/cruxd`) and *silently*
+  // no-ops when it is absent — so a bundle without it yields a clean install
+  // where any plugin declaring `[producer]` never gets one and nothing says so.
+  await _buildSidecar(
+    root: root,
+    target: target,
+    bundle: bundle,
+    entrypoint: 'bin/cruxd.dart',
+    name: settings.os == 'windows' ? 'cruxd.exe' : 'cruxd',
+  );
+
   await _copyDirectory(
     Directory(p.join(root, 'providers')),
     Directory(p.join(bundle.path, 'providers')),
@@ -138,6 +150,44 @@ Future<void> main(List<String> args) async {
   await _copyJiebaDict(root: root, bundle: bundle);
 
   stdout.writeln('Release bundle: ${bundle.path}');
+}
+
+/// Builds one additional entrypoint from the same source tree into
+/// `<bundle>/bin/<name>`.
+///
+/// `dart build cli` takes a single `--target`, so the daemon sidecar needs its
+/// own invocation. Only the executable is copied: the shared assets
+/// (providers/themes/third_party) belong to the main build.
+Future<void> _buildSidecar({
+  required String root,
+  required String target,
+  required Directory bundle,
+  required String entrypoint,
+  required String name,
+}) async {
+  final output = Directory(p.join(root, 'build', 'cli', '$target-$name'));
+  if (output.existsSync()) await output.delete(recursive: true);
+  await _run(Platform.resolvedExecutable, [
+    'build',
+    'cli',
+    '--target',
+    entrypoint,
+    '-o',
+    output.path,
+    '--verbosity',
+    'warning',
+  ], root);
+
+  final built = File(p.join(output.path, 'bundle', 'bin', name));
+  if (!await built.exists()) {
+    stderr.writeln('Missing dart build cli executable: ${built.path}');
+    exit(1);
+  }
+  final destination = p.join(bundle.path, 'bin', name);
+  await built.copy(destination);
+  if (!Platform.isWindows) await _run('chmod', ['+x', destination], root);
+  await output.delete(recursive: true);
+  stdout.writeln('Daemon sidecar: $destination');
 }
 
 Future<void> _run(

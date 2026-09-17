@@ -244,6 +244,18 @@ jobs:
             ls -la "$bundle" 2>/dev/null || echo "  (bundle directory does not exist)"
             exit 1
           fi
+          # The daemon sidecar must ship in the same bundle: crux resolves it as
+          # a sibling of its own executable and degrades silently without it, so
+          # a bundle that quietly drops it breaks plugin [producer] support on
+          # every clean install with no error anywhere.
+          daemon_exe="$bundle/bin/cruxd"
+          if [ "$TARGET" = "windows-x64" ]; then daemon_exe="$bundle/bin/cruxd.exe"; fi
+          if [ ! -f "$daemon_exe" ]; then
+            echo "::error::release build produced no daemon sidecar at $daemon_exe"
+            ls -la "$bundle/bin" 2>/dev/null || true
+            exit 1
+          fi
+          echo "daemon sidecar: $daemon_exe OK"
           # The bundle must ship the semantic-search model — the build
           # only warns when it's absent (see the download step above).
           for f in model.safetensors tokenizer.json; do

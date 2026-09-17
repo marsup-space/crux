@@ -108,6 +108,19 @@ if [ -z "$binary_path" ]; then
         [ "$rosetta" = "1" ] && arch="arm64"
     fi
 
+    # Only these three are published by .github/workflows/release.yml. Gate here
+    # so an unpublished target fails with something actionable instead of a
+    # confusing 404 from the asset download below.
+    case "${os}-${arch}" in
+        macos-arm64|linux-x64|windows-x64) ;;
+        *)
+            fail "no published build for ${os}-${arch}.
+       Published targets: macos-arm64, linux-x64, windows-x64.
+       (Apple Silicon under Rosetta is already handled — it installs the arm64 build.)
+       To build it yourself: dart pub get && dart run tool/build_release.dart --target ${os}-${arch}"
+            ;;
+    esac
+
     target="${os}-${arch}"
     asset="${APP}-${target}.zip"
 fi
@@ -201,6 +214,34 @@ else
     # Preserve the source name (crux vs crux.exe) so the installed file
     # stays invocable from cmd/PowerShell on Windows.
     install_binary "$binary" "${INSTALL_DIR}/$(basename "$binary")"
+
+    # Install the daemon sidecar from the same bundle. Crux resolves it as a
+    # sibling of its own executable (daemon_client._defaultCruxdPath) and
+    # silently returns when it is missing, so a bundle without it produced a
+    # clean install in which any plugin declaring [producer] never got one —
+    # with nothing reported. Stop a running daemon first: the next Crux launch
+    # must bootstrap the NEW binary, not keep talking to a stale process.
+    daemon_binary=""
+    for candidate in \
+        "${bundle_dir}/bin/${APP}d" \
+        "${bundle_dir}/bin/${APP}d.exe" \
+        "${bundle_dir}/${APP}d" \
+        "${bundle_dir}/${APP}d.exe"; do
+        if [ -x "$candidate" ]; then
+            daemon_binary="$candidate"
+            break
+        fi
+    done
+
+    if [ -n "$daemon_binary" ]; then
+        if [ -x "${INSTALL_DIR}/${APP}d" ]; then
+            "${INSTALL_DIR}/${APP}d" stop >/dev/null 2>&1 || true
+        fi
+        install_binary "$daemon_binary" "${INSTALL_DIR}/$(basename "$daemon_binary")"
+        info "Installed daemon sidecar: ${INSTALL_DIR}/$(basename "$daemon_binary")"
+    else
+        warn "bundle has no ${APP}d sidecar — plugins with [producer] will not run"
+    fi
 
     # Copy bundled assets as siblings of the binary.
     for asset_dir in providers themes third_party; do
