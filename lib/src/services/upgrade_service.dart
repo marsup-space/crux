@@ -350,30 +350,47 @@ Future<Uint8List> httpDownloadBytes(String url) async {
   }
 }
 
-/// Default version resolver: reads `tag_name` from the GitHub releases API.
+/// Extracts a version from a `releases/latest` redirect target.
 ///
-/// Returns null rather than throwing so an offline check reads as "cannot tell"
-/// instead of an error the caller has to distinguish from a real failure.
+/// `https://github.com/o/r/releases/tag/v1.2.3` → `v1.2.3`. Pure, so the parsing
+/// is testable without a network round trip.
+String? versionFromReleaseRedirect(String? location) {
+  if (location == null) return null;
+  final match = RegExp(r'/releases/tag/([^/?#]+)').firstMatch(location);
+  if (match == null) return null;
+  try {
+    return Uri.decodeComponent(match.group(1)!);
+  } on FormatException {
+    return match.group(1);
+  }
+}
+
+/// Default version resolver: follows the `releases/latest` *redirect*.
+///
+/// Deliberately not the releases API. That endpoint's anonymous limit is 60
+/// requests/hour per IP, and once it is spent it answers 403 — which surfaced to
+/// users as "could not reach GitHub" for something they could neither see nor
+/// fix. Measured on this machine: `x-ratelimit-remaining: 0` while the redirect
+/// still answered fine. The redirect has no such limit, needs no token, and
+/// carries the tag in its Location header.
+///
+/// Returns null rather than throwing, so "cannot tell" stays distinguishable
+/// from a real failure at the call site.
 Future<String?> httpFetchLatestVersion({
   String repo = kCruxReleaseRepo,
   HttpClient? client,
 }) async {
   final http = client ?? HttpClient();
   try {
-    final request = await http.getUrl(
-      Uri.parse('https://api.github.com/repos/$repo/releases/latest'),
+    final request = await http.headUrl(
+      Uri.parse('https://github.com/$repo/releases/latest'),
     );
-    request.headers.set('accept', 'application/vnd.github+json');
+    request.followRedirects = false;
     request.headers.set('user-agent', 'crux-upgrade');
     final response = await request.close();
-    if (response.statusCode != 200) {
-      await response.drain<void>();
-      return null;
-    }
-    final body = await response
-        .transform(const SystemEncoding().decoder)
-        .join();
-    return RegExp(r'"tag_name"\s*:\s*"([^"]+)"').firstMatch(body)?.group(1);
+    final location = response.headers.value('location');
+    await response.drain<void>();
+    return versionFromReleaseRedirect(location);
   } catch (_) {
     return null;
   } finally {

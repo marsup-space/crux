@@ -45,6 +45,30 @@ void main() {
     });
   });
 
+  group('release redirect parsing', () {
+    test('reads the tag out of a releases/latest redirect', () {
+      expect(
+        versionFromReleaseRedirect(
+          'https://github.com/marsup-space/crux/releases/tag/v1.0.2',
+        ),
+        'v1.0.2',
+      );
+      expect(
+        versionFromReleaseRedirect('https://github.com/o/r/releases/tag/1.2.3'),
+        '1.2.3',
+      );
+    });
+
+    test('returns null rather than guessing when there is no tag', () {
+      expect(versionFromReleaseRedirect(null), isNull);
+      expect(versionFromReleaseRedirect(''), isNull);
+      expect(
+        versionFromReleaseRedirect('https://github.com/o/r/releases'),
+        isNull,
+      );
+    });
+  });
+
   group('refusals', () {
     late Directory installDir;
 

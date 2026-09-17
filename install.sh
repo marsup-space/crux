@@ -138,13 +138,18 @@ elif [ -n "$requested_version" ]; then
     [ "$http_status" != "404" ] || fail "release v${requested_version} not found"
 else
     url="https://github.com/${REPO}/releases/latest/download/${asset}"
+    # Resolve the version from the redirect that `releases/latest` issues, not
+    # from the releases API. The anonymous API limit is 60 requests/hour per IP
+    # and, once spent, it answers 403 — which made this branch fail outright for
+    # users who had merely browsed GitHub recently. The redirect has no such
+    # limit, needs no token, and carries the tag as the last path segment of
+    # its Location header.
     specific_version=$(
-        curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-            | grep '"tag_name"' \
-            | head -1 \
-            | sed -E 's/.*"tag_name":[[:space:]]*"v?([^"]+)".*/\1/'
+        curl -sI -o /dev/null -w '%{redirect_url}' \
+            "https://github.com/${REPO}/releases/latest" \
+            | sed -E 's#.*/releases/tag/v?##'
     )
-    [ -n "$specific_version" ] || fail "failed to fetch latest version (rate-limited?)"
+    [ -n "$specific_version" ] || fail "failed to resolve the latest version"
 fi
 
 # ---- check for matching installed version ------------------------------------
