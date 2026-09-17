@@ -28,16 +28,9 @@
 # generic openai_compatible provider sends — so no custom provider
 # class is needed.
 #
-# stealth/ox-alpha: reasoning is MANDATORY (the API rejects
-# effort "none" / thinking disabled). Its supported efforts are
-# max | high | low, default max. Crux's internal scale maps as:
-#   max    → max
-#   high   → high
-#   normal → high  (OpenAICompatibleProvider.mapEffort)
-#   low    → not in mapEffort's switch → also "high", so we hide it
-#            via reasoning_labels to avoid a misleading picker entry.
-# The model's thinking on/off toggle still renders but 'disabled' is
-# not honored upstream — leave thinking enabled.
+# Union Alpha currently accepts text and image input, supports tools,
+# and does not expose a reasoning-effort control. Keep thinking disabled
+# so Crux does not send an unsupported reasoning parameter.
 
 type = "openai_compatible"
 endpoint_url = "https://openrouter.ai/api/v1"
@@ -80,20 +73,18 @@ retry_base_delay_ms = 250
 # legitimate quiet gap a healthy stream produces here.
 data_idle_timeout_ms = 60000
 
-# === Stealth: Ox Alpha — flagship free coding/reasoning model ===
-# 1M context, image+video inputs, tools, mandatory reasoning.
+# === Stealth: Union Alpha — free multimodal coding model ===
+# 256K context, image input, tool support, no reasoning-effort control.
 [[models]]
-id = "stealth/ox-alpha"
-name = "Ox Alpha (stealth, free)"
-context_size = 1048576
+id = "stealth/union-alpha"
+name = "Union Alpha (stealth, free)"
+context_size = 262144
 image_support = true
-thinking = true
-reasoning_effort = "max"
+thinking = false
+reasoning_effort = "none"
 max_tokens = 131072
+expiration_date = "2098-12-31"
 temperature = 0
-
-[models.reasoning_labels]
-low = "disabled"
 
 # === NVIDIA Nemotron 3 Ultra — strongest free open-weight model ===
 # 550B total / 12B active MoE, 1M context, reasoning high|medium.
@@ -108,8 +99,8 @@ reasoning_effort = "high"
 temperature = 0
 
 # === NVIDIA Nemotron 3.5 Lightning — fast, no reasoning ===
-# 1M context, fills the "quick question" slot where ox-alpha's
-# mandatory thinking is overkill.
+# 1M context, fills the quick-question slot when Union Alpha's larger
+# multimodal context is unnecessary.
 # Note (smoke-tested 2026-08): the model still emits reasoning tokens
 # in responses even with thinking disabled — upstream exposes no knob
 # to turn them off. Harmless; Crux just renders a thinking block.

@@ -53,6 +53,12 @@ class OpenRouterStealthSync {
   /// within this many days of today.
   static const expiryWarningDays = 14;
 
+  /// Stealth previews intentionally excluded from this provider.
+  ///
+  /// They are removed from existing local entries and never re-added by a
+  /// catalog sync, even while OpenRouter still lists them.
+  static const _excludedStealthIds = {'stealth/ox-alpha'};
+
   /// Fetch the live catalog and diff it against [current].
   ///
   /// [endpointUrl] is the provider's configured base URL (e.g.
@@ -83,7 +89,11 @@ class OpenRouterStealthSync {
 
     for (final m in current.models) {
       final upstream = catalog[m.id];
-      if (_isStealthId(m.id)) {
+      if (_isExcludedStealthId(m.id)) {
+        // Deliberately retired from this provider even while it remains in
+        // OpenRouter's catalog.
+        removed.add(m.id);
+      } else if (_isStealthId(m.id)) {
         // Managed: remove / refresh based on the live catalog.
         if (upstream == null) {
           removed.add(m.id);
@@ -115,7 +125,10 @@ class OpenRouterStealthSync {
     // Whatever remains upstream and unseen is a new stealth candidate.
     added.addAll(
       catalog.values.where(
-        (m) => _isStealthId(m.id) && !knownIds.contains(m.id),
+        (m) =>
+            _isStealthId(m.id) &&
+            !_isExcludedStealthId(m.id) &&
+            !knownIds.contains(m.id),
       ),
     );
 
@@ -250,6 +263,8 @@ class OpenRouterStealthSync {
   /// entries are always written with upstream ids, so a prefixed id in
   /// the file means "came from a previous sync".
   bool _isStealthId(String id) => id.startsWith('stealth/');
+
+  bool _isExcludedStealthId(String id) => _excludedStealthIds.contains(id);
 
   /// Fetch the raw `/models` JSON body. Key-free endpoint.
   Future<String> _fetchModelsBody(String endpointUrl) async {

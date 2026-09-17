@@ -12,19 +12,24 @@ const _catalogJson = '''
 {
   "data": [
     {
+      "id": "stealth/union-alpha",
+      "name": "Union Alpha",
+      "description": "Union Alpha is a stealth model for coding.",
+      "context_length": 262144,
+      "architecture": {"input_modalities": ["text", "image"]},
+      "pricing": {"prompt": "0", "completion": "0"},
+      "top_provider": {"max_completion_tokens": 131072},
+      "expiration_date": "2098-12-31"
+    },
+    {
       "id": "stealth/ox-alpha",
       "name": "Ox Alpha",
-      "description": "Ox Alpha is a reasoning model for coding.",
+      "description": "Retired stealth model.",
       "context_length": 1048576,
       "architecture": {"input_modalities": ["text", "image"]},
       "pricing": {"prompt": "0", "completion": "0"},
       "top_provider": {"max_completion_tokens": 131072},
-      "expiration_date": "2098-12-31",
-      "reasoning": {
-        "mandatory": true,
-        "supported_efforts": ["max", "high", "low"],
-        "default_effort": "max"
-      }
+      "expiration_date": "2098-12-31"
     },
     {
       "id": "nvidia/nemotron-nano-9b-v2:free",
@@ -64,6 +69,7 @@ void main() {
   group('parseCatalogJson', () {
     test('parses all models keyed by id', () {
       expect(catalog.keys.toSet(), {
+        'stealth/union-alpha',
         'stealth/ox-alpha',
         'nvidia/nemotron-nano-9b-v2:free',
         'openai/gpt-4o',
@@ -71,7 +77,7 @@ void main() {
     });
 
     test('captures expiration_date when present', () {
-      expect(catalog['stealth/ox-alpha']!.expirationDate, '2098-12-31');
+      expect(catalog['stealth/union-alpha']!.expirationDate, '2098-12-31');
       expect(
         catalog['nvidia/nemotron-nano-9b-v2:free']!.expirationDate,
         '2026-08-24',
@@ -83,7 +89,7 @@ void main() {
     });
 
     test('stealth detection by id prefix and description', () {
-      expect(catalog['stealth/ox-alpha']!.isStealth, isTrue);
+      expect(catalog['stealth/union-alpha']!.isStealth, isTrue);
       expect(catalog['nvidia/nemotron-nano-9b-v2:free']!.isStealth, isFalse);
       expect(catalog['openai/gpt-4o']!.isStealth, isFalse);
     });
@@ -118,9 +124,9 @@ void main() {
         catalog: catalog,
         current: _config([
           ModelConfig(
-            id: 'stealth/ox-alpha',
-            name: 'Ox Alpha (stealth, free)',
-            contextSize: 1048576,
+            id: 'stealth/union-alpha',
+            name: 'Union Alpha (stealth, free)',
+            contextSize: 262144,
           ),
         ]),
       );
@@ -173,9 +179,24 @@ void main() {
       expect(plan.warnings, isEmpty);
     });
 
+    test('excluded Ox Alpha is removed even while still in the catalog', () {
+      final plan = sync.diff(
+        catalog: catalog,
+        current: _config([
+          ModelConfig(
+            id: 'stealth/ox-alpha',
+            name: 'Ox Alpha (stealth, free)',
+            contextSize: 1048576,
+          ),
+        ]),
+      );
+      expect(plan.removed, ['stealth/ox-alpha']);
+      expect(plan.updated, isEmpty);
+    });
+
     test('new upstream stealth is added; non-stealth ignored', () {
       final plan = sync.diff(catalog: catalog, current: _config([]));
-      expect(plan.added.map((m) => m.id), ['stealth/ox-alpha']);
+      expect(plan.added.map((m) => m.id), ['stealth/union-alpha']);
     });
   });
 
