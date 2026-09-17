@@ -1393,6 +1393,13 @@ void main() {
     late SessionRuntimeState runtime;
 
     setUp(() async {
+      // The only place in the whole test suite that reassigns the process cwd,
+      // and it has to: `/project`'s entire job is to change
+      // `Directory.current`, so these assertions read it back. Keep it that way.
+      // `Directory.current` is process-global and package:test runs suites
+      // concurrently in one process, so a second suite that mutates cwd races
+      // this one — and every suite that merely reads it — in ways that surface
+      // only under load, as unexplained one-off failures.
       originalCwd = Directory.current;
       tempDir = await Directory.systemTemp.createTemp('crux_project_test_');
       tempDir = Directory(await tempDir.resolveSymbolicLinks());

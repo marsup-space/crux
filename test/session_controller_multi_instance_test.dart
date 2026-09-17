@@ -15,22 +15,23 @@ import 'package:crux/src/tools/file_read_tracker.dart';
 import 'package:crux/src/tools/registry.dart';
 
 void main() {
-  late Directory originalCwd;
   late Directory tempDir;
   late CruxDatabase db;
   late ProviderService providerService;
 
   setUp(() async {
-    originalCwd = Directory.current;
+    // Intentionally NOT reassigned. `Directory.current` is process-global and
+    // package:test runs suites concurrently in one process, so mutating it here
+    // raced every other suite that reads it. The code under test and these tests
+    // already read the same cwd, so they agree without it; anything this suite
+    // must own is addressed explicitly through `tempDir`.
     tempDir = await Directory.systemTemp.createTemp('crux_multi_instance_');
-    Directory.current = tempDir;
     db = CruxDatabase.forTesting(NativeDatabase.memory());
     providerService = ProviderService(userProvidersDir: tempDir.path);
   });
 
   tearDown(() async {
     await db.close();
-    Directory.current = originalCwd;
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
     }
@@ -53,12 +54,13 @@ void main() {
         ToolExecutor(toolRegistry),
       ),
       refresh: () {},
+      projectPath: () => tempDir.path,
     );
   }
 
   test('initSessions selects the most recent idle or done session', () async {
     final store = SessionStore(db, instanceId: 'local');
-    final projectPath = Directory.current.path;
+    final projectPath = tempDir.path;
     final idle = await store.create(
       title: 'Idle',
       model: '',
@@ -90,7 +92,7 @@ void main() {
     () async {
       final owner = SessionStore(db, instanceId: 'owner');
       final local = SessionStore(db, instanceId: 'local');
-      final projectPath = Directory.current.path;
+      final projectPath = tempDir.path;
       final running = await owner.create(
         title: 'Running elsewhere',
         model: '',
@@ -121,7 +123,7 @@ void main() {
     () async {
       final owner = SessionStore(db, instanceId: 'owner');
       final local = SessionStore(db, instanceId: 'local');
-      final projectPath = Directory.current.path;
+      final projectPath = tempDir.path;
       final idle = await local.create(
         title: 'Idle',
         model: '',
@@ -149,7 +151,7 @@ void main() {
     'reconcileInactiveRunningSessions idles stopped local running rows',
     () async {
       final store = SessionStore(db, instanceId: 'local');
-      final projectPath = Directory.current.path;
+      final projectPath = tempDir.path;
       final running = await store.create(
         title: 'Finished locally',
         model: '',
@@ -175,7 +177,7 @@ void main() {
     () async {
       final owner = SessionStore(db, instanceId: 'owner');
       final local = SessionStore(db, instanceId: 'local');
-      final projectPath = Directory.current.path;
+      final projectPath = tempDir.path;
       final running = await owner.create(
         title: 'Running elsewhere',
         model: '',
@@ -200,7 +202,7 @@ void main() {
     'initSessions loads chats globally alongside project sessions',
     () async {
       final store = SessionStore(db, instanceId: 'local');
-      final projectPath = Directory.current.path;
+      final projectPath = tempDir.path;
       await store.create(title: 'WS', model: '', projectPath: projectPath);
       final chat = await store.create(
         title: 'Chat',
@@ -224,7 +226,7 @@ void main() {
     () async {
       final owner = SessionStore(db, instanceId: 'owner');
       final local = SessionStore(db, instanceId: 'local');
-      final projectPath = Directory.current.path;
+      final projectPath = tempDir.path;
       final idle = await local.create(
         title: 'Idle',
         model: '',

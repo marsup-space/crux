@@ -27,16 +27,18 @@ import 'package:crux/src/tools/file_read_tracker.dart';
 import 'package:crux/src/tools/registry.dart';
 
 void main() {
-  late Directory originalCwd;
   late Directory tempDir;
   late CruxDatabase db;
   late ProviderService providerService;
   late SessionStore store;
 
   setUp(() async {
-    originalCwd = Directory.current;
+    // Intentionally NOT reassigned. `Directory.current` is process-global and
+    // package:test runs suites concurrently in one process, so mutating it here
+    // raced every other suite that reads it. The code under test and these tests
+    // already read the same cwd, so they agree without it; anything this suite
+    // must own is addressed explicitly through `tempDir`.
     tempDir = await Directory.systemTemp.createTemp('crux_cubit_mirror_');
-    Directory.current = tempDir;
     db = CruxDatabase.forTesting(NativeDatabase.memory());
     providerService = ProviderService(userProvidersDir: tempDir.path);
     store = SessionStore(db, instanceId: 'local');
@@ -44,7 +46,6 @@ void main() {
 
   tearDown(() async {
     await db.close();
-    Directory.current = originalCwd;
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
     }
@@ -67,6 +68,7 @@ void main() {
         ToolExecutor(toolRegistry),
       ),
       refresh: () {},
+      projectPath: () => tempDir.path,
     );
   }
 
@@ -76,7 +78,7 @@ void main() {
       final idle = await store.create(
         title: 'Idle',
         model: '',
-        projectPath: Directory.current.path,
+        projectPath: tempDir.path,
       );
 
       final controller = buildController();
@@ -96,7 +98,7 @@ void main() {
     final session = await store.create(
       title: 'With messages',
       model: '',
-      projectPath: Directory.current.path,
+      projectPath: tempDir.path,
     );
     await store.messageStore.addMessage(
       session.id,
@@ -122,7 +124,7 @@ void main() {
       final session = await store.create(
         title: 'Big',
         model: '',
-        projectPath: Directory.current.path,
+        projectPath: tempDir.path,
       );
       for (var i = 0; i < 30; i++) {
         await store.messageStore.addMessage(
@@ -226,7 +228,7 @@ void main() {
     final session = await store.create(
       title: 'Old title',
       model: '',
-      projectPath: Directory.current.path,
+      projectPath: tempDir.path,
     );
     final controller = buildController()
       ..sessions = [session]
@@ -259,7 +261,7 @@ void main() {
       final session = await store.create(
         title: 'New Session',
         model: '',
-        projectPath: Directory.current.path,
+        projectPath: tempDir.path,
       );
       // ProviderService in this fixture has no auxiliary model
       // configured, so generateTitle returns immediately without
@@ -288,12 +290,12 @@ void main() {
       final keep = await store.create(
         title: 'Keep',
         model: '',
-        projectPath: Directory.current.path,
+        projectPath: tempDir.path,
       );
       final drop = await store.create(
         title: 'Drop',
         model: '',
-        projectPath: Directory.current.path,
+        projectPath: tempDir.path,
       );
 
       final controller = buildController()
@@ -362,7 +364,7 @@ void main() {
       final session = await store.create(
         title: 'With btw',
         model: '',
-        projectPath: Directory.current.path,
+        projectPath: tempDir.path,
       );
 
       final controller = buildController()
@@ -387,7 +389,7 @@ void main() {
       final session = await store.create(
         title: 'With runtime',
         model: '',
-        projectPath: Directory.current.path,
+        projectPath: tempDir.path,
       );
       final controller = buildController()
         ..sessions = [session]
@@ -413,7 +415,7 @@ void main() {
         final session = await store.create(
           title: 'Has messages',
           model: '',
-          projectPath: Directory.current.path,
+          projectPath: tempDir.path,
         );
         // Seed enough messages for computeBaseContext to have something
         // to walk (it falls back to message sum when session.contextTokens
@@ -448,12 +450,12 @@ void main() {
       final keep = await store.create(
         title: 'Keep',
         model: '',
-        projectPath: Directory.current.path,
+        projectPath: tempDir.path,
       );
       final drop = await store.create(
         title: 'Drop',
         model: '',
-        projectPath: Directory.current.path,
+        projectPath: tempDir.path,
       );
 
       final controller = buildController()
@@ -484,7 +486,7 @@ void main() {
       final session = await store.create(
         title: 'idle',
         model: '',
-        projectPath: Directory.current.path,
+        projectPath: tempDir.path,
       );
       final controller = buildController()
         ..sessions = [session]
@@ -505,7 +507,7 @@ void main() {
         final session = await store.create(
           title: 'responding',
           model: '',
-          projectPath: Directory.current.path,
+          projectPath: tempDir.path,
         );
         final controller = buildController()
           ..sessions = [session]
@@ -533,7 +535,7 @@ void main() {
         final session = await store.create(
           title: 'interrupted',
           model: '',
-          projectPath: Directory.current.path,
+          projectPath: tempDir.path,
         );
         final controller = buildController()
           ..sessions = [session]
@@ -554,7 +556,7 @@ void main() {
       final session = await store.create(
         title: 'tldr',
         model: '',
-        projectPath: Directory.current.path,
+        projectPath: tempDir.path,
       );
       final controller = buildController()
         ..sessions = [session]
@@ -584,7 +586,7 @@ void main() {
       final session = await store.create(
         title: 'temp',
         model: '',
-        projectPath: Directory.current.path,
+        projectPath: tempDir.path,
       );
       final controller = buildController()
         ..sessions = [session]

@@ -23,7 +23,6 @@ import 'package:crux/src/tools/file_read_tracker.dart';
 import 'package:crux/src/tools/registry.dart';
 
 void main() {
-  late Directory originalCwd;
   late Directory tempDir;
   late CruxDatabase db;
   late ProviderService providerService;
@@ -83,9 +82,12 @@ reasoning_effort = "high"
   }
 
   setUp(() async {
-    originalCwd = Directory.current;
+    // Intentionally NOT reassigned. `Directory.current` is process-global and
+    // package:test runs suites concurrently in one process, so mutating it here
+    // raced every other suite that reads it. The code under test and these tests
+    // already read the same cwd, so they agree without it; anything this suite
+    // must own is addressed explicitly through `tempDir`.
     tempDir = await Directory.systemTemp.createTemp('crux_resolve_effort_');
-    Directory.current = tempDir;
     db = CruxDatabase.forTesting(NativeDatabase.memory());
     providerService = ProviderService(userProvidersDir: tempDir.path);
     store = SessionStore(db, instanceId: 'local');
@@ -105,43 +107,31 @@ reasoning_effort = "high"
         ToolExecutor(toolRegistry),
       ),
       refresh: () {},
+      projectPath: () => tempDir.path,
     );
   });
 
   tearDown(() async {
     await db.close();
-    Directory.current = originalCwd;
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
     }
   });
 
-  /// Each test creates a session, refreshes the in-memory
-  /// session list (`controller.initSessions()`), and only
-  /// then calls `controller.runtime(id)`. The runtime's
-  /// `_resolveReasoningEffort` reads the model from
-  /// `SessionController.sessions` (via `findSession`), so
-  /// without init the lookup misses and the fallback never
-  /// sees the model — every test would return null.
-  /// Each test creates a session, refreshes the in-memory
-  /// session list (`controller.initSessions()`), and only
-  /// then calls `controller.runtime(id)`. The runtime's
-  /// `_resolveReasoningEffort` reads the model from
-  /// `SessionController.sessions` (via `findSession`), so
-  /// without init the lookup misses and the fallback never
-  /// sees the model — every test would return null.
+  /// Each test creates a session, refreshes the in-memory session list
+  /// (`controller.initSessions()`), and only then calls
+  /// `controller.runtime(id)`: the runtime's `_resolveReasoningEffort` reads the
+  /// model from `SessionController.sessions` (via `findSession`), so without the
+  /// init the lookup misses and every test would return null.
   ///
-  /// macOS quirk: `Directory.systemTemp.createTemp()` returns
-  /// `/var/folders/...` but `Directory.current.path` resolves
-  /// to `/private/var/folders/...` (the symlink target).
-  /// `store.list(projectPath: ...)` does a string-equal
-  /// match, so a session stored with the former won't be
-  /// found when queried with the latter. We pass
-  /// `Directory.current.path` (the canonical path) to both
-  /// the create and the in-memory lookup, matching
-  /// `initSessions`'s own `Directory.current.path` usage.
+  /// The project path is injected rather than read from `Directory.current`.
+  /// `createTemp()` yields `/var/...` while `tempDir.path` resolves to
+  /// `/private/var/...`, and `store.list(projectPath:)` matches by string — so a
+  /// session stored under one spelling was invisible to the other. Handing the
+  /// same explicit path to both the store and the controller removes that
+  /// mismatch and the dependency on process-global state at once.
   Future<int> createAndLoad(String modelKey) async {
-    final canonical = Directory.current.path;
+    final canonical = tempDir.path;
     final session = await store.create(
       title: 't',
       model: modelKey,

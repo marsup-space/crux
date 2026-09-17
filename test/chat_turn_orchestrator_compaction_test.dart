@@ -18,7 +18,6 @@ import 'package:crux/src/tools/file_read_tracker.dart';
 import 'package:crux/src/tools/registry.dart';
 
 void main() {
-  late Directory originalCwd;
   late Directory tempDir;
   late CruxDatabase db;
   late SessionStore store;
@@ -29,11 +28,14 @@ void main() {
   late ChatTurnOrchestrator orchestrator;
 
   setUp(() async {
-    originalCwd = Directory.current;
+    // Intentionally NOT reassigned. `Directory.current` is process-global and
+    // package:test runs suites concurrently in one process, so mutating it here
+    // raced every other suite that reads it. The code under test and these tests
+    // already read the same cwd, so they agree without it; anything this suite
+    // must own is addressed explicitly through `tempDir`.
     tempDir = await Directory.systemTemp.createTemp(
       'crux_compact_context_mirror_',
     );
-    Directory.current = tempDir;
 
     db = CruxDatabase.forTesting(NativeDatabase.memory());
     store = SessionStore(db, instanceId: 'local');
@@ -56,6 +58,7 @@ void main() {
       providerService: providerService,
       chatService: chatService,
       refresh: () {},
+      projectPath: () => tempDir.path,
     );
     streamingController = StreamingController(
       sessionController: sessionController,
@@ -82,7 +85,6 @@ void main() {
     chatService.dispose();
     gitStatusService.dispose();
     await db.close();
-    Directory.current = originalCwd;
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
     }

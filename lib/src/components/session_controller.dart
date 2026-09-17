@@ -27,6 +27,15 @@ class SessionController {
   final ChatService _chatService;
   final void Function() _refresh;
 
+  /// Resolves the project this controller acts on.
+  ///
+  /// Injected because the process cwd is the wrong unit of identity here: it is
+  /// global mutable state, so a controller silently follows whoever changes
+  /// `Directory.current` next — the `/project` command does exactly that by
+  /// design, and concurrent test suites used to do it to each other. Defaults to
+  /// the cwd, which is what the panel wants in production.
+  final String Function() _projectPath;
+
   /// Passive mirror of the controller's session/navigation state. Every
   /// mutation on this controller also calls the matching cubit method,
   /// so widgets can subscribe via `BlocBuilder` while older code keeps
@@ -336,8 +345,10 @@ class SessionController {
     required this._providerService,
     required this._chatService,
     required this._refresh,
+    String Function()? projectPath,
   }) : _store = store,
-       _messageStore = store.messageStore;
+       _messageStore = store.messageStore,
+       _projectPath = projectPath ?? (() => Directory.current.path);
 
   Session get currentSession {
     if (currentSessionId == null) {
@@ -376,7 +387,7 @@ class SessionController {
       byId[s.id] = s;
     }
     final archived = await _store.list(
-      projectPath: Directory.current.path,
+      projectPath: _projectPath(),
       includeArchived: true,
     );
     final archivedChats = await _store.listChats(includeArchived: true);
@@ -641,15 +652,13 @@ class SessionController {
   Future<void> initSessions() async {
     // Auto-archive sessions not updated in the last 3 days.
     await _store.autoArchive(
-      projectPath: Directory.current.path,
+      projectPath: _projectPath(),
       olderThan: const Duration(days: 3),
     );
     await _store.autoArchiveChats(olderThan: const Duration(days: 3));
-    sessions = await _store.list(projectPath: Directory.current.path);
+    sessions = await _store.list(projectPath: _projectPath());
     chats = await _store.listChats();
-    archivedCount = await _store.archivedCount(
-      projectPath: Directory.current.path,
-    );
+    archivedCount = await _store.archivedCount(projectPath: _projectPath());
     archivedChatCount = await _store.archivedChatCount();
     if (sessions.isEmpty) {
       await _providerService.initialize();
@@ -659,7 +668,7 @@ class SessionController {
         // rendered by the display layer (see Session.isUntitled).
         title: '',
         model: model,
-        projectPath: Directory.current.path,
+        projectPath: _projectPath(),
       );
       sessions = [session];
       resolveAuxiliaryModel();
@@ -679,7 +688,7 @@ class SessionController {
         // Empty title = untitled (see above).
         title: '',
         model: model,
-        projectPath: Directory.current.path,
+        projectPath: _projectPath(),
       );
       sessions = [session, ...sessions];
       currentSessionId = session.id;
@@ -706,11 +715,9 @@ class SessionController {
   /// session, or reload any messages, so it is safe to call while a
   /// turn is streaming.
   Future<void> reloadSidebar() async {
-    sessions = await _store.list(projectPath: Directory.current.path);
+    sessions = await _store.list(projectPath: _projectPath());
     chats = await _store.listChats();
-    archivedCount = await _store.archivedCount(
-      projectPath: Directory.current.path,
-    );
+    archivedCount = await _store.archivedCount(projectPath: _projectPath());
     archivedChatCount = await _store.archivedChatCount();
     cubit.replaceSessions(
       sessions: sessions,
@@ -1279,11 +1286,9 @@ class SessionController {
     chatTurnCubit.removeSession(sessionId);
     // Also drop the deleted session's message queue.
     _messageQueues.remove(sessionId);
-    sessions = await _store.list(projectPath: Directory.current.path);
+    sessions = await _store.list(projectPath: _projectPath());
     chats = await _store.listChats();
-    archivedCount = await _store.archivedCount(
-      projectPath: Directory.current.path,
-    );
+    archivedCount = await _store.archivedCount(projectPath: _projectPath());
     archivedChatCount = await _store.archivedChatCount();
     cubit.replaceSessions(
       sessions: sessions,
@@ -1316,7 +1321,7 @@ class SessionController {
           // Empty title = untitled (locale-aware placeholder).
           title: '',
           model: model,
-          projectPath: Directory.current.path,
+          projectPath: _projectPath(),
         );
         sessions = [session];
         currentSessionId = session.id;
