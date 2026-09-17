@@ -285,9 +285,15 @@ class SurfaceCatalog {
     buf.writeln('## Generative UI — Surface Catalog');
     buf.writeln();
     buf.writeln(
-      'You can create interactive UI surfaces by calling the `surface` tool '
-      'with an A2UI `createSurface` message. The surface is rendered inline '
-      'in the chat flow using the component types below.',
+      'Use the `surface` tool when the user needs an interactive choice, '
+      'a multi-field configuration, a compact review/dashboard, or live '
+      'progress. Do not use it as decorative prose formatting: use Markdown '
+      'tables for static comparisons and `ask://` for a single simple choice.',
+    );
+    buf.writeln();
+    buf.writeln(
+      'Create the surface with an A2UI `createSurface` message using the '
+      'component types below. It renders inline in the chat flow.',
     );
     buf.writeln();
     buf.writeln('Catalog ID: `$catalogId`');

@@ -74,11 +74,7 @@ void main() {
       expect(out, contains('ask://Use cache'));
     });
 
-    test('teaches the LLM the mermaid/d2 diagram format', () {
-      // The TUI renders fenced `mermaid` / `d2` blocks as ASCII-art
-      // diagrams; the model needs to know the format exists and which
-      // subset is renderable, or it writes `pie`/`sequenceDiagram`
-      // (unsupported → falls back to plain code, defeating the feature).
+    test('teaches the LLM when to use structured reply formats', () {
       final out = buildSystemPrompt(
         provider: _provider(),
         model: _provider().models.first,
@@ -86,12 +82,17 @@ void main() {
         worktree: '/tmp/x',
         sessionStarted: DateTime.utc(2026, 1, 1),
       );
-      expect(out, contains('## Diagrams in replies'));
+      expect(out, contains('## Structured replies'));
+      expect(out, contains('Compare 3+ peer items'));
+      expect(out, contains('compact Markdown table'));
+      expect(out, contains('3+ meaningful nodes'));
+      expect(out, contains('create a `surface`'));
+      expect(out, contains('multi-field configuration'));
+      expect(out, contains('Markdown tables for static comparisons'));
       expect(out, contains('stateDiagram-v2'));
-      expect(out, contains('flowchart LR|TD'));
+      expect(out, contains('flowchart\nLR|TD'));
       expect(out, contains('a -> b: label'));
-      // The supported subset is spelled out (and pie is excluded).
-      expect(out, contains('no `pie`'));
+      expect(out, contains('Do not use `pie`'));
     });
 
     test('prefers prepare_commit so commit and push stay human-reviewed', () {
@@ -399,18 +400,17 @@ void main() {
       expect(out, contains('not tied to any workspace'));
     });
 
-    test('still teaches the mermaid/d2 diagram capability', () {
-      // Chat replies render diagrams too — a workspace-free session
-      // needs the format hint even though the full prompt body doesn't
-      // apply.
+    test('teaches tables and diagrams for structured chat replies', () {
       final out = buildChatSystemPrompt(
         provider: _provider(),
         model: _provider().models.first,
         sessionStarted: DateTime.utc(2026, 1, 1),
       );
-      expect(out, contains('mermaid'));
-      expect(out, contains('d2'));
-      expect(out, contains('stateDiagram-v2'));
+      expect(out, contains('For comparisons of 3+ peer items'));
+      expect(out, contains('compact Markdown table'));
+      expect(out, contains('3+\nmeaningful nodes'));
+      expect(out, contains('`mermaid`'));
+      expect(out, contains('`d2`'));
     });
 
     test('includes provider system_prompt_addition and env meta', () {
@@ -464,6 +464,10 @@ void main() {
         sessionStarted: DateTime.utc(2026, 1, 1),
       );
       expect(isStaleChatSystemPrompt(fresh), isFalse);
+      expect(
+        isStaleChatSystemPrompt('Chat mode\nold diagram guidance'),
+        isTrue,
+      );
       // Null / empty → nothing to judge (treated as "build anyway").
       expect(isStaleChatSystemPrompt(null), isFalse);
       expect(isStaleChatSystemPrompt(''), isFalse);
@@ -476,6 +480,7 @@ void main() {
         'You are Crux, an interactive AI coding agent for the terminal.\n'
         '## Human-reviewed commits\n'
         'The commit title and description are user-visible\n'
+        '## Shell output budget\n'
         '## Tool tiers',
       ),
       isTrue,
@@ -488,6 +493,15 @@ void main() {
       sessionStarted: DateTime.utc(2026, 1, 1),
     );
     expect(isStaleWorkspaceSystemPrompt(fresh), isFalse);
+    expect(
+      isStaleWorkspaceSystemPrompt(
+        'You are Crux\n'
+        'The commit title and description are user-visible\n'
+        '## Shell output budget\n'
+        '## Structured replies',
+      ),
+      isFalse,
+    );
     expect(isStaleWorkspaceSystemPrompt(null), isFalse);
     expect(isStaleWorkspaceSystemPrompt(''), isFalse);
   });
