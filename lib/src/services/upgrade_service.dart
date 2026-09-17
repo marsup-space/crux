@@ -16,6 +16,7 @@
 /// the whole flow is testable offline.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -23,6 +24,8 @@ import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 
 import '../utils/bundled_executable.dart' show currentRuntimeTarget;
+import '../utils/github_release_transport.dart';
+import '../utils/system_proxy.dart';
 
 /// GitHub coordinates the release assets are published under.
 const String kCruxReleaseRepo = 'marsup-space/crux';
@@ -305,58 +308,18 @@ List<int> _segments(String version) => version
     .map((part) => int.tryParse(part) ?? 0)
     .toList(growable: false);
 
-/// Default downloader: bare HTTP with redirect following.
+/// Extracts a version from anything that references a release tag.
 ///
-/// Hand-rolled because the repo has no shared HTTP client — the LSP installers
-/// and `RuntimeSetupService` each do the same, so this matches the existing
-/// idiom rather than inventing a new abstraction for two call sites.
-Future<Uint8List> httpDownloadBytes(String url) async {
-  final client = HttpClient();
-  try {
-    var uri = Uri.parse(url);
-    for (var redirects = 0; redirects < 5; redirects++) {
-      final request = await client.getUrl(uri);
-      request.followRedirects = false;
-      final response = await request.close();
-      final status = response.statusCode;
-      final isRedirect =
-          status == 301 ||
-          status == 302 ||
-          status == 303 ||
-          status == 307 ||
-          status == 308;
-      if (isRedirect) {
-        final location = response.headers.value('location');
-        await response.drain<void>();
-        if (location == null) {
-          throw const HttpException('redirect without a Location header');
-        }
-        uri = uri.resolve(location);
-        continue;
-      }
-      if (status != 200) {
-        await response.drain<void>();
-        throw HttpException('HTTP $status for $uri');
-      }
-      final chunks = <int>[];
-      await for (final chunk in response) {
-        chunks.addAll(chunk);
-      }
-      return Uint8List.fromList(chunks);
-    }
-    throw const HttpException('too many redirects');
-  } finally {
-    client.close(force: true);
-  }
-}
-
-/// Extracts a version from a `releases/latest` redirect target.
+/// Two shapes reach this, because the transports answer differently:
+/// a direct (or system-proxy) connection to `releases/latest` returns 302 with
+/// the tag in its Location header, while a mirror returns the release page
+/// itself and the tag appears in its markup. One pattern covers both — measured
+/// against the live mirrors, whose capabilities are not interchangeable.
 ///
-/// `https://github.com/o/r/releases/tag/v1.2.3` → `v1.2.3`. Pure, so the parsing
-/// is testable without a network round trip.
-String? versionFromReleaseRedirect(String? location) {
-  if (location == null) return null;
-  final match = RegExp(r'/releases/tag/([^/?#]+)').firstMatch(location);
+/// Pure, so the parsing is testable without a network round trip.
+String? versionFromReleaseReference(String? text) {
+  if (text == null) return null;
+  final match = RegExp("/releases/tag/([^/?#\\s\"'<>]+)").firstMatch(text);
   if (match == null) return null;
   try {
     return Uri.decodeComponent(match.group(1)!);
@@ -365,36 +328,120 @@ String? versionFromReleaseRedirect(String? location) {
   }
 }
 
-/// Default version resolver: follows the `releases/latest` *redirect*.
+/// Builds an [HttpClient] routed through [proxy] when one is in scope.
+HttpClient _clientFor(SystemProxy? proxy) {
+  final client = HttpClient()..connectionTimeout = const Duration(seconds: 30);
+  if (proxy != null) client.findProxy = proxy.findProxyFor;
+  return client;
+}
+
+bool _looksLikeZip(Uint8List bytes) {
+  if (bytes.length < 4) return false;
+  if (bytes[0] != 0x50 || bytes[1] != 0x4b) return false; // "PK"
+  final third = bytes[2];
+  final fourth = bytes[3];
+  return (third == 0x03 && fourth == 0x04) ||
+      (third == 0x05 && fourth == 0x06) ||
+      (third == 0x07 && fourth == 0x08);
+}
+
+Future<String?> _headLocation(HttpClient client, String url) async {
+  final request = await client.headUrl(Uri.parse(url));
+  // A 302 is the answer we want here, so don't follow it away.
+  request.followRedirects = false;
+  final response = await request.close();
+  final location = response.headers.value('location');
+  await response.drain<void>();
+  return location;
+}
+
+/// Reads at most [maxBytes] of a text resource.
 ///
-/// Deliberately not the releases API. That endpoint's anonymous limit is 60
-/// requests/hour per IP, and once it is spent it answers 403 — which surfaced to
-/// users as "could not reach GitHub" for something they could neither see nor
-/// fix. Measured on this machine: `x-ratelimit-remaining: 0` while the redirect
-/// still answered fine. The redirect has no such limit, needs no token, and
-/// carries the tag in its Location header.
+/// The tag sits in the document head, so a bounded read is enough — and it keeps
+/// a mirror with a pathological body from being read into memory in full.
+Future<String> _readTextHead(
+  HttpClient client,
+  String url, {
+  int maxBytes = 64 * 1024,
+}) async {
+  final request = await client.getUrl(Uri.parse(url));
+  final response = await request.close();
+  if (response.statusCode != 200) {
+    await response.drain<void>();
+    throw HttpException('HTTP ${response.statusCode} for $url');
+  }
+  final buffer = <int>[];
+  await for (final chunk in response) {
+    buffer.addAll(chunk);
+    if (buffer.length >= maxBytes) break;
+  }
+  if (buffer.length > maxBytes) buffer.removeRange(maxBytes, buffer.length);
+  return utf8.decode(buffer, allowMalformed: true);
+}
+
+/// Default downloader: walks the transport chain until a real zip arrives.
+///
+/// The zip signature is checked *inside* each attempt so a mirror that answers
+/// 200 with an error page counts as a miss and the next transport is tried —
+/// otherwise the caller would surface a decode error that names no cause and
+/// offers no next step.
+Future<Uint8List> httpDownloadBytes(String url) => withGithubTransports(
+  url: url,
+  attempt: (candidate, proxy) async {
+    final client = _clientFor(proxy);
+    try {
+      final request = await client.getUrl(Uri.parse(candidate));
+      final response = await request.close();
+      if (response.statusCode != 200) {
+        await response.drain<void>();
+        throw HttpException('HTTP ${response.statusCode} for $candidate');
+      }
+      final chunks = <int>[];
+      await for (final chunk in response) {
+        chunks.addAll(chunk);
+      }
+      final bytes = Uint8List.fromList(chunks);
+      if (!_looksLikeZip(bytes)) {
+        throw HttpException('$candidate did not return a zip archive');
+      }
+      return bytes;
+    } finally {
+      client.close(force: true);
+    }
+  },
+);
+
+/// Default version resolver: walks the transport chain for the release page.
 ///
 /// Returns null rather than throwing, so "cannot tell" stays distinguishable
 /// from a real failure at the call site.
-Future<String?> httpFetchLatestVersion({
-  String repo = kCruxReleaseRepo,
-  HttpClient? client,
-}) async {
-  final http = client ?? HttpClient();
+Future<String?> httpFetchLatestVersion({String repo = kCruxReleaseRepo}) async {
   try {
-    final request = await http.headUrl(
-      Uri.parse('https://github.com/$repo/releases/latest'),
+    return await withGithubTransports<String>(
+      url: 'https://github.com/$repo/releases/latest',
+      attempt: (candidate, proxy) async {
+        final client = _clientFor(proxy);
+        try {
+          final location = await _headLocation(client, candidate);
+          final fromHeader = versionFromReleaseReference(location);
+          if (fromHeader != null) return fromHeader;
+          // A mirror answers with the page instead of a redirect; a
+          // download-only mirror answers with a refusal, which has no tag and
+          // therefore counts as a miss for the next transport.
+          final fromBody = versionFromReleaseReference(
+            await _readTextHead(client, candidate),
+          );
+          if (fromBody == null) {
+            throw HttpException('no release tag at $candidate');
+          }
+          return fromBody;
+        } finally {
+          client.close(force: true);
+        }
+      },
     );
-    request.followRedirects = false;
-    request.headers.set('user-agent', 'crux-upgrade');
-    final response = await request.close();
-    final location = response.headers.value('location');
-    await response.drain<void>();
-    return versionFromReleaseRedirect(location);
   } catch (_) {
     return null;
-  } finally {
-    if (client == null) http.close(force: true);
   }
 }
 

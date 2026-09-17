@@ -28,6 +28,21 @@ APP=crux
 REPO="${CRUX_REPO:-marsup-space/crux}"
 INSTALL_DIR="${CRUX_INSTALL_DIR:-$HOME/.$APP/bin}"
 
+# GitHub mirrors, tried in order when github.com itself is unreachable — the
+# usual situation behind the GFW. The convention every gh-proxy instance uses is
+# the mirror prefix followed by the absolute original URL. Set
+# CRUX_GITHUB_PROXIES (space/comma separated) to use others, or
+# CRUX_NO_GITHUB_PROXY=1 to disable the step entirely.
+#
+# Note this step is a *third-party relay*, and the release workflow publishes no
+# checksum, so a download through one is not verifiable client-side. That is why
+# it runs last, after the direct attempt and after curl's own proxy handling
+# (curl honours http_proxy / https_proxy / all_proxy from the environment).
+GITHUB_MIRRORS="${CRUX_GITHUB_PROXIES:-https://gh-proxy.com/ https://ghfast.top/ https://ghproxy.net/}"
+if [ "${CRUX_NO_GITHUB_PROXY:-0}" = "1" ]; then
+    GITHUB_MIRRORS=""
+fi
+
 requested_version="${CRUX_VERSION:-}"
 binary_path=""
 no_modify_path=false
@@ -76,6 +91,18 @@ while [[ $# -gt 0 ]]; do
         *) warn "unknown option: $1"; shift ;;
     esac
 done
+
+# Expands one URL into the direct form plus one candidate per configured mirror.
+# Every gh-proxy instance uses the same shape: mirror prefix + absolute URL.
+mirror_candidates() {
+    local target="$1"
+    for mirror in $GITHUB_MIRRORS; do
+        case "$mirror" in
+            */) printf '%s%s\n' "$mirror" "$target" ;;
+            *)  printf '%s/%s\n' "$mirror" "$target" ;;
+        esac
+    done
+}
 
 mkdir -p "$INSTALL_DIR"
 
@@ -145,15 +172,31 @@ else
     # limit, needs no token, and carries the tag as the last path segment of
     # its Location header.
     specific_version=$(
-        curl -sI -o /dev/null -w '%{redirect_url}' \
+        curl -sI --max-time 20 -o /dev/null -w '%{redirect_url}' \
             "https://github.com/${REPO}/releases/latest" \
             | sed -E 's#.*/releases/tag/v?##'
     )
-    [ -n "$specific_version" ] || fail "failed to resolve the latest version"
+    if [ -z "$specific_version" ]; then
+        # github.com is likely unreachable. A mirror that serves pages carries
+        # the tag in its markup; one that serves downloads only (gh-proxy.com
+        # refuses HTML outright) does not. That is not fatal — the asset URL
+        # above never needed the version, and a mirror can still deliver the
+        # file. Only the "already installed" comparison needs a real version.
+        for mirror in $GITHUB_MIRRORS; do
+            specific_version=$(
+                curl -sL --max-time 20 \
+                    "${mirror}https://github.com/${REPO}/releases/latest" \
+                    | grep -oE '/releases/tag/v?[^"<> ]+' | head -1 \
+                    | sed -E 's#.*/releases/tag/v?##'
+            )
+            [ -n "$specific_version" ] && break
+        done
+    fi
+    [ -n "$specific_version" ] || specific_version="latest"
 fi
 
 # ---- check for matching installed version ------------------------------------
-if [ -z "$binary_path" ] && command -v "$APP" >/dev/null 2>&1; then
+if [ -z "$binary_path" ] && [ "$specific_version" != "latest" ] && command -v "$APP" >/dev/null 2>&1; then
     installed=$("$APP" --version 2>/dev/null | sed -E 's/^v?//' || echo "")
     if [ "$installed" = "$specific_version" ]; then
         info "crux v${specific_version} already installed"
@@ -191,8 +234,20 @@ else
     command -v curl >/dev/null 2>&1 || fail "curl is required but not installed"
     command -v unzip >/dev/null 2>&1 || fail "unzip is required but not installed"
 
-    curl -fL --retry 3 --connect-timeout 15 -o "${tmp}/${asset}" "$url" \
-        || fail "download failed: $url"
+    # Try the direct URL first, then each mirror. `curl -f` turns an HTTP error
+    # status into a non-zero exit, so a mirror answering with an error page is
+    # treated as a miss rather than saved as the archive.
+    downloaded=false
+    for candidate in "$url" $(mirror_candidates "$url"); do
+        if curl -fL --retry 2 --connect-timeout 15 -o "${tmp}/${asset}" "$candidate"; then
+            downloaded=true
+            if [ "$candidate" != "$url" ]; then
+                info "Downloaded via mirror ${candidate%%/https*}"
+            fi
+            break
+        fi
+    done
+    [ "$downloaded" = "true" ] || fail "download failed: $url (mirrors tried: ${GITHUB_MIRRORS:-none})"
     unzip -q -o "${tmp}/${asset}" -d "$tmp"
 
     # The zip extracts to crux-<target>/{providers,themes,third_party,...}

@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:crux/src/services/upgrade_service.dart';
+import 'package:crux/src/utils/github_release_transport.dart';
+import 'package:crux/src/utils/system_proxy.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -45,28 +47,169 @@ void main() {
     });
   });
 
-  group('release redirect parsing', () {
-    test('reads the tag out of a releases/latest redirect', () {
+  group('release reference parsing', () {
+    test('reads the tag out of a releases/latest redirect Location', () {
       expect(
-        versionFromReleaseRedirect(
+        versionFromReleaseReference(
           'https://github.com/marsup-space/crux/releases/tag/v1.0.2',
         ),
         'v1.0.2',
       );
       expect(
-        versionFromReleaseRedirect('https://github.com/o/r/releases/tag/1.2.3'),
+        versionFromReleaseReference(
+          'https://github.com/o/r/releases/tag/1.2.3',
+        ),
         '1.2.3',
       );
     });
 
+    test('reads the tag out of a release page a mirror returned', () {
+      // Measured: gh-proxy mirrors answer `releases/latest` with the page
+      // instead of a redirect (or refuse HTML entirely), so the same pattern
+      // has to cover markup as well as a header.
+      const page =
+          '<html><head><link rel="canonical" '
+          'href="https://github.com/marsup-space/crux/releases/tag/v1.0.2">'
+          '</head><body>…</body></html>';
+      expect(versionFromReleaseReference(page), 'v1.0.2');
+    });
+
     test('returns null rather than guessing when there is no tag', () {
-      expect(versionFromReleaseRedirect(null), isNull);
-      expect(versionFromReleaseRedirect(''), isNull);
+      expect(versionFromReleaseReference(null), isNull);
+      expect(versionFromReleaseReference(''), isNull);
       expect(
-        versionFromReleaseRedirect('https://github.com/o/r/releases'),
+        versionFromReleaseReference('https://github.com/o/r/releases'),
+        isNull,
+      );
+      // A download-only mirror's refusal carries no tag and must read as a miss.
+      expect(
+        versionFromReleaseReference(
+          'Web page content is not allowed. This service is for resource '
+          'downloads only.',
+        ),
         isNull,
       );
     });
+  });
+
+  group('github transport chain', () {
+    tearDown(SystemProxyDetector.resetForTesting);
+
+    test('uses the direct connection and stops there', () async {
+      final tried = <String?>[];
+      final result = await withGithubTransports<String>(
+        url: 'https://github.com/o/r',
+        mirrors: const ['https://mirror.test/'],
+        attempt: (url, proxy) async {
+          tried.add(proxy?.httpsUrl);
+          return 'direct-ok';
+        },
+      );
+      expect(result, 'direct-ok');
+      expect(tried, [null], reason: 'a working direct path must not fan out');
+    });
+
+    test('falls back to the system proxy before any mirror', () async {
+      SystemProxyDetector.overrideForTesting(
+        const SystemProxy(httpsUrl: 'http://127.0.0.1:7897'),
+      );
+      final tried = <String>[];
+      final result = await withGithubTransports<String>(
+        url: 'https://github.com/o/r',
+        mirrors: const ['https://mirror-a.test/'],
+        attempt: (url, proxy) async {
+          tried.add(proxy == null ? 'direct' : 'proxy:${proxy.httpsUrl}');
+          if (tried.length < 3) throw const SocketException('blocked');
+          return 'mirror-ok';
+        },
+      );
+      expect(result, 'mirror-ok');
+      expect(tried, [
+        'direct',
+        'proxy:http://127.0.0.1:7897',
+        'direct',
+      ], reason: 'the user-own proxy must be preferred over a third party');
+    });
+
+    test('stops at the first mirror that answers', () async {
+      SystemProxyDetector.overrideForTesting(null);
+      final tried = <String>[];
+      final result = await withGithubTransports<String>(
+        url: 'https://github.com/o/r/x.zip',
+        mirrors: const ['https://a.test/', 'https://b.test/'],
+        attempt: (url, proxy) async {
+          tried.add(url);
+          if (!url.contains('b.test')) throw const SocketException('blocked');
+          return 'b-ok';
+        },
+      );
+      expect(result, 'b-ok');
+      expect(tried.last, 'https://b.test/https://github.com/o/r/x.zip');
+    });
+
+    test('mirror prefixes compose with or without a trailing slash', () {
+      expect(
+        mirrorUrl('https://gh-proxy.com/', 'https://github.com/o/r/x.zip'),
+        'https://gh-proxy.com/https://github.com/o/r/x.zip',
+      );
+      expect(
+        mirrorUrl('https://ghfast.top', 'https://github.com/o/r/x.zip'),
+        'https://ghfast.top/https://github.com/o/r/x.zip',
+      );
+    });
+
+    test('an empty mirror list disables the step', () async {
+      SystemProxyDetector.overrideForTesting(null);
+      var calls = 0;
+      await expectLater(
+        withGithubTransports<String>(
+          url: 'https://github.com/o/r',
+          mirrors: const [],
+          attempt: (url, proxy) async {
+            calls++;
+            throw const SocketException('nope');
+          },
+        ),
+        throwsA(isA<SocketException>()),
+      );
+      expect(calls, 1, reason: 'direct only, no mirrors to try');
+    });
+
+    test('a non-connection error is not retried elsewhere', () async {
+      var calls = 0;
+      await expectLater(
+        withGithubTransports<String>(
+          url: 'https://github.com/o/r',
+          mirrors: const ['https://a.test/'],
+          attempt: (url, proxy) async {
+            calls++;
+            throw const FormatException('bad payload');
+          },
+        ),
+        throwsA(isA<FormatException>()),
+      );
+      expect(
+        calls,
+        1,
+        reason:
+            'a payload bug is not a transport problem; mirrors cannot fix it',
+      );
+    });
+
+    test(
+      'reports the last failure once every transport is exhausted',
+      () async {
+        SystemProxyDetector.overrideForTesting(null);
+        await expectLater(
+          withGithubTransports<String>(
+            url: 'https://github.com/o/r',
+            mirrors: const ['https://a.test/'],
+            attempt: (url, proxy) async => throw const SocketException('nope'),
+          ),
+          throwsA(isA<SocketException>()),
+        );
+      },
+    );
   });
 
   group('refusals', () {
