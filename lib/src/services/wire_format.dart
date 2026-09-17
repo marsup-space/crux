@@ -27,10 +27,19 @@ import 'provider_service.dart';
 ///   - Multi-modal image content (Anthropic vs OpenAI format)
 ///   - Thinking/reasoning blocks (Anthropic format)
 ///   - Tool call + tool result pairing (Anthropic vs OpenAI format)
+///
+/// [includeImages] is the model-capability gate for image parts: pass `false`
+/// when the target model declares `image_support = false`, which turns every
+/// user row into its text only. A model that cannot read images rejects the
+/// whole request over them — Zhipu answers `400 / 1210 messages.content.type
+/// 参数非法，取值范围 ['text']` — and because attached images live on the
+/// history rows, one such row would otherwise fail every later turn too. The
+/// `[ image N ]` markers stay in the text: they are the user's own message.
 List<Map<String, dynamic>> buildApiMessages(
   List<Message> history,
   WireFamily wireFamily, {
   String? systemPrompt,
+  bool includeImages = true,
 }) {
   final result = <Map<String, dynamic>>[];
 
@@ -55,7 +64,19 @@ List<Map<String, dynamic>> buildApiMessages(
 
     switch (m.role) {
       case 'user':
-        if (m.images.isNotEmpty) {
+        // UI-only rows never reach the model. A worker→commander report is
+        // persisted as `role: 'user'` + empty content + `agentBubble` meta
+        // (see `subagent_meta.dart`) purely so the chat log can draw the
+        // bubble; the wake turn that follows reads its payload from the
+        // system prompt's "Internal Subagent events" section. Emitting the
+        // row as an empty user message makes the request malformed on the
+        // OpenAI-compatible wire — Zhipu rejects it with `400 / 1213
+        // 未正常接收到prompt参数` ("parameter prompt was not received") and
+        // Anthropic refuses an empty text block outright. The wire layer is
+        // the single gate that decides what the model sees, so the drop
+        // belongs here; the row stays in the store for the UI.
+        if (m.content.trim().isEmpty && m.images.isEmpty) break;
+        if (includeImages && m.images.isNotEmpty) {
           final content = <Map<String, dynamic>>[];
           for (final img in m.images) {
             if (wireFamily == WireFamily.anthropicCompatible) {

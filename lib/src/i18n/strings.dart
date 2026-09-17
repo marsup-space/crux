@@ -651,6 +651,8 @@ const Map<String, String> _en = {
   'toast.clipboardReadFailed': 'Failed to read clipboard: {error}',
   'toast.imageAttached': '📎 Attached: {label} ({kb} KB). Type your message and press Enter to send.',
   'toast.imageAttachFailed': 'Failed to attach image: {error}',
+  'toast.imagesUnsupported':
+      '🚫 Image not sent: {model} does not accept image input (its provider TOML declares image_support = false). Switch to an image-capable model and paste again — your text was sent.',
   'toast.droppedFileMissing': '⚠️ File(s) not found: {names}',
   'toast.droppedSummary': '📎 Dropped: {summary}',
 
@@ -1336,6 +1338,8 @@ const Map<String, String> _zh = {
   'toast.clipboardReadFailed': '读取剪贴板失败：{error}',
   'toast.imageAttached': '📎 已附加：{label}（{kb} KB）。输入消息后回车即可发送。',
   'toast.imageAttachFailed': '附加图片失败：{error}',
+  'toast.imagesUnsupported':
+      '🚫 图片未发送：{model} 不支持图片输入（其 provider TOML 里 image_support = false）。请切换到支持图片的模型后重新粘贴——文字已发送。',
   'toast.droppedFileMissing': '⚠️ 找不到以下文件：{names}',
   'toast.droppedSummary': '📎 已拖入：{summary}',
 

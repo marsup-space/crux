@@ -94,6 +94,9 @@ class BtwTurnHandler {
         history,
         wireFamily,
         systemPrompt: session.systemPrompt,
+        // Same capability gate as the main turn: a text-only model 400s over
+        // an image part, including one replayed from the history it shares.
+        includeImages: provider.modelById(modelId)?.imageSupport ?? true,
       ),
     ];
     final priorBtw = sessionController.btwTurnsFor(sessionId);

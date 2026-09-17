@@ -121,6 +121,26 @@ class ChatTurnOrchestrator {
     _showToast(message, mode: mode);
   }
 
+  /// The image attachments that may actually be sent to the current model.
+  ///
+  /// An image-capable model keeps them untouched. A model whose provider TOML
+  /// declares `image_support = false` gets none — plus a toast naming the
+  /// model, because a silently dropped screenshot is as confusing as the
+  /// provider's raw 400. An unresolvable model keeps the attachments: the turn
+  /// is about to fail on the missing provider anyway, and "unknown" is not
+  /// "known-incapable".
+  List<ImageAttachment> _imagesForModel(List<ImageAttachment> images) {
+    if (images.isEmpty) return images;
+    final session = _sessionController.currentSession;
+    final model = _providerService.modelByCompositeKey(session.model);
+    if (model == null || model.imageSupport) return images;
+    _showToast(
+      _strings.t('toast.imagesUnsupported', {'model': session.model}),
+      mode: ToastMode.error,
+    );
+    return const [];
+  }
+
   bool wasInterrupted(int? sessionId) {
     if (sessionId == null) return false;
     return _sessionController.runtime(sessionId).interrupted;
@@ -254,6 +274,14 @@ class ChatTurnOrchestrator {
     final rt = _sessionController.runtime(sessionId);
     if (rt.isResponding) return;
 
+    // Attachment capability is a property of the model, and the gate belongs
+    // here rather than at attach time: the clipboard is probed before provider
+    // metadata is guaranteed to be loaded (see InputPaste.tryClipboardImage),
+    // and the user can switch models between attaching and sending. Dropping
+    // them before the row is persisted also keeps the image OUT of the
+    // history — a text-only model rejects every later turn that replays it.
+    final turnImages = _imagesForModel(images);
+
     // Compute the LLM-bound expansion of any `$<skill>` chips but
     // keep `text` as the user's raw input for the message bubble.
     // The chat log shows the chip (`$gitnexus-exploring`); only
@@ -354,7 +382,7 @@ class ChatTurnOrchestrator {
                 _refresh();
                 await sendTurn(
                   text: text,
-                  images: images,
+                  images: turnImages,
                   allowAutoCompact: false,
                 );
                 return;
@@ -494,7 +522,7 @@ class ChatTurnOrchestrator {
           sessionId: sessionId,
           role: 'user',
           content: text,
-          images: images,
+          images: turnImages,
         );
         // Append the persisted user message to the in-memory cache.
         // Route through putCachedMessages so the cubit's messageCache
@@ -531,7 +559,7 @@ class ChatTurnOrchestrator {
         .sendMessage(
           sessionId: sessionId,
           userContent: llmText ?? text,
-          images: images,
+          images: turnImages,
           session: _sessionController.currentSession,
           runtime: rt,
           onDelta: (delta) {
