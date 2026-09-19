@@ -96,6 +96,16 @@ class AgentStore {
     return (await byName(name))!;
   }
 
+  /// Delete one roster row by name. The caller (config fullpane /
+  /// manager) is responsible for refusing deletes of busy agents —
+  /// this store layer only removes the identity and its distilled
+  /// memory.
+  Future<void> deleteByName(String name) async {
+    await (_db.delete(_db.agents)
+          ..where((a) => a.name.equals(name.trim().toLowerCase())))
+        .go();
+  }
+
   /// Mark [name] busy under [sessionId] and record the dispatched
   /// intention. No-op when the agent does not exist.
   Future<void> markBusy(

@@ -1628,6 +1628,10 @@ class _ChatPanelState extends State<ChatPanel> {
           configStore: SubagentConfigStore(_configTomlFile()),
           availableModels: _configuredModelOptions(),
           loadRoster: _loadSubagentRoster,
+          deleteAgent: (name) async {
+            await _store.agentStore.deleteByName(name);
+            _scheduleRosterRefresh();
+          },
           onClose: _closeFullpane,
           strings: _strings,
         );
