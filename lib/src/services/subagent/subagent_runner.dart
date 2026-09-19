@@ -109,7 +109,10 @@ class SubagentRunner {
   /// Start the background run. Returns immediately; progress and the
   /// final report arrive via [onStatus] / [onDone].
   Future<void> start() async {
-    _abort.abort();
+    // NOTE: do NOT abort here — the abort signal is the cancellation
+    // channel (cancel() sets it). Aborting at start would make every
+    // tool call observe isAborted and return immediately, so the run
+    // could never do any work.
     await _runLoop();
   }
 
