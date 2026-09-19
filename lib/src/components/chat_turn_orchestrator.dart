@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:meta/meta.dart';
 import 'package:nocterm/nocterm.dart';
 
 import '../i18n/strings.dart';
@@ -82,6 +83,13 @@ class ChatTurnOrchestrator {
   final Map<int, List<AbortSignal>> _activeAbortSignals = {};
   final Set<int> _streamingGuardAbortedSessions = {};
   bool _fileMutatedThisRound = false;
+
+  /// Subagent report envelopes that arrived while the main agent was
+  /// mid-turn (or before the session was idle). Persisted immediately by
+  /// the panel; queued here so the wake turn fires once the current turn
+  /// settles. Multiple reports coalesce into ONE wake — the model sees
+  /// every persisted bubble row in history regardless.
+  final List<String> _pendingSubagentWakes = [];
 
   ChatTurnOrchestrator({
     required SessionStore store,
@@ -326,6 +334,43 @@ class ChatTurnOrchestrator {
     buf.write('</plan-context>');
     return buf.toString();
   }
+
+  /// Wake path for a subagent report. The panel has already persisted the
+  /// report's UI bubble row; this delivers the envelope text to the model.
+  ///
+  /// Mid-turn, a bare `sendTurn` is a no-op (`rt.isResponding` guard), which
+  /// used to drop reports silently (the M2 "report never arrived" bug). Now
+  /// the envelope queues; [_drainSubagentWakes] fires one combined wake turn
+  /// once the current turn settles. When idle it wakes immediately.
+  ///
+  /// Multiple queued reports coalesce — the model re-reads every persisted
+  /// bubble row from history, so one wake surfaces them all.
+  void enqueueSubagentWake(String envelope) {
+    _pendingSubagentWakes.add(envelope);
+    _drainSubagentWakes();
+  }
+
+  void _drainSubagentWakes() {
+    if (_pendingSubagentWakes.isEmpty) return;
+    final sessionId = _sessionController.currentSessionId;
+    if (sessionId == null) {
+      _pendingSubagentWakes.clear();
+      return;
+    }
+    final rt = _sessionController.runtime(sessionId);
+    if (rt.isResponding || _chatService.isStreaming(sessionId)) return;
+    final combined = _pendingSubagentWakes.join('\n\n');
+    _pendingSubagentWakes.clear();
+    unawaited(sendTurn(text: combined, allowAutoCompact: true));
+  }
+
+  /// Test hooks for the wake queue (queue-and-drain contract).
+  @visibleForTesting
+  List<String> get pendingSubagentWakesForTest =>
+      List.unmodifiable(_pendingSubagentWakes);
+
+  @visibleForTesting
+  void drainSubagentWakesForTest() => _drainSubagentWakes();
 
   Future<void> sendTurn({
     String? text,
@@ -938,6 +983,10 @@ class ChatTurnOrchestrator {
               _refresh();
               await sendTurn(text: null);
             }
+            // A subagent report may have arrived mid-turn (sendTurn is a
+            // no-op while isResponding). The turn has now settled — deliver
+            // the queued wake so the report reaches the model.
+            _drainSubagentWakes();
           },
           onError: (error) {
             if (_interruptedSessions.contains(sessionId)) {
@@ -1008,6 +1057,9 @@ class ChatTurnOrchestrator {
                   _refresh();
                 });
             _showToast(error.toUserMessage(), mode: ToastMode.error);
+            // Even on error the turn is over — deliver any queued subagent
+            // report wake so it isn't stranded by the failed turn.
+            _drainSubagentWakes();
           },
           onStatus: (status) {
             if (_interruptedSessions.contains(sessionId)) return;

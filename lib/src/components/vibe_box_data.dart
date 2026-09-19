@@ -397,6 +397,58 @@ List<VibeSegment> walkSegments(
         lastWasToolResult = false;
         continue;
       }
+      // Subagent report WAKE row: the envelope text persisted by sendTurn
+      // to wake the model (`[Crux system note — subagent report]…`). The
+      // report's visual already landed in the agents box via the dedicated
+      // `agentBubble` row above, so this envelope is model-facing
+      // instruction, not user prose — it must NOT render a `You:` line.
+      // It still opens a fresh segment so the model's reply has an anchor;
+      // `userLineShown = true` suppresses the line itself. Without this the
+      // raw envelope (from:/intention:/status:/report:) leaked into the
+      // vibe-mode chat as if the user had typed it.
+      if (msg.content
+          .trimLeft()
+          .startsWith('[Crux system note — subagent report]')) {
+        _emitSegment(
+          segments,
+          currentUser,
+          thinkDuration,
+          thinkTokens,
+          thinkEffort,
+          toolEntries,
+          toolOrder,
+          toolTotalTokens,
+          modPaths,
+          modLinesAdded,
+          modLinesRemoved,
+          modCalls,
+          surfaceToolCalls,
+          agentRows,
+          progressAccum,
+          stopErrorAccum,
+          null,
+          showUserLine: !userLineShown,
+        );
+        currentUser = msg;
+        userLineShown = true; // anchor set, but the envelope text is hidden
+        thinkDuration = Duration.zero;
+        thinkTokens = 0;
+        thinkEffort = null;
+        toolEntries.clear();
+        toolOrder.clear();
+        toolTotalTokens = 0;
+        modPaths.clear();
+        seenModBasenames.clear();
+        modLinesAdded.clear();
+        modLinesRemoved.clear();
+        modCalls.clear();
+        surfaceToolCalls.clear();
+        agentRows.clear();
+        progressAccum = null;
+        stopErrorAccum = null;
+        lastWasToolResult = false;
+        continue;
+      }
       // Ask-answer boundary: a `role: 'user'` row that lands right
       // after a tool result is the submitted `ask` form, not a new
       // turn. Flush the in-flight segment (the ask call + its prose

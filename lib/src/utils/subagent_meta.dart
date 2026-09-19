@@ -190,3 +190,60 @@ String abbreviateAgentId(String agentId) {
   final prefix = agentId.startsWith('fork') ? 'f' : 'w';
   return '$prefix:${agentId.substring(agentId.indexOf('-') + 1, agentId.indexOf('-') + 9)}';
 }
+
+/// Parse a subagent report WAKE envelope — the `[Crux system note —
+/// subagent report]` text the orchestrator persists as a `role: 'user'`
+/// row to wake the model (see `subagentReportEnvelope`). Returns the
+/// report as an [AgentBubblePayload] so verbose mode can render it as an
+/// [AgentBubble] instead of echoing the raw envelope as user prose.
+/// Returns null when [content] is not a report envelope.
+AgentBubblePayload? parseSubagentReportEnvelope(String? content) {
+  if (content == null) return null;
+  const marker = '[Crux system note — subagent report]';
+  if (!content.trimLeft().startsWith(marker)) return null;
+
+  String? field(String name) {
+    final m = RegExp('^$name:\\s*(.*)\$', multiLine: true).firstMatch(content);
+    return m?.group(1)?.trim();
+  }
+
+  // `from: agent://apus (worker, domain: smoke)` → id + name = `apus`.
+  final from = field('from') ?? '';
+  final idMatch = RegExp('agent://([A-Za-z0-9-]+)').firstMatch(from);
+  final agentName = idMatch?.group(1);
+  if (agentName == null) return null;
+
+  return AgentBubblePayload(
+    direction: AgentBubbleDirection.fromAgent,
+    agentId: agentName,
+    agentName: agentName,
+    kind: 'report',
+    message: subagentReportSummary(content) ?? '',
+  );
+}
+
+/// One-line summary of a subagent report envelope — the first non-empty
+/// line of its `report: |` block, with the trailing `next: …` hint never
+/// treated as the summary.
+///
+/// This is what the agents box / [AgentBubble] show. The envelope's FIRST
+/// line is the `[Crux system note — subagent report]` marker, so taking
+/// "the first non-empty line of the envelope" would display that marker
+/// instead of the report (the bug this helper exists to prevent).
+///
+/// Returns null when [envelope] carries no `report: |` block, leaving the
+/// fallback to the caller.
+String? subagentReportSummary(String envelope) {
+  final reportIdx = envelope.indexOf(RegExp(r'^report:\s*\|', multiLine: true));
+  if (reportIdx == -1) return null;
+  final rest = envelope.substring(reportIdx);
+  final nl = rest.indexOf('\n');
+  if (nl == -1) return null;
+  for (final line in rest.substring(nl + 1).split('\n')) {
+    final t = line.trim();
+    if (t.isEmpty) continue;
+    if (t.startsWith('next:')) break;
+    return t;
+  }
+  return null;
+}
