@@ -22,6 +22,9 @@ class SurfaceBuilder {
     return _add(id, 'Row', {'children': children, 'gap': gap});
   }
 
+  SurfaceBuilder list(String id, List<String> children, {int? maxHeight}) =>
+      _add(id, 'List', {'children': children, 'maxHeight': ?maxHeight});
+
   SurfaceBuilder text(String id, String text) =>
       _add(id, 'Text', {'text': text});
 

@@ -9,12 +9,17 @@ import '../home_widgets.dart';
 
 /// The `subagent-pool` box — the subagent roster at a glance.
 ///
-/// Shows the two mode switches (workers / experts, on/off) and every
-/// roster agent (✎ worker / ✦ expert + constellation name + busy /
-/// ready + last intention). Activate (Enter / click) opens the
+/// Shows the two mode switches (workers / experts, on/off) and, for each
+/// roster agent, one chip row: `✎ antlia` (role glyph + name) followed by
+/// three badges — domain, model short name (the segment after the last
+/// `/`), and status (`busy` warning / `ready` success). The intention is
+/// deliberately left out: a badge row has no room for it, and the config
+/// fullpane still shows it per agent. The agent rows render in a
+/// scrollable `List` (capped at four visible rows) so a long roster
+/// scrolls instead of truncating. Activate (Enter / click) opens the
 /// subagent-config fullpane via [HomeContext.openSubagentConfig]; that
-/// surface edits the model pools, flips the switches, and reads the
-/// same roster live.
+/// surface edits the global model pools and reads the same roster live
+/// (the switches stay here — this box and the agent bar own them).
 ///
 /// Data: [SubagentController] for the switches; the roster is fetched
 /// from the agents table on activate and on a light periodic refresh
@@ -40,7 +45,7 @@ class SubagentPoolHomeWidget extends HomeWidget {
   Set<int> get supportedSpans => const {1};
 
   @override
-  int heightFor(int span) => 4;
+  int heightFor(int span) => 6;
 
   /// Only show the box when subagent mode is configured at all —
   /// either switch on, or the roster already has agents. A fresh
@@ -132,33 +137,47 @@ class _SubagentPoolViewState extends State<_SubagentPoolView> {
       ..text(
         'switches',
         '✎ workers ${toggles.workersOn ? 'on' : 'off'}'
-        '  ·  ✦ experts ${toggles.expertsOn ? 'on' : 'off'}',
+            '  ·  ✦ experts ${toggles.expertsOn ? 'on' : 'off'}',
       );
 
     if (roster.isEmpty) {
       ids.add('empty');
       surface.text('empty', strings.t('subagent.pool.empty'));
     } else {
-      for (var i = 0; i < roster.length && i < 5; i++) {
+      final rowIds = <String>[];
+      for (var i = 0; i < roster.length; i++) {
         final entry = roster[i];
-        final id = 'agent$i';
-        ids.add(id);
-        surface.text(
-          id,
-          '${entry.role == 'expert' ? '✦' : '✎'} ${entry.name} '
-          '${entry.busy ? strings.t('subagent.pool.busy') : strings.t('subagent.pool.ready')}'
-          '${entry.intention.isEmpty ? '' : ' · ${entry.intention}'}',
-        );
+        final rowId = 'agent${i}Row';
+        final nameId = 'agent${i}Name';
+        final domainId = 'agent${i}Domain';
+        final modelId = 'agent${i}Model';
+        final statusId = 'agent${i}Status';
+        rowIds.add(rowId);
+        surface
+          ..row(rowId, [nameId, domainId, modelId, statusId], gap: 1)
+          ..text(nameId, '${entry.role == 'expert' ? '✦' : '✎'} ${entry.name}')
+          ..badge(domainId, text: entry.domain)
+          ..badge(modelId, text: _shortModel(entry.model))
+          ..badge(
+            statusId,
+            text: entry.busy
+                ? strings.t('subagent.pool.busy')
+                : strings.t('subagent.pool.ready'),
+            tone: entry.busy ? 'warning' : 'success',
+          );
       }
-      if (roster.length > 5) {
-        ids.add('more');
-        surface.text(
-          'more',
-          strings.t('subagent.pool.more', {'n': '${roster.length - 5}'}),
-        );
-      }
+      ids.add('agentList');
+      surface.list('agentList', rowIds, maxHeight: 4);
     }
 
     return homeSurface(declaration: surface.build(), strings: strings);
   }
+}
+
+/// Model badge text: the last `/` segment of a composite model key
+/// (`deepseek/deepseek-v4-flash` → `deepseek-v4-flash`), so a provider
+/// prefix can't eat the chip's width. Keys without a `/` pass through.
+String _shortModel(String model) {
+  final slash = model.lastIndexOf('/');
+  return slash < 0 ? model : model.substring(slash + 1);
 }
