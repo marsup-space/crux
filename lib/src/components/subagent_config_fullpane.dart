@@ -4,7 +4,9 @@ import '../i18n/strings.dart';
 import '../models/subagent.dart';
 import '../services/subagent/subagent_config_store.dart';
 import '../services/subagent/subagent_controller.dart';
+import '../services/subagent/worker_name_localizer.dart';
 import '../theme/crux_theme.dart';
+import '../utils/terminal_symbols.dart';
 import 'ui/button.dart';
 import 'ui/fullpane.dart';
 import 'ui/hoverable.dart';
@@ -17,15 +19,22 @@ import 'ui/multi_button.dart';
 /// Layout (nocterm components throughout — buttons, hoverable rows,
 /// bordered titled containers; no hand-rolled key handling):
 ///
-///   ┌ ✎ workers [on/off]  ✦ experts [on/off]   ● unsaved [Save] ┐
-///   ├───────────────────────────────────────────────────────────┤
-///   │ ┌ ✎ workers pool ──┐   ┌ ✦ experts pool ─────────┐        │
-///   │ │ model ×N  − + del│   │ model ×N  − + del       │        │
-///   │ │ [+ add model]    │   │ [+ add model]           │        │
-///   │ └──────────────────┘   └─────────────────────────┘        │
-///   ├───────────────────────────────────────────────────────────┤
-///   │ Roster — one hoverable row per agent, `delete` segment    │
-///   └───────────────────────────────────────────────────────────┘
+///   ┌                          ● unsaved  [Save] ⏎ ┐
+///   ├───────────────────────────────────────────────┤
+///   │ ┌ ✎ workers pool (2) ─┐  ┌ ✦ experts pool ─┐   │
+///   │ │ model ×N  − + del  │  │ model ×N  − + del│  │
+///   │ │ [+ add model]      │  │ [+ add model]    │  │
+///   │ └────────────────────┘  └──────────────────┘  │
+///   ├───────────────────────────────────────────────┤
+///   │ Roster — one hoverable row per agent, `delete` segment │
+///   └───────────────────────────────────────────────┘
+///
+/// The workers / experts MODE SWITCHES are deliberately absent here:
+/// they are per-session state (sessions.subagent_workers_on /
+/// subagent_experts_on) with their own always-mounted home in the agent
+/// bar above the toolbar (`SubagentBar`) and in the home
+/// `subagent-pool` box. This pane owns only the global model pools — the
+/// one thing that is genuinely config.toml — plus the roster.
 ///
 /// Pool edits are copy-on-edit: the in-editor lists diverge from the
 /// persisted config until `Ctrl+S` / the Save button, so a
@@ -33,8 +42,8 @@ import 'ui/multi_button.dart';
 class SubagentConfigFullpane extends StatefulComponent {
   final SubagentController controller;
 
-  /// Save path for the model pools — the same config.toml the
-  /// controller's toggles live in.
+  /// Save path for the model pools — the same config.toml whose
+  /// `[subagent]` section holds the global default switches.
   final SubagentConfigStore configStore;
 
   /// Configured providers' models as `provider/model` composite keys
@@ -90,17 +99,6 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
   void initState() {
     super.initState();
     _load();
-    _controller.addListener(_onChanged);
-  }
-
-  @override
-  void dispose() {
-    _controller.removeListener(_onChanged);
-    super.dispose();
-  }
-
-  void _onChanged() {
-    if (mounted) setState(() {});
   }
 
   Future<void> _load() async {
@@ -127,6 +125,9 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
         experts: SubagentModelConfig(models: _pools[SubagentRole.expert]!),
       ),
     );
+    // The manager's hire path reads pools through the controller's
+    // cache — refresh it so new pools are dispatchable immediately.
+    await _controller.reloadPools();
     if (!mounted) return;
     setState(() {
       _dirty = false;
@@ -217,8 +218,7 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
         FullpaneShortcut(
           label: s.t('subagent.config.save'),
           keyHint: 'Ctrl+S',
-          matches: (e) =>
-              e.logicalKey == LogicalKey.keyS && e.isControlPressed,
+          matches: (e) => e.logicalKey == LogicalKey.keyS && e.isControlPressed,
           onActivate: () {
             if (_dirty) _save();
           },
@@ -230,7 +230,7 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _togglesRow(theme, s),
+              _actionsRow(theme, s),
               Divider(color: theme.outline, height: 1),
               _pickingFor == null
                   ? _poolsRow(theme, s)
@@ -244,34 +244,12 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
     );
   }
 
-  /// Top row: the two mode toggles (click to flip, color = state) +
-  /// dirty/saved indicator + the Save button.
-  Component _togglesRow(CruxThemeData theme, Strings s) {
+  /// Top row: dirty/saved indicator + the Save button. The mode
+  /// switches live in the agent bar (per-session, always mounted), so
+  /// this pane does not mirror them.
+  Component _actionsRow(CruxThemeData theme, Strings s) {
     return Row(
       children: [
-        _toggleButton(
-          theme,
-          s,
-          glyph: '✎',
-          label: s.t('subagent.bar.workers'),
-          on: _controller.workersOn,
-          onPressed: () => _controller.setToggle(
-            SubagentRole.worker,
-            !_controller.workersOn,
-          ),
-        ),
-        const SizedBox(width: 1),
-        _toggleButton(
-          theme,
-          s,
-          glyph: '✦',
-          label: s.t('subagent.bar.experts'),
-          on: _controller.expertsOn,
-          onPressed: () => _controller.setToggle(
-            SubagentRole.expert,
-            !_controller.expertsOn,
-          ),
-        ),
         const Spacer(),
         if (_dirty)
           Text(
@@ -298,27 +276,6 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
     );
   }
 
-  Component _toggleButton(
-    CruxThemeData theme,
-    Strings s, {
-    required String glyph,
-    required String label,
-    required bool on,
-    required VoidCallback onPressed,
-  }) {
-    return Button(
-      label: '$glyph $label: ${on ? s.t('subagent.config.on') : s.t('subagent.config.off')}',
-      onPressed: onPressed,
-      color: on ? theme.success : theme.onSurface,
-      hoverColor: theme.foreground,
-      bgColor: on ? theme.buttonBackgroundHover : theme.surface,
-      hoverBgColor: theme.buttonBackgroundHover,
-      focused: on,
-      focusColor: theme.success,
-      focusBgColor: theme.buttonBackgroundFocused,
-    );
-  }
-
   /// The two pool columns, side by side — workers left, experts
   /// right. Each column is a bordered titled container listing its
   /// model entries as MultiButtons (hover exposes `− + del`) plus an
@@ -334,7 +291,6 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
             role: SubagentRole.worker,
             glyph: '✎',
             title: s.t('subagent.bar.workers'),
-            switchOn: _controller.workersOn,
           ),
         ),
         const SizedBox(width: 1),
@@ -345,7 +301,6 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
             role: SubagentRole.expert,
             glyph: '✦',
             title: s.t('subagent.bar.experts'),
-            switchOn: _controller.expertsOn,
           ),
         ),
       ],
@@ -358,22 +313,19 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
     required SubagentRole role,
     required String glyph,
     required String title,
-    required bool switchOn,
   }) {
     final entries = _pools[role]!;
     return Container(
       decoration: BoxDecoration(
         color: theme.surface,
         border: BoxBorder.all(
-          color: switchOn ? theme.outline : theme.outline.withOpacity(0.5),
+          color: theme.outline,
           style: BoxBorderStyle.rounded,
         ),
         title: BorderTitle(
-          text: '$glyph $title · '
-              '${switchOn ? s.t('subagent.config.on') : s.t('subagent.config.off')} '
-              '(${entries.length})',
+          text: '$glyph $title (${entries.length})',
           style: TextStyle(
-            color: switchOn ? theme.success : theme.onSurfaceDim,
+            color: theme.onSurfaceDim,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -384,19 +336,18 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (entries.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 1),
-              child: Text(
-                s.t('subagent.config.poolEmpty'),
-                style: TextStyle(color: theme.onSurfaceDim),
-              ),
+            Text(
+              s.t('subagent.config.poolEmpty'),
+              style: TextStyle(color: theme.onSurfaceDim),
             )
           else
+            // Entry rows sit flush against each other — the hover pills
+            // are the visual separators, so per-row bottom padding would
+            // only scatter blank lines through the pool.
             for (var i = 0; i < entries.length; i++)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 1),
-                child: _poolEntryRow(theme, s, role: role, index: i),
-              ),
+              _poolEntryRow(theme, s, role: role, index: i),
+          // One blank row separates the entry list from the add button.
+          const SizedBox(height: 1),
           Button(
             label: '+ ${s.t('subagent.config.addModel')}',
             onPressed: () => setState(() {
@@ -463,10 +414,7 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
         ),
         title: BorderTitle(
           text: '${s.t('subagent.config.pickModel')} → $roleLabel',
-          style: TextStyle(
-            color: theme.accent,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(color: theme.accent, fontWeight: FontWeight.bold),
         ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
@@ -546,6 +494,21 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
     );
   }
 
+  /// Roster row label: role glyph + localized constellation name, the
+  /// same language as the agent bar / chat chip (`✎ 天燕座`). The glyph
+  /// goes through [terminalSymbol] so 7-bit terminals degrade like the
+  /// chip; the name is localized via [WorkerNameLocalizer] (unknown
+  /// legacy names pass through unchanged). Status/domain/model follow.
+  String _rosterLabel(SubagentRosterEntry entry, Strings s) {
+    final expert = entry.role == 'expert';
+    final glyph = terminalSymbol(expert ? '✦' : '✎', expert ? '*' : '>');
+    final name = const WorkerNameLocalizer().display(entry.name, s.locale);
+    final status = entry.busy
+        ? s.t('subagent.pool.busy')
+        : s.t('subagent.pool.ready');
+    return '$glyph $name · $status · ${entry.domain} · ${entry.model}';
+  }
+
   /// Bottom section: every roster agent as a hoverable row with a
   /// `delete` segment. Busy agents show a disabled delete (the run
   /// owns them until it ends).
@@ -570,28 +533,24 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
             style: TextStyle(color: theme.onSurfaceDim),
           )
         else
+          // Roster rows are flush: no blank line between agents, only
+          // the header keeps its own gap above the list.
           for (final entry in _roster)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 1),
-              child: MultiButton(
-                label: '${entry.role == 'expert' ? '✦' : '✎'} '
-                    '${entry.name} · '
-                    '${entry.busy ? s.t('subagent.pool.busy') : s.t('subagent.pool.ready')} · '
-                    '${entry.domain} · ${entry.model}',
-                color: entry.busy ? theme.success : theme.onSurface,
-                hoverColor: theme.foreground,
-                disabledColor: theme.onSurfaceDim,
-                bgColor: theme.surface,
-                hoverBgColor: theme.buttonBackgroundHover,
-                segments: [
-                  MultiButtonSegment(
-                    label: s.t('subagent.config.delete'),
-                    onPressed: entry.busy
-                        ? null
-                        : () => _deleteRosterEntry(entry),
-                  ),
-                ],
-              ),
+            MultiButton(
+              label: _rosterLabel(entry, s),
+              color: entry.busy ? theme.success : theme.onSurface,
+              hoverColor: theme.foreground,
+              disabledColor: theme.onSurfaceDim,
+              bgColor: theme.surface,
+              hoverBgColor: theme.buttonBackgroundHover,
+              segments: [
+                MultiButtonSegment(
+                  label: s.t('subagent.config.delete'),
+                  onPressed: entry.busy
+                      ? null
+                      : () => _deleteRosterEntry(entry),
+                ),
+              ],
             ),
       ],
     );

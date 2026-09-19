@@ -423,7 +423,8 @@ const Map<String, String> _en = {
   'subagent.cmd.workersOff': 'Workers OFF — main agent does its own work',
   'subagent.cmd.expertsOn': 'Experts ON — consult read-only advisors',
   'subagent.cmd.expertsOff': 'Experts OFF',
-  'subagent.cmd.persistFailed': 'Subagent mode changed, but config could not be saved',
+  'subagent.cmd.persistFailed':
+      'Subagent mode changed, but config could not be saved',
   'subagent.bar.workers': 'workers',
   'subagent.bar.experts': 'experts',
   'home.title.agents': 'Agents',
@@ -432,12 +433,8 @@ const Map<String, String> _en = {
   'subagent.pool.ready': 'ready',
   'subagent.pool.more': '… +{n} more',
   'subagent.config.title': 'Subagent Configuration',
-  'subagent.config.switches': 'Mode switches',
   'subagent.config.pools': 'Model pools',
-  'subagent.config.switchPool': 'switch workers/experts',
   'subagent.config.poolEmpty': 'pool empty — add a model below',
-  'subagent.config.on': 'on',
-  'subagent.config.off': 'off',
   'subagent.config.save': 'Save',
   'subagent.config.addModel': 'add model',
   'subagent.config.remove': 'del',
@@ -447,7 +444,7 @@ const Map<String, String> _en = {
   'subagent.config.roster': 'Roster',
   'subagent.config.unsaved': '● unsaved pool edits — Ctrl+S to save',
   'subagent.config.saved': '✓ saved to config.toml',
-  'subagent.config.hint': 'Tab cycles regions · w/e flip switches · Esc close',
+
   'subagent.config.pickModel': 'Pick a model (configured providers only)',
   'subagent.config.noModels':
       'no configured models — run /provider <name> <key> first',
@@ -702,8 +699,7 @@ const Map<String, String> _en = {
   'toast.compactDone': 'Compacted — {n} messages (~{post} ← {pre} tokens)',
   'toast.autoCompactDone':
       'Context was getting full — compacted (~{post} ← {pre} tokens)',
-  'toast.autoDistilled':
-      'Context distilled — resuming on summarized knowledge',
+  'toast.autoDistilled': 'Context distilled — resuming on summarized knowledge',
 
   // ── BTW (side-question) missing-key toasts ──
   'toast.btwMissingKey': 'No API key for provider "{name}". Use /provider {name} to configure an API key, then try again.',
@@ -715,8 +711,7 @@ const Map<String, String> _en = {
   'toast.clipboardReadFailed': 'Failed to read clipboard: {error}',
   'toast.imageAttached': '📎 Attached: {label} ({kb} KB). Type your message and press Enter to send.',
   'toast.imageAttachFailed': 'Failed to attach image: {error}',
-  'toast.imagesUnsupported':
-      '🚫 Image not sent: {model} does not accept image input (its provider TOML declares image_support = false). Switch to an image-capable model and paste again — your text was sent.',
+  'toast.imagesUnsupported': '🚫 Image not sent: {model} does not accept image input (its provider TOML declares image_support = false). Switch to an image-capable model and paste again — your text was sent.',
   'toast.droppedFileMissing': '⚠️ File(s) not found: {names}',
   'toast.droppedSummary': '📎 Dropped: {summary}',
 
@@ -1190,12 +1185,8 @@ const Map<String, String> _zh = {
   'subagent.pool.ready': '空闲',
   'subagent.pool.more': '… 还有 {n} 个',
   'subagent.config.title': 'Subagent 配置',
-  'subagent.config.switches': '模式开关',
   'subagent.config.pools': '模型池',
-  'subagent.config.switchPool': '切换 workers/experts',
   'subagent.config.poolEmpty': '池为空——点下方添加模型',
-  'subagent.config.on': '开',
-  'subagent.config.off': '关',
   'subagent.config.save': '保存',
   'subagent.config.addModel': '添加模型',
   'subagent.config.remove': '删除',
@@ -1204,7 +1195,7 @@ const Map<String, String> _zh = {
   'subagent.config.roster': '名册',
   'subagent.config.unsaved': '● 有未保存的池编辑——Ctrl+S 保存',
   'subagent.config.saved': '✓ 已保存到 config.toml',
-  'subagent.config.hint': 'Tab 切区 · w/e 切开关 · Esc 关闭',
+
   'subagent.config.pickModel': '选择模型（仅已配置的提供商）',
   'subagent.config.noModels': '没有已配置的模型——先运行 /provider <名称> <密钥>',
   'subagent.config.pickHint': '↑↓ 选择 · 回车添加 · Esc 取消',
@@ -1461,8 +1452,7 @@ const Map<String, String> _zh = {
   'toast.clipboardReadFailed': '读取剪贴板失败：{error}',
   'toast.imageAttached': '📎 已附加：{label}（{kb} KB）。输入消息后回车即可发送。',
   'toast.imageAttachFailed': '附加图片失败：{error}',
-  'toast.imagesUnsupported':
-      '🚫 图片未发送：{model} 不支持图片输入（其 provider TOML 里 image_support = false）。请切换到支持图片的模型后重新粘贴——文字已发送。',
+  'toast.imagesUnsupported': '🚫 图片未发送：{model} 不支持图片输入（其 provider TOML 里 image_support = false）。请切换到支持图片的模型后重新粘贴——文字已发送。',
   'toast.droppedFileMissing': '⚠️ 找不到以下文件：{names}',
   'toast.droppedSummary': '📎 已拖入：{summary}',
 
