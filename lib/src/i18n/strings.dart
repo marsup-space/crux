@@ -437,7 +437,7 @@ const Map<String, String> _en = {
   'subagent.config.switchPool': 'switch workers/experts',
   'subagent.config.poolEmpty': 'pool empty — add a model with `a`',
   'subagent.config.poolHint':
-      'a add · d delete · +/- concurrency · r switch role · Ctrl+S save',
+      'a add to cursor pool · d delete · +/- concurrency · Ctrl+S save',
   'subagent.config.roster': 'Roster',
   'subagent.config.unsaved': '● unsaved pool edits — Ctrl+S to save',
   'subagent.config.saved': '✓ saved to config.toml',
@@ -1188,7 +1188,7 @@ const Map<String, String> _zh = {
   'subagent.config.pools': '模型池',
   'subagent.config.switchPool': '切换 workers/experts',
   'subagent.config.poolEmpty': '池为空——按 a 添加模型',
-  'subagent.config.poolHint': 'a 添加 · d 删除 · +/- 并行数 · r 切换角色 · Ctrl+S 保存',
+  'subagent.config.poolHint': 'a 添加到光标池 · d 删除 · +/- 并行数 · Ctrl+S 保存',
   'subagent.config.roster': '名册',
   'subagent.config.unsaved': '● 有未保存的池编辑——Ctrl+S 保存',
   'subagent.config.saved': '✓ 已保存到 config.toml',
