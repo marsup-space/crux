@@ -5,6 +5,7 @@ import '../../models/subagent.dart';
 import '../../services/subagent/subagent_config_store.dart';
 import '../../theme/crux_theme.dart';
 import '../../utils/terminal_symbols.dart';
+import '../ui/glossy_model_button.dart';
 import '../ui/hoverable.dart';
 import 'subagent_ui_models.dart';
 
@@ -115,25 +116,45 @@ class _SubagentBarState extends State<SubagentBar> {
               hint: _agentHint(agent),
               delay: Duration.zero,
               maxLines: 6,
-              child: Hoverable(
-                onTap: component.onAgentPressed == null
-                    ? null
-                    : () => component.onAgentPressed!(agent),
-                builder: (context, hovered) => Text(
-                  '${terminalSymbol(agent.role == SubagentRole.expert ? '✦' : '✎', agent.role == SubagentRole.expert ? '*' : '>')} '
-                  '${agent.name}',
-                  style: TextStyle(
-                    color: hovered ? theme.foreground : theme.accent,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
+              // In-flight (busy / queued) chips animate so the user sees
+              // the state LIVE — a static glyph made a running Worker look
+              // idle. Reuse the GlossyModelButton sweep already proven in
+              // SubagentToolbarRow; its ticker is self-contained, so the
+              // animation runs without needing the parent to rebuild.
+              // A stable key keeps the animation state attached to this
+              // agent while chips are inserted / removed / reordered.
+              child: agent.status.isInFlight
+                  ? GlossyModelButton(
+                      key: ValueKey(agent.id),
+                      label: _agentLabel(agent),
+                      isAnimating: true,
+                      compact: true,
+                      onPressed: component.onAgentPressed == null
+                          ? null
+                          : () => component.onAgentPressed!(agent),
+                    )
+                  : Hoverable(
+                      onTap: component.onAgentPressed == null
+                          ? null
+                          : () => component.onAgentPressed!(agent),
+                      builder: (context, hovered) => Text(
+                        _agentLabel(agent),
+                        style: TextStyle(
+                          color: hovered ? theme.foreground : theme.accent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
             ),
           ],
         ],
       ),
     );
   }
+
+  String _agentLabel(SubagentUiEntry agent) =>
+      '${terminalSymbol(agent.role == SubagentRole.expert ? '✦' : '✎', agent.role == SubagentRole.expert ? '*' : '>')} '
+      '${agent.name}';
 
   String _agentHint(SubagentUiEntry agent) {
     final s = component.strings;
