@@ -26,7 +26,8 @@ abstract class SubagentToolBase extends ToolDef {
     if (!anyOn) {
       return ToolResult(
         title: 'subagent mode off',
-        output: 'Subagent mode is currently OFF. Tell the user to enable it '
+        output:
+            'Subagent mode is currently OFF. Tell the user to enable it '
             'with /subagent (e.g. "/subagent workers on") and re-ask.',
         metadata: const {},
       );
@@ -48,12 +49,12 @@ abstract class SubagentToolBase extends ToolDef {
     required String kind,
     String message = '',
   }) => agentBubbleMetadata(
-        direction: direction,
-        agentId: agentName,
-        agentName: agentName,
-        kind: kind,
-        message: message,
-      );
+    direction: direction,
+    agentId: agentName,
+    agentName: agentName,
+    kind: kind,
+    message: message,
+  );
 }
 
 /// find_agents(query?, role?) — the roster lookup.
@@ -75,24 +76,27 @@ class FindAgentsTool extends SubagentToolBase {
       'domain, and the current/last task intention. Each row shows: '
       'name (agent://<id>), role (worker ✎ / expert ✦), domain, model, '
       'status, and the current (busy) or last (ready) intention. '
-      'Use this before send_agent to pick the right agent.';
+      'Use this before send_agent to pick the right agent. '
+      'If nobody owns the task\'s specific domain, hire a fresh specialist '
+      'rather than reusing an unrelated agent.';
 
   @override
   Map<String, dynamic> get parametersSchema => {
-        'type': 'object',
-        'properties': {
-          'query': {
-            'type': 'string',
-            'description': 'Fuzzy-match against name + domain + intention. '
-                'Empty returns the whole roster.',
-          },
-          'role': {
-            'type': 'string',
-            'enum': ['all', 'workers', 'experts'],
-            'description': 'Filter by role. Default all.',
-          },
-        },
-      };
+    'type': 'object',
+    'properties': {
+      'query': {
+        'type': 'string',
+        'description':
+            'Fuzzy-match against name + domain + intention. '
+            'Empty returns the whole roster.',
+      },
+      'role': {
+        'type': 'string',
+        'enum': ['all', 'workers', 'experts'],
+        'description': 'Filter by role. Default all.',
+      },
+    },
+  };
 
   @override
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
@@ -123,15 +127,17 @@ class FindAgentsTool extends SubagentToolBase {
         title: 'find_agents',
         output: matched.isEmpty && all.isEmpty
             ? 'The roster is empty. hire_agent creates the first agent '
-                '(a fresh name from the constellation pool) and dispatches '
-                'its first task in one step.'
+                  '(a fresh name from the constellation pool) and dispatches '
+                  'its first task in one step.'
             : 'No agent matches "$query". hire_agent can create one for '
-                'this domain.',
+                  'this domain.',
       );
     }
 
-    final buffer = StringBuffer('Roster (${matched.length} agent'
-        '${matched.length == 1 ? '' : 's'}):\n');
+    final buffer = StringBuffer(
+      'Roster (${matched.length} agent'
+      '${matched.length == 1 ? '' : 's'}):\n',
+    );
     for (final agent in matched) {
       final busy = manager.isBusy(agent.name);
       final glyph = agent.role == 'expert' ? '✦' : '✎';
@@ -153,11 +159,7 @@ class FindAgentsTool extends SubagentToolBase {
 
   bool _matches(db.Agent agent, String query) {
     final q = query.toLowerCase();
-    for (final candidate in [
-      agent.name,
-      agent.domain,
-      agent.lastIntention,
-    ]) {
+    for (final candidate in [agent.name, agent.domain, agent.lastIntention]) {
       if (scoreStringMatch(q, candidate.toLowerCase()) > 0) return true;
     }
     return false;
@@ -178,36 +180,45 @@ class HireAgentTool extends SubagentToolBase {
       'IAU constellations, experts get zodiac signs). The model is picked '
       'from the role\'s configured pool (first entry with free concurrency '
       'and budget) and bound to the agent for its lifetime. '
-      'Use when find_agents shows nobody owns the domain.';
+      'Use when find_agents shows nobody owns the domain. '
+      'Prefer narrow, specific domains ("token-refresh", not "general") — a '
+      'fresh specialist beats reusing an unrelated agent.';
 
   @override
   Map<String, dynamic> get parametersSchema => {
-        'type': 'object',
-        'properties': {
-          'role': {
-            'type': 'string',
-            'enum': ['worker', 'expert'],
-            'description': 'worker: read-write, does hands-on work. '
-                'expert: read-only, gives opinions.',
-          },
-          'domain': {
-            'type': 'string',
-            'description': 'Short domain label, e.g. "token-refresh", '
-                '"release-pipeline".',
-          },
-          'intention': {
-            'type': 'string',
-            'description': 'One line: what this dispatch is FOR. Shown in '
-                'the UI and preserved in the agent\'s work record.',
-          },
-          'message': {
-            'type': 'string',
-            'description': 'The first task. Include the report granularity '
-                'you want (one-line conclusion vs detailed report).',
-          },
-        },
-        'required': ['role', 'domain', 'intention', 'message'],
-      };
+    'type': 'object',
+    'properties': {
+      'role': {
+        'type': 'string',
+        'enum': ['worker', 'expert'],
+        'description':
+            'worker: read-write, does hands-on work. '
+            'expert: read-only, gives opinions.',
+      },
+      'domain': {
+        'type': 'string',
+        'description':
+            'Short, SPECIFIC domain label, e.g. '
+            '"token-refresh", "release-pipeline", "home-rendering". '
+            'Avoid broad labels like "general" — narrow domains keep the '
+            'agent\'s distilled context focused. Use the user\'s language '
+            'for the label — it is shown in the user\'s UI.',
+      },
+      'intention': {
+        'type': 'string',
+        'description':
+            'One line: what this dispatch is FOR. Shown in '
+            'the UI and preserved in the agent\'s work record.',
+      },
+      'message': {
+        'type': 'string',
+        'description':
+            'The first task. Include the report granularity '
+            'you want (one-line conclusion vs detailed report).',
+      },
+    },
+    'required': ['role', 'domain', 'intention', 'message'],
+  };
 
   @override
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
@@ -218,9 +229,15 @@ class HireAgentTool extends SubagentToolBase {
     final role = roleArg == 'expert'
         ? SubagentRole.expert
         : SubagentRole.worker;
-    final domain = (args['domain'] as String?)?.trim() ?? 'general';
+    final domain = (args['domain'] as String?)?.trim() ?? '';
     final intention = (args['intention'] as String?)?.trim() ?? '';
     final message = (args['message'] as String?)?.trim() ?? '';
+    if (domain.isEmpty) {
+      return ToolResult.error(
+        'domain is required — pick a narrow, specific label like '
+        '"token-refresh".',
+      );
+    }
     if (intention.isEmpty || message.isEmpty) {
       return ToolResult.error(
         'intention and message are both required (intention drives the UI '
@@ -277,30 +294,32 @@ class SendAgentTool extends SubagentToolBase {
 
   @override
   Map<String, dynamic> get parametersSchema => {
-        'type': 'object',
-        'properties': {
-          'agent': {
-            'type': 'string',
-            'description': 'The agent to message: agent://orion or orion.',
-          },
-          'intention': {
-            'type': 'string',
-            'description': 'One line: what this dispatch is FOR.',
-          },
-          'message': {
-            'type': 'string',
-            'description': 'Task / follow-up content. State the report '
-                'granularity you want.',
-          },
-          'ifBusy': {
-            'type': 'string',
-            'enum': ['queue', 'fork'],
-            'description': 'What to do when the agent is busy. Default '
-                'queue.',
-          },
-        },
-        'required': ['agent', 'intention', 'message'],
-      };
+    'type': 'object',
+    'properties': {
+      'agent': {
+        'type': 'string',
+        'description': 'The agent to message: agent://orion or orion.',
+      },
+      'intention': {
+        'type': 'string',
+        'description': 'One line: what this dispatch is FOR.',
+      },
+      'message': {
+        'type': 'string',
+        'description':
+            'Task / follow-up content. State the report '
+            'granularity you want.',
+      },
+      'ifBusy': {
+        'type': 'string',
+        'enum': ['queue', 'fork'],
+        'description':
+            'What to do when the agent is busy. Default '
+            'queue.',
+      },
+    },
+    'required': ['agent', 'intention', 'message'],
+  };
 
   @override
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
@@ -355,15 +374,15 @@ class CheckAgentTool extends SubagentToolBase {
 
   @override
   Map<String, dynamic> get parametersSchema => {
-        'type': 'object',
-        'properties': {
-          'agent': {
-            'type': 'string',
-            'description': 'The agent to check: agent://orion or orion.',
-          },
-        },
-        'required': ['agent'],
-      };
+    'type': 'object',
+    'properties': {
+      'agent': {
+        'type': 'string',
+        'description': 'The agent to check: agent://orion or orion.',
+      },
+    },
+    'required': ['agent'],
+  };
 
   @override
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
@@ -402,19 +421,19 @@ class CancelAgentTool extends SubagentToolBase {
 
   @override
   Map<String, dynamic> get parametersSchema => {
-        'type': 'object',
-        'properties': {
-          'agent': {
-            'type': 'string',
-            'description': 'The agent to cancel: agent://orion or orion.',
-          },
-          'reason': {
-            'type': 'string',
-            'description': 'Why — recorded on the agent.',
-          },
-        },
-        'required': ['agent'],
-      };
+    'type': 'object',
+    'properties': {
+      'agent': {
+        'type': 'string',
+        'description': 'The agent to cancel: agent://orion or orion.',
+      },
+      'reason': {
+        'type': 'string',
+        'description': 'Why — recorded on the agent.',
+      },
+    },
+    'required': ['agent'],
+  };
 
   @override
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
