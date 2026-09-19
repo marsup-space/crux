@@ -67,6 +67,17 @@ class VibeStreamingBubble extends StatefulComponent {
   /// from the in-flight reply.
   final void Function(MarkdownLink link)? onLinkTap;
 
+  /// Localizes `agent://<id>` references in the live prose to the
+  /// session's display name (see [HighlightedMarkdownText.agentDisplayName]).
+  /// Forwarded so the in-flight reply renders agent chips instead of
+  /// the raw reference, matching the persisted-segment path.
+  final String Function(String id)? agentDisplayName;
+
+  /// Upgrades `agent://<id>` references to role-glyph chips (see
+  /// [HighlightedMarkdownText.agentChipText]). Takes precedence over
+  /// [agentDisplayName]; an empty string (unknown id) falls back to it.
+  final String Function(String id)? agentChipText;
+
   /// Fired when the user activates `detail` on an executing shell
   /// row. Receives the call id; the chat panel opens the shell live
   /// fullpane for that run. When null, the row's `detail` segment
@@ -88,6 +99,8 @@ class VibeStreamingBubble extends StatefulComponent {
     this.onQuickReplyTap,
     this.onSessionLinkTap,
     this.onLinkTap,
+    this.agentDisplayName,
+    this.agentChipText,
     this.onOpenShellLive,
     this.reasoningPresets = const [],
     this.strings = kEnglishStrings,
@@ -512,6 +525,8 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
                   child: HighlightedMarkdownText(
                     _content,
                     onSessionLinkTap: component.onSessionLinkTap,
+                    agentDisplayName: component.agentDisplayName,
+                    agentChipText: component.agentChipText,
                     onLinkTap: component.onLinkTap,
                   ),
                 ),

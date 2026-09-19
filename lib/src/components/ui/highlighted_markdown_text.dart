@@ -37,6 +37,7 @@ class HighlightedMarkdownText extends StatefulComponent {
     this.onSessionLinkTap,
     this.onAgentLinkTap,
     this.agentDisplayName,
+    this.agentChipText,
     this.sessionLinkStyle,
     this.sessionLinkHoverStyle,
     this.onQuickReplyTap,
@@ -95,6 +96,14 @@ class HighlightedMarkdownText extends StatefulComponent {
   /// name (猎户座 / Orion). Null (default) renders the raw id — tests
   /// and callers without a locale wired.
   final String Function(String id)? agentDisplayName;
+
+  /// Renders an agent reference as a full chip label — the role glyph
+  /// plus the localized name, e.g. `✎ 天燕座` (worker) or `✦ 天鹰座`
+  /// (expert). Takes precedence over [agentDisplayName] when both are
+  /// supplied. Return an empty string for an unknown id so the renderer
+  /// falls back to [agentDisplayName]. Null (default) keeps the plain
+  /// name/raw-reference behaviour unchanged.
+  final String Function(String id)? agentChipText;
 
   /// Override the style applied to recognized `ses://` regions.
   /// Defaults to the theme's `tldrLink` color + underline.
@@ -451,21 +460,42 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
           );
         }
         if (!hasDiagrams && haveAgentLinks) {
-          // Agent refs reuse the session-link visual language: the same
-          // tldrLink color + underline (hover swaps to reverse video).
-          // Hover state for agents is conveyed through the same reverse-
-          // video treatment via [applyAgentLinkStyles]'s per-ref styling
-          // below; the non-hovered pass runs here on the whole tree.
+          // Agent refs render as a chip in the same visual language as
+          // the agent bar's chips: accent text on the bar chip's
+          // background block, no underline (a chip is not a link).
+          // Hover swaps to reverse video via [applyAgentLinkStyles]'s
+          // per-ref styling below; the non-hovered pass runs here on
+          // the whole tree.
           //
           // Display names localize at the presentation boundary: the
           // persisted constellation id (`agent://orion`) renders as the
           // locale's name (猎户座 / Orion) while the link still targets
           // the stable id.
+          // A chip label (role glyph + name) wins over the plain
+          // localized name; an empty chip label (unknown id) falls
+          // through to [HighlightedMarkdownText.agentDisplayName]. Both
+          // are optional, so when neither is wired the raw reference
+          // renders exactly as before.
+          final chipText = component.agentChipText;
+          final displayName = component.agentDisplayName;
+          final agentNames = (chipText == null && displayName == null)
+              ? null
+              : (String id) {
+                  final chip = chipText?.call(id);
+                  if (chip != null && chip.isNotEmpty) return chip;
+                  return displayName?.call(id) ?? '';
+                };
           final agentLinkStyle =
               component.sessionLinkStyle ??
               TextStyle(
-                color: theme.tldrLink,
-                decoration: TextDecoration.underline,
+                // Same foreground / background as the agent bar chip:
+                // SubagentBar renders its chips via GlossyModelButton,
+                // whose base look is `accent` text on a
+                // `buttonBackground` block. We take that same block
+                // minus the busy-state gloss sweep, and drop the
+                // underline so it reads as a chip rather than a link.
+                color: theme.accent,
+                backgroundColor: theme.buttonBackground,
               );
           renderedSpans = applyAgentLinkStyles(
             renderedSpans,
@@ -477,7 +507,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
               fontWeight: FontWeight.bold,
             ),
             hoveredRef: _hoveredAgentRef,
-            displayNames: component.agentDisplayName,
+            displayNames: agentNames,
           );
         }
 
@@ -739,8 +769,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
 
     final sessionChanged =
         newSession?.sessionId != _hoveredSessionRef?.sessionId;
-    final agentChanged =
-        newAgent?.displayText != _hoveredAgentRef?.displayText;
+    final agentChanged = newAgent?.displayText != _hoveredAgentRef?.displayText;
     final replyChanged = !_sameQuickReply(newReply, _hoveredQuickReply);
     final linkChanged = !_sameMarkdownLink(newLink, _hoveredMarkdownLink);
 

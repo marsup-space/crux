@@ -82,6 +82,17 @@ class VibeSegmentBubble extends StatelessComponent {
   /// links render as plain prose.
   final void Function(MarkdownLink link)? onLinkTap;
 
+  /// Localizes `agent://<id>` references in the segment's prose to the
+  /// session's display name (see [HighlightedMarkdownText.agentDisplayName]).
+  /// Forwarded so persisted segments render agent names instead of the
+  /// raw reference, matching the verbose `MessageBubble` path.
+  final String Function(String id)? agentDisplayName;
+
+  /// Upgrades `agent://<id>` references to role-glyph chips (see
+  /// [HighlightedMarkdownText.agentChipText]). Takes precedence over
+  /// [agentDisplayName]; an empty string (unknown id) falls back to it.
+  final String Function(String id)? agentChipText;
+
   /// Fired when the user activates `open` on a file row. Receives the
   /// file's display path; the chat panel reveals it in the system file
   /// manager. When null, the row's `open` action is omitted.
@@ -119,6 +130,8 @@ class VibeSegmentBubble extends StatelessComponent {
     this.enableQuickReplies = false,
     this.onSessionLinkTap,
     this.onLinkTap,
+    this.agentDisplayName,
+    this.agentChipText,
     this.onOpenFile,
     this.onDiffFiles,
     this.reasoningPresets = const [],
@@ -174,6 +187,8 @@ class VibeSegmentBubble extends StatelessComponent {
             : null,
         onSessionLinkTap: onSessionLinkTap,
         onLinkTap: onLinkTap,
+        agentDisplayName: agentDisplayName,
+        agentChipText: agentChipText,
       );
     }
 
@@ -188,6 +203,8 @@ class VibeSegmentBubble extends StatelessComponent {
             : null,
         onSessionLinkTap: onSessionLinkTap,
         onLinkTap: onLinkTap,
+        agentDisplayName: agentDisplayName,
+        agentChipText: agentChipText,
       );
     }
 
@@ -225,6 +242,8 @@ class VibeSegmentBubble extends StatelessComponent {
                   : null,
               onSessionLinkTap: onSessionLinkTap,
               onLinkTap: onLinkTap,
+              agentDisplayName: agentDisplayName,
+              agentChipText: agentChipText,
             ),
       ],
     );
@@ -502,8 +521,10 @@ class VibeSegmentBubble extends StatelessComponent {
       final rows = <Component>[
         for (final entry in agents.entries)
           AgentBubble(
-            key: ValueKey('vibe-agent-${entry.agentId}-${entry.kind}-'
-                '${agents.entries.indexOf(entry)}'),
+            key: ValueKey(
+              'vibe-agent-${entry.agentId}-${entry.kind}-'
+              '${agents.entries.indexOf(entry)}',
+            ),
             payload: entry,
             strings: strings,
             padding: 0,

@@ -66,6 +66,12 @@ class MessageBubble extends StatelessComponent {
   /// renders the raw reference. Forwarded like [onSessionLinkTap].
   final String Function(String id)? agentDisplayName;
 
+  /// Renders `agent://<id>` references as full chip labels — role glyph
+  /// plus localized name, e.g. `✎ 天燕座` / `✦ 天鹰座`. Takes precedence
+  /// over [agentDisplayName]; an empty string (unknown id) falls back to
+  /// it. Forwarded like [agentDisplayName].
+  final String Function(String id)? agentChipText;
+
   /// Callback when the user clicks a quick-reply token
   /// (`ask://label{answer}` or `ask://label`) in the assistant's
   /// prose. Forwarded to [HighlightedMarkdownText] so tokens
@@ -110,6 +116,7 @@ class MessageBubble extends StatelessComponent {
     this.onToolCallTap,
     this.onSessionLinkTap,
     this.agentDisplayName,
+    this.agentChipText,
     this.onQuickReplyTap,
     this.onLinkTap,
     this.onRetryContinue,
@@ -355,6 +362,7 @@ class MessageBubble extends StatelessComponent {
         onSessionLinkTap: onSessionLinkTap,
         onAgentLinkTap: null,
         agentDisplayName: agentDisplayName,
+        agentChipText: agentChipText,
         onQuickReplyTap: onQuickReplyTap,
         onLinkTap: onLinkTap,
       );
@@ -370,6 +378,7 @@ class MessageBubble extends StatelessComponent {
         onSessionLinkTap: onSessionLinkTap,
         onAgentLinkTap: null,
         agentDisplayName: agentDisplayName,
+        agentChipText: agentChipText,
         onQuickReplyTap: onQuickReplyTap,
         onLinkTap: onLinkTap,
       );
@@ -388,6 +397,7 @@ class MessageBubble extends StatelessComponent {
               onSessionLinkTap: onSessionLinkTap,
               onAgentLinkTap: null,
               agentDisplayName: agentDisplayName,
+              agentChipText: agentChipText,
               onQuickReplyTap: onQuickReplyTap,
               onLinkTap: onLinkTap,
             ),
@@ -831,6 +841,8 @@ class MessageBubble extends StatelessComponent {
                   message.content,
                   highlightText: highlightText,
                   onSessionLinkTap: onSessionLinkTap,
+                  agentDisplayName: agentDisplayName,
+                  agentChipText: agentChipText,
                   onQuickReplyTap: onQuickReplyTap,
                   onLinkTap: onLinkTap,
                 ),

@@ -65,6 +65,19 @@ class StreamingBubble extends StatefulComponent {
   final bool hideReasoning;
   final Strings strings;
 
+  /// Localizes `agent://<id>` references in the live prose to the
+  /// session's display name (see [HighlightedMarkdownText.agentDisplayName]).
+  /// The current prose path renders on the isolate (`useIsolate: true`),
+  /// which does not resolve agent refs — these are wired through so the
+  /// live bubble matches the persisted-bubble interface and is ready
+  /// when the isolate path learns to carry them.
+  final String Function(String id)? agentDisplayName;
+
+  /// Upgrades `agent://<id>` references to role-glyph chips (see
+  /// [HighlightedMarkdownText.agentChipText]). Takes precedence over
+  /// [agentDisplayName]; an empty string (unknown id) falls back to it.
+  final String Function(String id)? agentChipText;
+
   const StreamingBubble({
     required this.streamingController,
     required this.sessionId,
@@ -73,6 +86,8 @@ class StreamingBubble extends StatefulComponent {
     this.toolRegistry,
     this.hideReasoning = false,
     this.strings = kEnglishStrings,
+    this.agentDisplayName,
+    this.agentChipText,
     super.key,
   });
 
@@ -528,6 +543,8 @@ class _StreamingBubbleState extends State<StreamingBubble> {
                       _content,
                       useIsolate: true,
                       strings: component.strings,
+                      agentDisplayName: component.agentDisplayName,
+                      agentChipText: component.agentChipText,
                     ),
             ),
           ],

@@ -94,6 +94,12 @@ class ChatHistory extends StatefulComponent {
   /// renders the raw reference.
   final String Function(String id)? agentDisplayName;
 
+  /// Renders `agent://<id>` references as full chip labels — role glyph
+  /// plus localized name (`✎ 天燕座` / `✦ 天鹰座`). Takes precedence over
+  /// [agentDisplayName]; empty string falls back to it. Null keeps the
+  /// plain-name behaviour.
+  final String Function(String id)? agentChipText;
+
   /// Callback fired when the user clicks a quick-reply token
   /// (`ask://label{answer}` or `ask://label`) inside an assistant
   /// message bubble. The chat panel implements this to submit the
@@ -171,6 +177,7 @@ class ChatHistory extends StatefulComponent {
     this.onToolCallTap,
     this.onSessionLinkTap,
     this.agentDisplayName,
+    this.agentChipText,
     this.onQuickReplyTap,
     this.onLinkTap,
     this.onCompactionTap,
@@ -704,6 +711,8 @@ class _ChatHistoryState extends State<ChatHistory> {
               enableQuickReplies: isLatestClosedAi,
               onSessionLinkTap: component.onSessionLinkTap,
               onLinkTap: component.onLinkTap,
+              agentDisplayName: component.agentDisplayName,
+              agentChipText: component.agentChipText,
               onOpenFile: component.onVibeOpenFile,
               onDiffFiles: component.onVibeDiffFiles,
               // Pass the provider's reasoning presets so the
@@ -842,10 +851,15 @@ class _ChatHistoryState extends State<ChatHistory> {
           userItemIndices.add(items.length);
           // Strip skill bodies + the LLM-only plan-context block +
           // subagent-mode announcement so the jump-bar label shows
-          // only what the user typed.
-          final text = stripPlanContext(
-            stripSubagentAnnouncement(stripSkillBodies(msg.content)),
-          ).text.replaceAll('\n', ' ').trim();
+          // only what the user typed. A report WAKE envelope isn't user
+          // prose at all — show the parsed report summary instead of the
+          // raw `[Crux system note — subagent report]` text.
+          final wake = parseSubagentReportEnvelope(msg.content);
+          final text = wake != null
+              ? '⤺ ${wake.agentName ?? wake.agentId}: ${wake.message}'
+              : stripPlanContext(
+                  stripSubagentAnnouncement(stripSkillBodies(msg.content)),
+                ).text.replaceAll('\n', ' ').trim();
           userItemLabels.add(text);
         }
 
@@ -905,6 +919,14 @@ class _ChatHistoryState extends State<ChatHistory> {
         final agentReport = msg.role == 'user' && msg.content.trim().isEmpty
             ? parseAgentBubble(msg.meta)
             : null;
+        // The report WAKE row: role `user` with the envelope text persisted
+        // by sendTurn to wake the model. Its visual already exists as the
+        // `agentBubble` row above; render it as an AgentBubble too so the
+        // raw `[Crux system note — subagent report]` envelope never echoes
+        // as user prose in verbose mode.
+        final reportWake = msg.role == 'user' && agentReport == null
+            ? parseSubagentReportEnvelope(msg.content)
+            : null;
         items.add((ctx) {
           if (askView != null) {
             return AskAnswerBubble(answer: askView, strings: component.strings);
@@ -917,6 +939,9 @@ class _ChatHistoryState extends State<ChatHistory> {
               payload: agentReport,
               strings: component.strings,
             );
+          }
+          if (reportWake != null) {
+            return AgentBubble(payload: reportWake, strings: component.strings);
           }
           return MessageBubble(
             message: msg,
@@ -932,6 +957,7 @@ class _ChatHistoryState extends State<ChatHistory> {
             onToolCallTap: component.onToolCallTap,
             onSessionLinkTap: component.onSessionLinkTap,
             agentDisplayName: component.agentDisplayName,
+            agentChipText: component.agentChipText,
             onQuickReplyTap: enableQuickReplies
                 ? component.onQuickReplyTap
                 : null,
@@ -1046,6 +1072,8 @@ class _ChatHistoryState extends State<ChatHistory> {
             onQuickReplyTap: component.onQuickReplyTap,
             onSessionLinkTap: component.onSessionLinkTap,
             onLinkTap: component.onLinkTap,
+            agentDisplayName: component.agentDisplayName,
+            agentChipText: component.agentChipText,
             onOpenShellLive: component.onShellLiveTap,
             reasoningPresets: reasoningPresets,
             strings: component.strings,
@@ -1070,6 +1098,8 @@ class _ChatHistoryState extends State<ChatHistory> {
             runtimeState: rt,
             hideReasoning: isVibeMode,
             strings: component.strings,
+            agentDisplayName: component.agentDisplayName,
+            agentChipText: component.agentChipText,
           );
         });
       }

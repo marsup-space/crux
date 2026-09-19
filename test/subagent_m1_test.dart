@@ -25,8 +25,11 @@ void main() {
       final workerIds = {for (final c in kWorkerConstellations) c.id};
       expect(workerIds, isNot(contains('crux')));
       for (final zodiac in kExpertConstellations) {
-        expect(workerIds, isNot(contains(zodiac.id)),
-            reason: '${zodiac.id} must be expert-only');
+        expect(
+          workerIds,
+          isNot(contains(zodiac.id)),
+          reason: '${zodiac.id} must be expert-only',
+        );
       }
     });
 
@@ -108,12 +111,12 @@ void main() {
     test('pool exhaustion cycles with numeric suffixes', () async {
       final names = <String>{};
       for (var i = 0; i < 14; i++) {
-        final agent = await store.hire(
-          role: SubagentRole.expert,
-          model: 'm',
+        final agent = await store.hire(role: SubagentRole.expert, model: 'm');
+        expect(
+          names.add(agent.name),
+          isTrue,
+          reason: 'duplicate ${agent.name}',
         );
-        expect(names.add(agent.name), isTrue,
-            reason: 'duplicate ${agent.name}');
       }
       // The 13th hire must be the first suffixed name.
       final all = await store.listByRole(SubagentRole.expert);
@@ -164,13 +167,15 @@ models = [{ model = "zhipu/glm-5.3", concurrency = 1 }]
       final store = SubagentConfigStore(file);
       await store.writePools(
         const SubagentConfig(
-          workers: SubagentModelConfig(models: [
-            SubagentModelEntry(model: 'a/one', concurrency: 2),
-            SubagentModelEntry(model: 'b/two', concurrency: 8),
-          ]),
-          experts: SubagentModelConfig(models: [
-            SubagentModelEntry(model: 'c/three'),
-          ]),
+          workers: SubagentModelConfig(
+            models: [
+              SubagentModelEntry(model: 'a/one', concurrency: 2),
+              SubagentModelEntry(model: 'b/two', concurrency: 8),
+            ],
+          ),
+          experts: SubagentModelConfig(
+            models: [SubagentModelEntry(model: 'c/three')],
+          ),
         ),
       );
       final pools = await store.readPools();
@@ -182,26 +187,28 @@ models = [{ model = "zhipu/glm-5.3", concurrency = 1 }]
   });
 
   group('agent refs', () {
-    test('parses agent:// names; code-span exclusion follows backgroundColor',
-        () {
-      const text = 'ask agent://orion or agent://libra-2';
-      final spans = [const nt.TextSpan(text: text)];
-      final refs = parseAgentRefs(spans);
-      expect(refs.map((r) => r.name), ['orion', 'libra-2']);
-      expect(refs.first.displayText, 'agent://orion');
-      expect(refs.first.containsIndex(refs.first.offset), isTrue);
+    test(
+      'parses agent:// names; code-span exclusion follows backgroundColor',
+      () {
+        const text = 'ask agent://orion or agent://libra-2';
+        final spans = [const nt.TextSpan(text: text)];
+        final refs = parseAgentRefs(spans);
+        expect(refs.map((r) => r.name), ['orion', 'libra-2']);
+        expect(refs.first.displayText, 'agent://orion');
+        expect(refs.first.containsIndex(refs.first.offset), isTrue);
 
-      // A span carrying a background color (how the markdown visitor
-      // marks code spans) is excluded from the walk.
-      const code = 'agent://virgo';
-      final codeSpans = [
-        const nt.TextSpan(
-          text: code,
-          style: nt.TextStyle(backgroundColor: nt.Color(0xFF333333)),
-        ),
-      ];
-      expect(parseAgentRefs(codeSpans), isEmpty);
-    });
+        // A span carrying a background color (how the markdown visitor
+        // marks code spans) is excluded from the walk.
+        const code = 'agent://virgo';
+        final codeSpans = [
+          const nt.TextSpan(
+            text: code,
+            style: nt.TextStyle(backgroundColor: nt.Color(0xFF333333)),
+          ),
+        ];
+        expect(parseAgentRefs(codeSpans), isEmpty);
+      },
+    );
 
     test('styles ref regions without touching other text', () {
       const text = 'see agent://orion now';
@@ -237,10 +244,34 @@ models = [{ model = "zhipu/glm-5.3", concurrency = 1 }]
         refs,
         displayNames: (id) => '',
       );
-      expect(
-        styledFallback.cast<nt.TextSpan>()[1].text,
-        'agent://orion',
+      expect(styledFallback.cast<nt.TextSpan>()[1].text, 'agent://orion');
+    });
+
+    test('chip text (glyph + localized name) replaces the raw reference', () {
+      const text = 'dispatch by agent://apus today';
+      final spans = [const nt.TextSpan(text: text)];
+      final refs = parseAgentRefs(spans);
+      final styled = applyAgentLinkStyles(
+        spans,
+        refs,
+        // Chip style: a background block, no underline.
+        linkStyle: const nt.TextStyle(backgroundColor: nt.Color(0xFF2B2C39)),
+        displayNames: (id) => id == 'apus' ? '✎ 天燕座' : '',
       );
+      final flat = styled.cast<nt.TextSpan>();
+      expect(flat[0].text, 'dispatch by ');
+      expect(flat[1].text, '✎ 天燕座');
+      expect(flat[2].text, ' today');
+      expect(flat[1].style!.backgroundColor, nt.Color(0xFF2B2C39));
+      expect(flat[1].style!.decoration, isNot(nt.TextDecoration.underline));
+      // An unknown id (empty chip text and no localized name) falls back to
+      // the raw reference, so no glyph leaks in.
+      final fallback = applyAgentLinkStyles(
+        spans,
+        refs,
+        displayNames: (id) => '',
+      );
+      expect(fallback.cast<nt.TextSpan>()[1].text, 'agent://apus');
     });
   });
 }
