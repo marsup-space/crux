@@ -435,6 +435,19 @@ Future<_LoadingResults> _doLoading(
   );
   final subagentController = await SubagentController.create(
     configStore: SubagentConfigStore(themeConfigFile),
+    persistToggles: (sessionId, {required workersOn, required expertsOn}) =>
+        chatPanelBootState.store.updateSubagentToggles(
+          sessionId,
+          workersOn: workersOn,
+          expertsOn: expertsOn,
+        ),
+    loadToggles: (sessionId) async {
+      final session = await chatPanelBootState.store.getById(sessionId);
+      return (
+        workers: session?.subagentWorkersOn,
+        experts: session?.subagentExpertsOn,
+      );
+    },
   );
   await HighlightService.initialize();
   await gitStatusFuture;

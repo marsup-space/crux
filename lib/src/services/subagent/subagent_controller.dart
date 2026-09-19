@@ -8,22 +8,57 @@ import 'subagent_manager.dart' show SubagentControllerLike;
 
 /// The live subagent-mode toggles + model-pool configuration.
 ///
-/// Mirrors `LocaleController`: holds the two independent switches
-/// (`workersOn` / `expertsOn`) and the role model pools, persists via
-/// [SubagentConfigStore] to `config.toml`, and notifies listeners on
-/// change so mounted UI (the subagent bar, the toolbar chips) re-renders.
+/// The switches are PER-SESSION state: each session persists its own
+/// `workersOn` / `expertsOn` pair in the sessions table (columns
+/// `subagent_workers_on` / `subagent_experts_on`), and the controller
+/// follows the active session — switching sessions switches the
+/// effective mode. A session that never flipped a switch reads as
+/// `null` and falls back to the global default from
+/// `config.toml [subagent]`; once flipped, the session value is
+/// authoritative and survives restarts.
+///
+/// The model pools stay global config (shared by all sessions) and
+/// live in [configStore].
 ///
 /// The controller is deliberately presentation-free: it knows nothing
-/// about runs or the roster. M2's runner/tool wiring reads [toggles] and
-/// [pools] from here; this class stays the single source of truth for
-/// "is subagent mode on, and which models may agents run on".
+/// about runs or the roster. The manager/tools read [toggles] and
+/// [pools] from here; this class stays the single source of truth
+/// for "is subagent mode on, and which models may agents run on".
 class SubagentController extends ChangeNotifier
     implements SubagentControllerLike {
   final SubagentConfigStore configStore;
+
+  /// Persists the per-session switches. Null in tests / headless
+  /// setups — writes then become no-ops and reads fall back to the
+  /// in-memory value.
+  final Future<void> Function(
+    int sessionId, {
+    required bool? workersOn,
+    required bool? expertsOn,
+  })? persistToggles;
+
+  /// Loads the persisted switches for one session. Null in tests —
+  /// every session then reads as "never set" (global default).
+  final Future<({bool? workers, bool? experts})> Function(int sessionId)?
+  loadToggles;
+
   final String? startupWarning;
 
-  SubagentRuntimeToggles _toggles;
-  final SubagentConfig _pools;
+  /// The global default (config.toml). Used for sessions that never
+  /// flipped a switch.
+  final SubagentRuntimeToggles _globalDefault;
+
+  /// The global model pools, cached at create / [reloadPools] time
+  /// so [poolFor] stays synchronous (the manager's hire path reads
+  /// it on every dispatch).
+  SubagentConfig _pools;
+
+  /// The active session's persisted values. `null` on a field =
+  /// never set → global default applies.
+  bool? _sessionWorkersOn;
+  bool? _sessionExpertsOn;
+
+  int? _activeSessionId;
 
   /// Set when a switch flipped since the last user turn; consumed by
   /// the turn orchestrator to attach the mode announcement to the
@@ -50,20 +85,29 @@ class SubagentController extends ChangeNotifier
   // Positional formals — named parameters cannot start with `_`.
   SubagentController._(
     this.configStore,
-    this._toggles,
+    this._globalDefault,
     this._pools, {
+    this.persistToggles,
+    this.loadToggles,
     this.startupWarning,
   });
   static Future<SubagentController> create({
     required SubagentConfigStore configStore,
+    Future<void> Function(
+      int sessionId, {
+      required bool? workersOn,
+      required bool? expertsOn,
+    })? persistToggles,
+    Future<({bool? workers, bool? experts})> Function(int sessionId)?
+    loadToggles,
   }) async {
-    SubagentRuntimeToggles toggles;
+    SubagentRuntimeToggles defaults;
     SubagentConfig pools;
     String? warning;
     try {
-      toggles = await configStore.readToggles();
+      defaults = await configStore.readToggles();
     } catch (error) {
-      toggles = const SubagentRuntimeToggles();
+      defaults = const SubagentRuntimeToggles();
       warning = 'Could not read subagent configuration: $error';
     }
     try {
@@ -74,40 +118,106 @@ class SubagentController extends ChangeNotifier
     }
     return SubagentController._(
       configStore,
-      toggles,
+      defaults,
       pools,
+      persistToggles: persistToggles,
+      loadToggles: loadToggles,
       startupWarning: warning,
     );
   }
 
-  SubagentRuntimeToggles get toggles => _toggles;
-  SubagentConfig get pools => _pools;
+  /// The effective toggles for the active session: the session's
+  /// persisted value where set, else the global default.
+  SubagentRuntimeToggles get toggles => SubagentRuntimeToggles(
+        workersOn: _sessionWorkersOn ?? _globalDefault.workersOn,
+        expertsOn: _sessionExpertsOn ?? _globalDefault.expertsOn,
+      );
+
+  SubagentRuntimeToggles get globalDefault => _globalDefault;
+
+  /// Make [sessionId] the active session: loads its persisted
+  /// switches (async; notifies listeners when the values land).
+  Future<void> attachSession(int sessionId) async {
+    if (_activeSessionId == sessionId) return;
+    _activeSessionId = sessionId;
+    if (loadToggles == null) {
+      _sessionWorkersOn = null;
+      _sessionExpertsOn = null;
+      notifyListeners();
+      return;
+    }
+    try {
+      final loaded = await loadToggles!(sessionId);
+      // A rapid A→B→A switch may have moved on; drop stale loads.
+      if (_activeSessionId != sessionId) return;
+      _sessionWorkersOn = loaded.workers;
+      _sessionExpertsOn = loaded.experts;
+    } catch (_) {
+      if (_activeSessionId != sessionId) return;
+      _sessionWorkersOn = null;
+      _sessionExpertsOn = null;
+    }
+    notifyListeners();
+  }
+
   @override
-  bool get workersOn => _toggles.workersOn;
+  bool get workersOn => toggles.workersOn;
   @override
-  bool get expertsOn => _toggles.expertsOn;
+  bool get expertsOn => toggles.expertsOn;
   @override
-  bool get anyOn => _toggles.anyOn;
+  bool get anyOn => toggles.anyOn;
 
   @override
   SubagentModelConfig poolFor(SubagentRole role) => _pools.forRole(role);
 
-  /// Flip one of the two independent switches. Returns a result with a
-  /// null `toggles` when [role] is not a valid switch target.
+  /// Re-read the model pools from config.toml. Call after the config
+  /// fullpane saves — hire's model picker must see the new pools
+  /// without a restart.
+  Future<void> reloadPools() async {
+    try {
+      _pools = await configStore.readPools();
+      notifyListeners();
+    } catch (_) {
+      // Keep the last-known-good pools; a failed re-read must not
+      // blank the cache.
+    }
+  }
+
+  /// Flip one of the two independent switches for the ACTIVE
+  /// session. Persists to the session row; the global default is
+  /// untouched.
   Future<SubagentToggleResult> setToggle(SubagentRole role, bool value) async {
     final next = switch (role) {
-      SubagentRole.worker => _toggles.copyWith(workersOn: value),
-      SubagentRole.expert => _toggles.copyWith(expertsOn: value),
+      SubagentRole.worker => SubagentRuntimeToggles(
+          workersOn: value,
+          expertsOn: expertsOn,
+        ),
+      SubagentRole.expert => SubagentRuntimeToggles(
+          workersOn: workersOn,
+          expertsOn: value,
+        ),
     };
-    _toggles = next;
+    switch (role) {
+      case SubagentRole.worker:
+        _sessionWorkersOn = value;
+      case SubagentRole.expert:
+        _sessionExpertsOn = value;
+    }
     _announcementPending = true;
     notifyListeners();
-    try {
-      await configStore.writeToggles(next);
-      return SubagentToggleResult(toggles: next);
-    } catch (error) {
-      return SubagentToggleResult(toggles: next, persistenceError: error);
+    if (_activeSessionId != null && persistToggles != null) {
+      try {
+        await persistToggles!(
+          _activeSessionId!,
+          workersOn: _sessionWorkersOn,
+          expertsOn: _sessionExpertsOn,
+        );
+        return SubagentToggleResult(toggles: next);
+      } catch (error) {
+        return SubagentToggleResult(toggles: next, persistenceError: error);
+      }
     }
+    return SubagentToggleResult(toggles: next);
   }
 }
 

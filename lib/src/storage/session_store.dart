@@ -249,6 +249,24 @@ class SessionStore implements SessionStoreAccessor {
     );
   }
 
+  /// Persist the per-session subagent-mode switches. `null` for a
+  /// switch means "never set in this session" — the global default
+  /// from `config.toml [subagent]` then applies at read time.
+  /// Leaves [Session.updatedAt] untouched (a mode flip is not
+  /// session activity; it must not re-order the sidebar).
+  Future<void> updateSubagentToggles(
+    int id, {
+    required bool? workersOn,
+    required bool? expertsOn,
+  }) async {
+    await (_db.update(_db.sessions)..where((t) => t.id.equals(id))).write(
+      db.SessionsCompanion(
+        subagentWorkersOn: Value(workersOn),
+        subagentExpertsOn: Value(expertsOn),
+      ),
+    );
+  }
+
   /// Auto-archive all un-archived sessions for [projectPath] whose
   /// [updatedAt] is older than [olderThan]. Returns the number of
   /// sessions that were archived.
@@ -823,6 +841,8 @@ WHERE status = ?
           ? DateTime.fromMillisecondsSinceEpoch(row.pinnedAt!)
           : null,
       systemPrompt: row.systemPrompt,
+      subagentWorkersOn: row.subagentWorkersOn,
+      subagentExpertsOn: row.subagentExpertsOn,
     );
   }
 }

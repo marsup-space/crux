@@ -151,8 +151,27 @@ class CruxDatabase extends _$CruxDatabase {
   ///         lastIntention, run-owner session. Runs themselves are
   ///         never persisted (execution is transient by design), so
   ///         restart leaves every agent `ready`.
+  ///   v34 – added `sessions.subagentWorkersOn` / `.subagentExpertsOn`
+  ///         (nullable BOOL): the subagent-mode switches are per-
+  ///         session state. NULL = never set in this session → the
+  ///         global default from `config.toml [subagent]` applies;
+  ///         once flipped, the session value wins. Switching
+  ///         sessions switches the effective mode; reopening a
+  ///         session restores its switches.
+  ///   v35 – added `agents.createdBySessionId` (nullable INT): the
+  ///         session that hired the agent. The chat bar scopes `ready`
+  ///         chips to the current session (NULL legacy rows hidden);
+  ///         the home roster stays a global view.
+  ///   v36 – added `agents.lastUsedBySessionId` (nullable INT): the
+  ///         session that most recently hired OR dispatched the agent
+  ///         (hire seeds it, every `markBusy` re-stamps it, `markReady`
+  ///         leaves it). The chat bar now scopes chips to "used by this
+  ///         session", so an agent hired elsewhere and dispatched here
+  ///         keeps its chip after the run ends. Backfilled from
+  ///         `createdBySessionId` so existing rows keep the old
+  ///         semantics. The home roster stays a global view.
   @override
-  int get schemaVersion => 33;
+  int get schemaVersion => 36;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -515,6 +534,64 @@ CREATE TABLE IF NOT EXISTS project_notes (
       }
       if (from < 33) {
         await m.createTable(agents);
+      }
+      if (from < 34) {
+        // Idempotency guard mirrors v26/v29: a database created via
+        // onCreate at the CURRENT schema already has these columns
+        // (e.g. a test that rewinds user_version, or a dev build),
+        // and a bare ALTER would abort with "duplicate column name".
+        final hasSubagentSwitches = await m.database
+            .customSelect(
+              "SELECT 1 FROM pragma_table_info('sessions') "
+              "WHERE name IN ('subagent_workers_on', "
+              "'subagent_experts_on') LIMIT 1",
+            )
+            .get();
+        if (hasSubagentSwitches.isEmpty) {
+          await m.database.customStatement(
+            'ALTER TABLE sessions ADD COLUMN subagent_workers_on INTEGER',
+          );
+          await m.database.customStatement(
+            'ALTER TABLE sessions ADD COLUMN subagent_experts_on INTEGER',
+          );
+        }
+      }
+      if (from < 35) {
+        // Idempotency guard mirrors v34: a database created via onCreate
+        // at the CURRENT schema already has the column.
+        final hasCreatedBy = await m.database
+            .customSelect(
+              "SELECT 1 FROM pragma_table_info('agents') "
+              "WHERE name = 'created_by_session_id' LIMIT 1",
+            )
+            .get();
+        if (hasCreatedBy.isEmpty) {
+          await m.database.customStatement(
+            'ALTER TABLE agents ADD COLUMN created_by_session_id INTEGER',
+          );
+        }
+      }
+      if (from < 36) {
+        // Idempotency guard mirrors v34/v35: a database created via
+        // onCreate at the CURRENT schema already has the column.
+        final hasLastUsedBy = await m.database
+            .customSelect(
+              "SELECT 1 FROM pragma_table_info('agents') "
+              "WHERE name = 'last_used_by_session_id' LIMIT 1",
+            )
+            .get();
+        if (hasLastUsedBy.isEmpty) {
+          await m.database.customStatement(
+            'ALTER TABLE agents ADD COLUMN last_used_by_session_id INTEGER',
+          );
+          // Backfill: rows that predate the column were only ever
+          // visible in the bar when hired by the current session, so
+          // seeding from `created_by_session_id` keeps the bar
+          // behaviour identical for existing data.
+          await m.database.customStatement(
+            'UPDATE agents SET last_used_by_session_id = created_by_session_id',
+          );
+        }
       }
     },
   );

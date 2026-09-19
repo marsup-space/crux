@@ -82,11 +82,12 @@ class SubagentConfigStore {
 
   SubagentModelConfig _parseRole(Object? value) {
     if (value is! Map) return const SubagentModelConfig();
-    final rawModels = value['models'] is List ? value['models'] as List : const [];
+    final rawModels = value['models'] is List
+        ? value['models'] as List
+        : const [];
     return SubagentModelConfig(
       models: [
-        for (final entry in rawModels)
-          ?SubagentModelEntry.fromJson(entry),
+        for (final entry in rawModels) ?SubagentModelEntry.fromJson(entry),
       ],
     );
   }
@@ -137,7 +138,10 @@ class SubagentRuntimeToggles {
   final bool workersOn;
   final bool expertsOn;
 
-  const SubagentRuntimeToggles({this.workersOn = false, this.expertsOn = false});
+  const SubagentRuntimeToggles({
+    this.workersOn = false,
+    this.expertsOn = false,
+  });
 
   bool get anyOn => workersOn || expertsOn;
 
@@ -174,6 +178,17 @@ class SubagentRosterEntry {
 
   final bool busy;
 
+  /// Session that hired the agent (null = session-agnostic / predates the
+  /// column). Informational for UI surfaces; the bar filters on
+  /// [lastUsedBySessionId].
+  final int? createdBySessionId;
+
+  /// Session that most recently hired OR dispatched the agent (null =
+  /// predates the column). The chat agent bar shows a chip when this
+  /// matches the current session; the home roster ignores it (global
+  /// view).
+  final int? lastUsedBySessionId;
+
   const SubagentRosterEntry({
     required this.name,
     required this.role,
@@ -181,5 +196,7 @@ class SubagentRosterEntry {
     required this.model,
     required this.intention,
     required this.busy,
+    this.createdBySessionId,
+    this.lastUsedBySessionId,
   });
 }

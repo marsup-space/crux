@@ -66,6 +66,13 @@ class Session {
   /// replaced on model switch.
   String? systemPrompt;
 
+  /// Per-session subagent-mode switches. `null` = never set in this
+  /// session → the global default from `config.toml [subagent]`
+  /// applies. Once the user flips a switch in this session, the
+  /// session's value is authoritative and persists across restarts.
+  bool? subagentWorkersOn;
+  bool? subagentExpertsOn;
+
   Session({
     required this.id,
     this.slug = '',
@@ -93,6 +100,8 @@ class Session {
     this.archivedAt,
     this.pinnedAt,
     this.systemPrompt,
+    this.subagentWorkersOn,
+    this.subagentExpertsOn,
   }) : createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? DateTime.now();
 

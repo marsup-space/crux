@@ -78,6 +78,98 @@ void main() {
     });
   });
 
+  group('per-session switches', () {
+    late Directory dir;
+
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('subagent_m3_ps_');
+      addTearDown(() => dir.delete(recursive: true));
+    });
+
+    test('sessions that never flipped fall back to the global default',
+        () async {
+      // config.toml says workers on globally.
+      final file = File('${dir.path}/config.toml');
+      await file.writeAsString('[subagent]\nworkers_on = true\n');
+      final controller = await SubagentController.create(
+        configStore: SubagentConfigStore(file),
+        loadToggles: (sessionId) async => (workers: null, experts: null),
+      );
+      // Session 7 never flipped anything: global default applies.
+      await controller.attachSession(7);
+      expect(controller.workersOn, isTrue);
+      expect(controller.expertsOn, isFalse);
+    });
+
+    test('a flipped session wins over the global default', () async {
+      final file = File('${dir.path}/config.toml');
+      await file.writeAsString('[subagent]\nworkers_on = true\n');
+      final controller = await SubagentController.create(
+        configStore: SubagentConfigStore(file),
+        loadToggles: (sessionId) async =>
+            (workers: sessionId == 7 ? false : null, experts: null),
+      );
+      // Session 7 flipped workers OFF (against the global on).
+      await controller.attachSession(7);
+      expect(controller.workersOn, isFalse);
+      // Switching to session 8 (never flipped) restores the default.
+      await controller.attachSession(8);
+      expect(controller.workersOn, isTrue);
+    });
+
+    test('setToggle persists to the active session and arms the announcement',
+        () async {
+      final persisted = <int, ({bool? workers, bool? experts})>{};
+      final controller = await SubagentController.create(
+        configStore: SubagentConfigStore(File('${dir.path}/config.toml')),
+        persistToggles: (sessionId,
+            {required workersOn, required expertsOn}) async {
+          persisted[sessionId] = (workers: workersOn, experts: expertsOn);
+        },
+        loadToggles: (sessionId) async =>
+            (workers: null, experts: sessionId == 3 ? true : null),
+      );
+      await controller.attachSession(3);
+      // The loaded value shows through immediately.
+      expect(controller.expertsOn, isTrue);
+
+      await controller.setToggle(SubagentRole.worker, true);
+      expect(controller.workersOn, isTrue);
+      // Persisted with BOTH fields for session 3 (experts kept).
+      expect(persisted[3]!.workers, isTrue);
+      expect(persisted[3]!.experts, isTrue);
+      // Announcement armed.
+      expect(controller.consumePendingAnnouncement(), isTrue);
+
+      // Session 4: fresh state, the flip on session 3 stays there.
+      await controller.attachSession(4);
+      expect(controller.workersOn, isFalse);
+      expect(controller.expertsOn, isFalse);
+    });
+
+    test('rapid A→B→A switching drops stale loads', () async {
+      final file = File('${dir.path}/config.toml');
+      final controller = await SubagentController.create(
+        configStore: SubagentConfigStore(file),
+        loadToggles: (sessionId) async {
+          // Session 7 loads slowly; session 8 instantly.
+          if (sessionId == 7) {
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+            return (workers: true, experts: null);
+          }
+          return (workers: null, experts: null);
+        },
+      );
+      // Fire 7, then switch to 8 before 7's load lands.
+      final slow = controller.attachSession(7);
+      await controller.attachSession(8);
+      await slow;
+      // The stale load for 7 must NOT have overwritten session 8's
+      // state (which reads as the global default: off).
+      expect(controller.workersOn, isFalse);
+    });
+  });
+
   group('workers-mode guard in ToolExecutor', () {
     test('hands-on tool blocked while workers on; reads pass; off passes all',
         () async {

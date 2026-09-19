@@ -49,6 +49,14 @@ class Sessions extends Table {
   /// layer treats identically to `'session'`.
   TextColumn get kind => text().nullable()();
 
+  /// Per-session subagent-mode switches. NULL = never touched in
+  /// this session → the runtime falls back to the global default
+  /// from `config.toml [subagent]`. Once flipped here, the session's
+  /// value is authoritative (switching sessions switches modes;
+  /// reopening restores them).
+  BoolColumn get subagentWorkersOn => boolean().nullable()();
+  BoolColumn get subagentExpertsOn => boolean().nullable()();
+
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
   IntColumn get archivedAt => integer().nullable()();
@@ -312,6 +320,27 @@ class Agents extends Table {
   /// treat a `busy` row whose owning session is not live as `ready`
   /// (crash-orphan self-healing).
   IntColumn get runOwnerSessionId => integer().nullable()();
+
+  /// Session that hired this agent. The chat agent bar shows a `ready`
+  /// chip ONLY when this matches the current session — rows predating the
+  /// column (NULL) are hidden there too. The home roster box is a global
+  /// view and ignores it.
+  IntColumn get createdBySessionId => integer().nullable()();
+
+  /// Session that most recently *used* this agent: set to the hiring
+  /// session at hire time, then re-stamped on every [AgentStore.markBusy]
+  /// (i.e. every dispatch). `markReady` deliberately leaves it alone, so
+  /// the chip survives the run finishing — this is what makes the chat
+  /// agent bar show "every subagent THIS session has used", including
+  /// agents hired by another session but dispatched from here.
+  ///
+  /// Distinct from [runOwnerSessionId]: that one carries crash-orphan
+  /// self-healing semantics (a `busy` row with a dead owner reads as
+  /// `ready`) and clears on `markReady`, so it cannot answer "used before".
+  /// Rows predating this column (NULL) are hidden in the bar, matching the
+  /// pre-existing [createdBySessionId] behaviour. The home roster box is a
+  /// global view and ignores it.
+  IntColumn get lastUsedBySessionId => integer().nullable()();
 
   IntColumn get createdAt => integer()();
   IntColumn get lastActiveAt => integer()();

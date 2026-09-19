@@ -226,6 +226,34 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _subagentWorkersOnMeta = const VerificationMeta(
+    'subagentWorkersOn',
+  );
+  @override
+  late final GeneratedColumn<bool> subagentWorkersOn = GeneratedColumn<bool>(
+    'subagent_workers_on',
+    aliasedName,
+    true,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("subagent_workers_on" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _subagentExpertsOnMeta = const VerificationMeta(
+    'subagentExpertsOn',
+  );
+  @override
+  late final GeneratedColumn<bool> subagentExpertsOn = GeneratedColumn<bool>(
+    'subagent_experts_on',
+    aliasedName,
+    true,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("subagent_experts_on" IN (0, 1))',
+    ),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -303,6 +331,8 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
     runningOwnerId,
     runningHeartbeatAt,
     kind,
+    subagentWorkersOn,
+    subagentExpertsOn,
     createdAt,
     updatedAt,
     archivedAt,
@@ -456,6 +486,24 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
       );
     }
+    if (data.containsKey('subagent_workers_on')) {
+      context.handle(
+        _subagentWorkersOnMeta,
+        subagentWorkersOn.isAcceptableOrUnknown(
+          data['subagent_workers_on']!,
+          _subagentWorkersOnMeta,
+        ),
+      );
+    }
+    if (data.containsKey('subagent_experts_on')) {
+      context.handle(
+        _subagentExpertsOnMeta,
+        subagentExpertsOn.isAcceptableOrUnknown(
+          data['subagent_experts_on']!,
+          _subagentExpertsOnMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -584,6 +632,14 @@ class $SessionsTable extends Sessions with TableInfo<$SessionsTable, Session> {
         DriftSqlType.string,
         data['${effectivePrefix}kind'],
       ),
+      subagentWorkersOn: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}subagent_workers_on'],
+      ),
+      subagentExpertsOn: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}subagent_experts_on'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -660,6 +716,14 @@ class Session extends DataClass implements Insertable<Session> {
   /// backfill — existing rows read as `NULL`, which the model
   /// layer treats identically to `'session'`.
   final String? kind;
+
+  /// Per-session subagent-mode switches. NULL = never touched in
+  /// this session → the runtime falls back to the global default
+  /// from `config.toml [subagent]`. Once flipped here, the session's
+  /// value is authoritative (switching sessions switches modes;
+  /// reopening restores them).
+  final bool? subagentWorkersOn;
+  final bool? subagentExpertsOn;
   final int createdAt;
   final int updatedAt;
   final int? archivedAt;
@@ -710,6 +774,8 @@ class Session extends DataClass implements Insertable<Session> {
     this.runningOwnerId,
     this.runningHeartbeatAt,
     this.kind,
+    this.subagentWorkersOn,
+    this.subagentExpertsOn,
     required this.createdAt,
     required this.updatedAt,
     this.archivedAt,
@@ -754,6 +820,12 @@ class Session extends DataClass implements Insertable<Session> {
     }
     if (!nullToAbsent || kind != null) {
       map['kind'] = Variable<String>(kind);
+    }
+    if (!nullToAbsent || subagentWorkersOn != null) {
+      map['subagent_workers_on'] = Variable<bool>(subagentWorkersOn);
+    }
+    if (!nullToAbsent || subagentExpertsOn != null) {
+      map['subagent_experts_on'] = Variable<bool>(subagentExpertsOn);
     }
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
@@ -801,6 +873,12 @@ class Session extends DataClass implements Insertable<Session> {
           ? const Value.absent()
           : Value(runningHeartbeatAt),
       kind: kind == null && nullToAbsent ? const Value.absent() : Value(kind),
+      subagentWorkersOn: subagentWorkersOn == null && nullToAbsent
+          ? const Value.absent()
+          : Value(subagentWorkersOn),
+      subagentExpertsOn: subagentExpertsOn == null && nullToAbsent
+          ? const Value.absent()
+          : Value(subagentExpertsOn),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       archivedAt: archivedAt == null && nullToAbsent
@@ -847,6 +925,8 @@ class Session extends DataClass implements Insertable<Session> {
       runningOwnerId: serializer.fromJson<String?>(json['runningOwnerId']),
       runningHeartbeatAt: serializer.fromJson<int?>(json['runningHeartbeatAt']),
       kind: serializer.fromJson<String?>(json['kind']),
+      subagentWorkersOn: serializer.fromJson<bool?>(json['subagentWorkersOn']),
+      subagentExpertsOn: serializer.fromJson<bool?>(json['subagentExpertsOn']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
       archivedAt: serializer.fromJson<int?>(json['archivedAt']),
@@ -880,6 +960,8 @@ class Session extends DataClass implements Insertable<Session> {
       'runningOwnerId': serializer.toJson<String?>(runningOwnerId),
       'runningHeartbeatAt': serializer.toJson<int?>(runningHeartbeatAt),
       'kind': serializer.toJson<String?>(kind),
+      'subagentWorkersOn': serializer.toJson<bool?>(subagentWorkersOn),
+      'subagentExpertsOn': serializer.toJson<bool?>(subagentExpertsOn),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
       'archivedAt': serializer.toJson<int?>(archivedAt),
@@ -909,6 +991,8 @@ class Session extends DataClass implements Insertable<Session> {
     Value<String?> runningOwnerId = const Value.absent(),
     Value<int?> runningHeartbeatAt = const Value.absent(),
     Value<String?> kind = const Value.absent(),
+    Value<bool?> subagentWorkersOn = const Value.absent(),
+    Value<bool?> subagentExpertsOn = const Value.absent(),
     int? createdAt,
     int? updatedAt,
     Value<int?> archivedAt = const Value.absent(),
@@ -943,6 +1027,12 @@ class Session extends DataClass implements Insertable<Session> {
         ? runningHeartbeatAt.value
         : this.runningHeartbeatAt,
     kind: kind.present ? kind.value : this.kind,
+    subagentWorkersOn: subagentWorkersOn.present
+        ? subagentWorkersOn.value
+        : this.subagentWorkersOn,
+    subagentExpertsOn: subagentExpertsOn.present
+        ? subagentExpertsOn.value
+        : this.subagentExpertsOn,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     archivedAt: archivedAt.present ? archivedAt.value : this.archivedAt,
@@ -987,6 +1077,12 @@ class Session extends DataClass implements Insertable<Session> {
           ? data.runningHeartbeatAt.value
           : this.runningHeartbeatAt,
       kind: data.kind.present ? data.kind.value : this.kind,
+      subagentWorkersOn: data.subagentWorkersOn.present
+          ? data.subagentWorkersOn.value
+          : this.subagentWorkersOn,
+      subagentExpertsOn: data.subagentExpertsOn.present
+          ? data.subagentExpertsOn.value
+          : this.subagentExpertsOn,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       archivedAt: data.archivedAt.present
@@ -1022,6 +1118,8 @@ class Session extends DataClass implements Insertable<Session> {
           ..write('runningOwnerId: $runningOwnerId, ')
           ..write('runningHeartbeatAt: $runningHeartbeatAt, ')
           ..write('kind: $kind, ')
+          ..write('subagentWorkersOn: $subagentWorkersOn, ')
+          ..write('subagentExpertsOn: $subagentExpertsOn, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('archivedAt: $archivedAt, ')
@@ -1053,6 +1151,8 @@ class Session extends DataClass implements Insertable<Session> {
     runningOwnerId,
     runningHeartbeatAt,
     kind,
+    subagentWorkersOn,
+    subagentExpertsOn,
     createdAt,
     updatedAt,
     archivedAt,
@@ -1083,6 +1183,8 @@ class Session extends DataClass implements Insertable<Session> {
           other.runningOwnerId == this.runningOwnerId &&
           other.runningHeartbeatAt == this.runningHeartbeatAt &&
           other.kind == this.kind &&
+          other.subagentWorkersOn == this.subagentWorkersOn &&
+          other.subagentExpertsOn == this.subagentExpertsOn &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.archivedAt == this.archivedAt &&
@@ -1111,6 +1213,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
   final Value<String?> runningOwnerId;
   final Value<int?> runningHeartbeatAt;
   final Value<String?> kind;
+  final Value<bool?> subagentWorkersOn;
+  final Value<bool?> subagentExpertsOn;
   final Value<int> createdAt;
   final Value<int> updatedAt;
   final Value<int?> archivedAt;
@@ -1137,6 +1241,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.runningOwnerId = const Value.absent(),
     this.runningHeartbeatAt = const Value.absent(),
     this.kind = const Value.absent(),
+    this.subagentWorkersOn = const Value.absent(),
+    this.subagentExpertsOn = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.archivedAt = const Value.absent(),
@@ -1164,6 +1270,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     this.runningOwnerId = const Value.absent(),
     this.runningHeartbeatAt = const Value.absent(),
     this.kind = const Value.absent(),
+    this.subagentWorkersOn = const Value.absent(),
+    this.subagentExpertsOn = const Value.absent(),
     required int createdAt,
     required int updatedAt,
     this.archivedAt = const Value.absent(),
@@ -1193,6 +1301,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Expression<String>? runningOwnerId,
     Expression<int>? runningHeartbeatAt,
     Expression<String>? kind,
+    Expression<bool>? subagentWorkersOn,
+    Expression<bool>? subagentExpertsOn,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
     Expression<int>? archivedAt,
@@ -1223,6 +1333,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       if (runningHeartbeatAt != null)
         'running_heartbeat_at': runningHeartbeatAt,
       if (kind != null) 'kind': kind,
+      if (subagentWorkersOn != null) 'subagent_workers_on': subagentWorkersOn,
+      if (subagentExpertsOn != null) 'subagent_experts_on': subagentExpertsOn,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (archivedAt != null) 'archived_at': archivedAt,
@@ -1252,6 +1364,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     Value<String?>? runningOwnerId,
     Value<int?>? runningHeartbeatAt,
     Value<String?>? kind,
+    Value<bool?>? subagentWorkersOn,
+    Value<bool?>? subagentExpertsOn,
     Value<int>? createdAt,
     Value<int>? updatedAt,
     Value<int?>? archivedAt,
@@ -1279,6 +1393,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
       runningOwnerId: runningOwnerId ?? this.runningOwnerId,
       runningHeartbeatAt: runningHeartbeatAt ?? this.runningHeartbeatAt,
       kind: kind ?? this.kind,
+      subagentWorkersOn: subagentWorkersOn ?? this.subagentWorkersOn,
+      subagentExpertsOn: subagentExpertsOn ?? this.subagentExpertsOn,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       archivedAt: archivedAt ?? this.archivedAt,
@@ -1354,6 +1470,12 @@ class SessionsCompanion extends UpdateCompanion<Session> {
     if (kind.present) {
       map['kind'] = Variable<String>(kind.value);
     }
+    if (subagentWorkersOn.present) {
+      map['subagent_workers_on'] = Variable<bool>(subagentWorkersOn.value);
+    }
+    if (subagentExpertsOn.present) {
+      map['subagent_experts_on'] = Variable<bool>(subagentExpertsOn.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -1395,6 +1517,8 @@ class SessionsCompanion extends UpdateCompanion<Session> {
           ..write('runningOwnerId: $runningOwnerId, ')
           ..write('runningHeartbeatAt: $runningHeartbeatAt, ')
           ..write('kind: $kind, ')
+          ..write('subagentWorkersOn: $subagentWorkersOn, ')
+          ..write('subagentExpertsOn: $subagentExpertsOn, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('archivedAt: $archivedAt, ')
@@ -4769,6 +4893,26 @@ class $AgentsTable extends Agents with TableInfo<$AgentsTable, Agent> {
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _createdBySessionIdMeta =
+      const VerificationMeta('createdBySessionId');
+  @override
+  late final GeneratedColumn<int> createdBySessionId = GeneratedColumn<int>(
+    'created_by_session_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lastUsedBySessionIdMeta =
+      const VerificationMeta('lastUsedBySessionId');
+  @override
+  late final GeneratedColumn<int> lastUsedBySessionId = GeneratedColumn<int>(
+    'last_used_by_session_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -4802,6 +4946,8 @@ class $AgentsTable extends Agents with TableInfo<$AgentsTable, Agent> {
     worklog,
     lastIntention,
     runOwnerSessionId,
+    createdBySessionId,
+    lastUsedBySessionId,
     createdAt,
     lastActiveAt,
   ];
@@ -4883,6 +5029,24 @@ class $AgentsTable extends Agents with TableInfo<$AgentsTable, Agent> {
         ),
       );
     }
+    if (data.containsKey('created_by_session_id')) {
+      context.handle(
+        _createdBySessionIdMeta,
+        createdBySessionId.isAcceptableOrUnknown(
+          data['created_by_session_id']!,
+          _createdBySessionIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_used_by_session_id')) {
+      context.handle(
+        _lastUsedBySessionIdMeta,
+        lastUsedBySessionId.isAcceptableOrUnknown(
+          data['last_used_by_session_id']!,
+          _lastUsedBySessionIdMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -4947,6 +5111,14 @@ class $AgentsTable extends Agents with TableInfo<$AgentsTable, Agent> {
         DriftSqlType.int,
         data['${effectivePrefix}run_owner_session_id'],
       ),
+      createdBySessionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_by_session_id'],
+      ),
+      lastUsedBySessionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_used_by_session_id'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -5002,6 +5174,27 @@ class Agent extends DataClass implements Insertable<Agent> {
   /// treat a `busy` row whose owning session is not live as `ready`
   /// (crash-orphan self-healing).
   final int? runOwnerSessionId;
+
+  /// Session that hired this agent. The chat agent bar shows a `ready`
+  /// chip ONLY when this matches the current session — rows predating the
+  /// column (NULL) are hidden there too. The home roster box is a global
+  /// view and ignores it.
+  final int? createdBySessionId;
+
+  /// Session that most recently *used* this agent: set to the hiring
+  /// session at hire time, then re-stamped on every [AgentStore.markBusy]
+  /// (i.e. every dispatch). `markReady` deliberately leaves it alone, so
+  /// the chip survives the run finishing — this is what makes the chat
+  /// agent bar show "every subagent THIS session has used", including
+  /// agents hired by another session but dispatched from here.
+  ///
+  /// Distinct from [runOwnerSessionId]: that one carries crash-orphan
+  /// self-healing semantics (a `busy` row with a dead owner reads as
+  /// `ready`) and clears on `markReady`, so it cannot answer "used before".
+  /// Rows predating this column (NULL) are hidden in the bar, matching the
+  /// pre-existing [createdBySessionId] behaviour. The home roster box is a
+  /// global view and ignores it.
+  final int? lastUsedBySessionId;
   final int createdAt;
   final int lastActiveAt;
   const Agent({
@@ -5014,6 +5207,8 @@ class Agent extends DataClass implements Insertable<Agent> {
     required this.worklog,
     required this.lastIntention,
     this.runOwnerSessionId,
+    this.createdBySessionId,
+    this.lastUsedBySessionId,
     required this.createdAt,
     required this.lastActiveAt,
   });
@@ -5030,6 +5225,12 @@ class Agent extends DataClass implements Insertable<Agent> {
     map['last_intention'] = Variable<String>(lastIntention);
     if (!nullToAbsent || runOwnerSessionId != null) {
       map['run_owner_session_id'] = Variable<int>(runOwnerSessionId);
+    }
+    if (!nullToAbsent || createdBySessionId != null) {
+      map['created_by_session_id'] = Variable<int>(createdBySessionId);
+    }
+    if (!nullToAbsent || lastUsedBySessionId != null) {
+      map['last_used_by_session_id'] = Variable<int>(lastUsedBySessionId);
     }
     map['created_at'] = Variable<int>(createdAt);
     map['last_active_at'] = Variable<int>(lastActiveAt);
@@ -5049,6 +5250,12 @@ class Agent extends DataClass implements Insertable<Agent> {
       runOwnerSessionId: runOwnerSessionId == null && nullToAbsent
           ? const Value.absent()
           : Value(runOwnerSessionId),
+      createdBySessionId: createdBySessionId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(createdBySessionId),
+      lastUsedBySessionId: lastUsedBySessionId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastUsedBySessionId),
       createdAt: Value(createdAt),
       lastActiveAt: Value(lastActiveAt),
     );
@@ -5069,6 +5276,10 @@ class Agent extends DataClass implements Insertable<Agent> {
       worklog: serializer.fromJson<String>(json['worklog']),
       lastIntention: serializer.fromJson<String>(json['lastIntention']),
       runOwnerSessionId: serializer.fromJson<int?>(json['runOwnerSessionId']),
+      createdBySessionId: serializer.fromJson<int?>(json['createdBySessionId']),
+      lastUsedBySessionId: serializer.fromJson<int?>(
+        json['lastUsedBySessionId'],
+      ),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       lastActiveAt: serializer.fromJson<int>(json['lastActiveAt']),
     );
@@ -5086,6 +5297,8 @@ class Agent extends DataClass implements Insertable<Agent> {
       'worklog': serializer.toJson<String>(worklog),
       'lastIntention': serializer.toJson<String>(lastIntention),
       'runOwnerSessionId': serializer.toJson<int?>(runOwnerSessionId),
+      'createdBySessionId': serializer.toJson<int?>(createdBySessionId),
+      'lastUsedBySessionId': serializer.toJson<int?>(lastUsedBySessionId),
       'createdAt': serializer.toJson<int>(createdAt),
       'lastActiveAt': serializer.toJson<int>(lastActiveAt),
     };
@@ -5101,6 +5314,8 @@ class Agent extends DataClass implements Insertable<Agent> {
     String? worklog,
     String? lastIntention,
     Value<int?> runOwnerSessionId = const Value.absent(),
+    Value<int?> createdBySessionId = const Value.absent(),
+    Value<int?> lastUsedBySessionId = const Value.absent(),
     int? createdAt,
     int? lastActiveAt,
   }) => Agent(
@@ -5115,6 +5330,12 @@ class Agent extends DataClass implements Insertable<Agent> {
     runOwnerSessionId: runOwnerSessionId.present
         ? runOwnerSessionId.value
         : this.runOwnerSessionId,
+    createdBySessionId: createdBySessionId.present
+        ? createdBySessionId.value
+        : this.createdBySessionId,
+    lastUsedBySessionId: lastUsedBySessionId.present
+        ? lastUsedBySessionId.value
+        : this.lastUsedBySessionId,
     createdAt: createdAt ?? this.createdAt,
     lastActiveAt: lastActiveAt ?? this.lastActiveAt,
   );
@@ -5133,6 +5354,12 @@ class Agent extends DataClass implements Insertable<Agent> {
       runOwnerSessionId: data.runOwnerSessionId.present
           ? data.runOwnerSessionId.value
           : this.runOwnerSessionId,
+      createdBySessionId: data.createdBySessionId.present
+          ? data.createdBySessionId.value
+          : this.createdBySessionId,
+      lastUsedBySessionId: data.lastUsedBySessionId.present
+          ? data.lastUsedBySessionId.value
+          : this.lastUsedBySessionId,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       lastActiveAt: data.lastActiveAt.present
           ? data.lastActiveAt.value
@@ -5152,6 +5379,8 @@ class Agent extends DataClass implements Insertable<Agent> {
           ..write('worklog: $worklog, ')
           ..write('lastIntention: $lastIntention, ')
           ..write('runOwnerSessionId: $runOwnerSessionId, ')
+          ..write('createdBySessionId: $createdBySessionId, ')
+          ..write('lastUsedBySessionId: $lastUsedBySessionId, ')
           ..write('createdAt: $createdAt, ')
           ..write('lastActiveAt: $lastActiveAt')
           ..write(')'))
@@ -5169,6 +5398,8 @@ class Agent extends DataClass implements Insertable<Agent> {
     worklog,
     lastIntention,
     runOwnerSessionId,
+    createdBySessionId,
+    lastUsedBySessionId,
     createdAt,
     lastActiveAt,
   );
@@ -5185,6 +5416,8 @@ class Agent extends DataClass implements Insertable<Agent> {
           other.worklog == this.worklog &&
           other.lastIntention == this.lastIntention &&
           other.runOwnerSessionId == this.runOwnerSessionId &&
+          other.createdBySessionId == this.createdBySessionId &&
+          other.lastUsedBySessionId == this.lastUsedBySessionId &&
           other.createdAt == this.createdAt &&
           other.lastActiveAt == this.lastActiveAt);
 }
@@ -5199,6 +5432,8 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
   final Value<String> worklog;
   final Value<String> lastIntention;
   final Value<int?> runOwnerSessionId;
+  final Value<int?> createdBySessionId;
+  final Value<int?> lastUsedBySessionId;
   final Value<int> createdAt;
   final Value<int> lastActiveAt;
   final Value<int> rowid;
@@ -5212,6 +5447,8 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
     this.worklog = const Value.absent(),
     this.lastIntention = const Value.absent(),
     this.runOwnerSessionId = const Value.absent(),
+    this.createdBySessionId = const Value.absent(),
+    this.lastUsedBySessionId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.lastActiveAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -5226,6 +5463,8 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
     this.worklog = const Value.absent(),
     this.lastIntention = const Value.absent(),
     this.runOwnerSessionId = const Value.absent(),
+    this.createdBySessionId = const Value.absent(),
+    this.lastUsedBySessionId = const Value.absent(),
     required int createdAt,
     required int lastActiveAt,
     this.rowid = const Value.absent(),
@@ -5244,6 +5483,8 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
     Expression<String>? worklog,
     Expression<String>? lastIntention,
     Expression<int>? runOwnerSessionId,
+    Expression<int>? createdBySessionId,
+    Expression<int>? lastUsedBySessionId,
     Expression<int>? createdAt,
     Expression<int>? lastActiveAt,
     Expression<int>? rowid,
@@ -5258,6 +5499,10 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
       if (worklog != null) 'worklog': worklog,
       if (lastIntention != null) 'last_intention': lastIntention,
       if (runOwnerSessionId != null) 'run_owner_session_id': runOwnerSessionId,
+      if (createdBySessionId != null)
+        'created_by_session_id': createdBySessionId,
+      if (lastUsedBySessionId != null)
+        'last_used_by_session_id': lastUsedBySessionId,
       if (createdAt != null) 'created_at': createdAt,
       if (lastActiveAt != null) 'last_active_at': lastActiveAt,
       if (rowid != null) 'rowid': rowid,
@@ -5274,6 +5519,8 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
     Value<String>? worklog,
     Value<String>? lastIntention,
     Value<int?>? runOwnerSessionId,
+    Value<int?>? createdBySessionId,
+    Value<int?>? lastUsedBySessionId,
     Value<int>? createdAt,
     Value<int>? lastActiveAt,
     Value<int>? rowid,
@@ -5288,6 +5535,8 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
       worklog: worklog ?? this.worklog,
       lastIntention: lastIntention ?? this.lastIntention,
       runOwnerSessionId: runOwnerSessionId ?? this.runOwnerSessionId,
+      createdBySessionId: createdBySessionId ?? this.createdBySessionId,
+      lastUsedBySessionId: lastUsedBySessionId ?? this.lastUsedBySessionId,
       createdAt: createdAt ?? this.createdAt,
       lastActiveAt: lastActiveAt ?? this.lastActiveAt,
       rowid: rowid ?? this.rowid,
@@ -5324,6 +5573,12 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
     if (runOwnerSessionId.present) {
       map['run_owner_session_id'] = Variable<int>(runOwnerSessionId.value);
     }
+    if (createdBySessionId.present) {
+      map['created_by_session_id'] = Variable<int>(createdBySessionId.value);
+    }
+    if (lastUsedBySessionId.present) {
+      map['last_used_by_session_id'] = Variable<int>(lastUsedBySessionId.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -5348,6 +5603,8 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
           ..write('worklog: $worklog, ')
           ..write('lastIntention: $lastIntention, ')
           ..write('runOwnerSessionId: $runOwnerSessionId, ')
+          ..write('createdBySessionId: $createdBySessionId, ')
+          ..write('lastUsedBySessionId: $lastUsedBySessionId, ')
           ..write('createdAt: $createdAt, ')
           ..write('lastActiveAt: $lastActiveAt, ')
           ..write('rowid: $rowid')
@@ -5452,6 +5709,8 @@ typedef $$SessionsTableCreateCompanionBuilder =
       Value<String?> runningOwnerId,
       Value<int?> runningHeartbeatAt,
       Value<String?> kind,
+      Value<bool?> subagentWorkersOn,
+      Value<bool?> subagentExpertsOn,
       required int createdAt,
       required int updatedAt,
       Value<int?> archivedAt,
@@ -5480,6 +5739,8 @@ typedef $$SessionsTableUpdateCompanionBuilder =
       Value<String?> runningOwnerId,
       Value<int?> runningHeartbeatAt,
       Value<String?> kind,
+      Value<bool?> subagentWorkersOn,
+      Value<bool?> subagentExpertsOn,
       Value<int> createdAt,
       Value<int> updatedAt,
       Value<int?> archivedAt,
@@ -5700,6 +5961,16 @@ class $$SessionsTableFilterComposer
 
   ColumnFilters<String> get kind => $composableBuilder(
     column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get subagentWorkersOn => $composableBuilder(
+    column: $table.subagentWorkersOn,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get subagentExpertsOn => $composableBuilder(
+    column: $table.subagentExpertsOn,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5963,6 +6234,16 @@ class $$SessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get subagentWorkersOn => $composableBuilder(
+    column: $table.subagentWorkersOn,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get subagentExpertsOn => $composableBuilder(
+    column: $table.subagentExpertsOn,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -6073,6 +6354,16 @@ class $$SessionsTableAnnotationComposer
 
   GeneratedColumn<String> get kind =>
       $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<bool> get subagentWorkersOn => $composableBuilder(
+    column: $table.subagentWorkersOn,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get subagentExpertsOn => $composableBuilder(
+    column: $table.subagentExpertsOn,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -6273,6 +6564,8 @@ class $$SessionsTableTableManager
                 Value<String?> runningOwnerId = const Value.absent(),
                 Value<int?> runningHeartbeatAt = const Value.absent(),
                 Value<String?> kind = const Value.absent(),
+                Value<bool?> subagentWorkersOn = const Value.absent(),
+                Value<bool?> subagentExpertsOn = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<int?> archivedAt = const Value.absent(),
@@ -6299,6 +6592,8 @@ class $$SessionsTableTableManager
                 runningOwnerId: runningOwnerId,
                 runningHeartbeatAt: runningHeartbeatAt,
                 kind: kind,
+                subagentWorkersOn: subagentWorkersOn,
+                subagentExpertsOn: subagentExpertsOn,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 archivedAt: archivedAt,
@@ -6327,6 +6622,8 @@ class $$SessionsTableTableManager
                 Value<String?> runningOwnerId = const Value.absent(),
                 Value<int?> runningHeartbeatAt = const Value.absent(),
                 Value<String?> kind = const Value.absent(),
+                Value<bool?> subagentWorkersOn = const Value.absent(),
+                Value<bool?> subagentExpertsOn = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
                 Value<int?> archivedAt = const Value.absent(),
@@ -6353,6 +6650,8 @@ class $$SessionsTableTableManager
                 runningOwnerId: runningOwnerId,
                 runningHeartbeatAt: runningHeartbeatAt,
                 kind: kind,
+                subagentWorkersOn: subagentWorkersOn,
+                subagentExpertsOn: subagentExpertsOn,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 archivedAt: archivedAt,
@@ -8927,6 +9226,8 @@ typedef $$AgentsTableCreateCompanionBuilder =
       Value<String> worklog,
       Value<String> lastIntention,
       Value<int?> runOwnerSessionId,
+      Value<int?> createdBySessionId,
+      Value<int?> lastUsedBySessionId,
       required int createdAt,
       required int lastActiveAt,
       Value<int> rowid,
@@ -8942,6 +9243,8 @@ typedef $$AgentsTableUpdateCompanionBuilder =
       Value<String> worklog,
       Value<String> lastIntention,
       Value<int?> runOwnerSessionId,
+      Value<int?> createdBySessionId,
+      Value<int?> lastUsedBySessionId,
       Value<int> createdAt,
       Value<int> lastActiveAt,
       Value<int> rowid,
@@ -8998,6 +9301,16 @@ class $$AgentsTableFilterComposer
 
   ColumnFilters<int> get runOwnerSessionId => $composableBuilder(
     column: $table.runOwnerSessionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdBySessionId => $composableBuilder(
+    column: $table.createdBySessionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastUsedBySessionId => $composableBuilder(
+    column: $table.lastUsedBySessionId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -9066,6 +9379,16 @@ class $$AgentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get createdBySessionId => $composableBuilder(
+    column: $table.createdBySessionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastUsedBySessionId => $composableBuilder(
+    column: $table.lastUsedBySessionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -9117,6 +9440,16 @@ class $$AgentsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<int> get createdBySessionId => $composableBuilder(
+    column: $table.createdBySessionId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get lastUsedBySessionId => $composableBuilder(
+    column: $table.lastUsedBySessionId,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -9163,6 +9496,8 @@ class $$AgentsTableTableManager
                 Value<String> worklog = const Value.absent(),
                 Value<String> lastIntention = const Value.absent(),
                 Value<int?> runOwnerSessionId = const Value.absent(),
+                Value<int?> createdBySessionId = const Value.absent(),
+                Value<int?> lastUsedBySessionId = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> lastActiveAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -9176,6 +9511,8 @@ class $$AgentsTableTableManager
                 worklog: worklog,
                 lastIntention: lastIntention,
                 runOwnerSessionId: runOwnerSessionId,
+                createdBySessionId: createdBySessionId,
+                lastUsedBySessionId: lastUsedBySessionId,
                 createdAt: createdAt,
                 lastActiveAt: lastActiveAt,
                 rowid: rowid,
@@ -9191,6 +9528,8 @@ class $$AgentsTableTableManager
                 Value<String> worklog = const Value.absent(),
                 Value<String> lastIntention = const Value.absent(),
                 Value<int?> runOwnerSessionId = const Value.absent(),
+                Value<int?> createdBySessionId = const Value.absent(),
+                Value<int?> lastUsedBySessionId = const Value.absent(),
                 required int createdAt,
                 required int lastActiveAt,
                 Value<int> rowid = const Value.absent(),
@@ -9204,6 +9543,8 @@ class $$AgentsTableTableManager
                 worklog: worklog,
                 lastIntention: lastIntention,
                 runOwnerSessionId: runOwnerSessionId,
+                createdBySessionId: createdBySessionId,
+                lastUsedBySessionId: lastUsedBySessionId,
                 createdAt: createdAt,
                 lastActiveAt: lastActiveAt,
                 rowid: rowid,

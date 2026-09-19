@@ -60,7 +60,7 @@ class AgentStore {
       if (!taken.contains(constellation.id)) return constellation.id;
     }
     // Pool exhausted: cycle with `-2`, -`3`, … per base id, in pool order.
-    for (var cycle = 2;; cycle++) {
+    for (var cycle = 2; ; cycle++) {
       for (final constellation in pool) {
         final candidate = '${constellation.id}-$cycle';
         if (!taken.contains(candidate)) return candidate;
@@ -80,19 +80,26 @@ class AgentStore {
     required SubagentRole role,
     required String model,
     String domain = 'general',
+    int? createdBySessionId,
   }) async {
     final name = await allocateName(role);
     final now = DateTime.now().millisecondsSinceEpoch;
-    await _db.into(_db.agents).insert(
-      db.AgentsCompanion.insert(
-        name: name,
-        role: role.name,
-        model: model,
-        domain: Value(domain),
-        createdAt: now,
-        lastActiveAt: now,
-      ),
-    );
+    await _db
+        .into(_db.agents)
+        .insert(
+          db.AgentsCompanion.insert(
+            name: name,
+            role: role.name,
+            model: model,
+            domain: Value(domain),
+            createdBySessionId: Value(createdBySessionId),
+            // Hiring *is* a use: seed the "last used by" stamp so the
+            // chat agent bar shows the chip from the first moment.
+            lastUsedBySessionId: Value(createdBySessionId),
+            createdAt: now,
+            lastActiveAt: now,
+          ),
+        );
     return (await byName(name))!;
   }
 
@@ -101,37 +108,38 @@ class AgentStore {
   /// this store layer only removes the identity and its distilled
   /// memory.
   Future<void> deleteByName(String name) async {
-    await (_db.delete(_db.agents)
-          ..where((a) => a.name.equals(name.trim().toLowerCase())))
-        .go();
+    await (_db.delete(
+      _db.agents,
+    )..where((a) => a.name.equals(name.trim().toLowerCase()))).go();
   }
 
   /// Mark [name] busy under [sessionId] and record the dispatched
-  /// intention. No-op when the agent does not exist.
+  /// intention. Also stamps `lastUsedBySessionId` — a dispatch counts as
+  /// a use, regardless of who hired the agent. No-op when the agent does
+  /// not exist.
   Future<void> markBusy(
     String name, {
     required int sessionId,
     required String intention,
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
-    await (_db.update(_db.agents)
-          ..where((a) => a.name.equals(name)))
-        .write(
+    await (_db.update(_db.agents)..where((a) => a.name.equals(name))).write(
       db.AgentsCompanion(
         status: Value('busy'),
         lastIntention: Value(intention),
         runOwnerSessionId: Value(sessionId),
+        lastUsedBySessionId: Value(sessionId),
         lastActiveAt: Value(now),
       ),
     );
   }
 
-  /// Mark [name] ready again. Clears the run owner and stamps activity.
+  /// Mark [name] ready again. Clears the run owner and stamps activity,
+  /// but deliberately keeps `lastUsedBySessionId` (the bar needs it to
+  /// still show the chip once the run ends).
   Future<void> markReady(String name) async {
     final now = DateTime.now().millisecondsSinceEpoch;
-    await (_db.update(_db.agents)
-          ..where((a) => a.name.equals(name)))
-        .write(
+    await (_db.update(_db.agents)..where((a) => a.name.equals(name))).write(
       db.AgentsCompanion(
         status: Value('ready'),
         runOwnerSessionId: Value(null),
@@ -148,9 +156,7 @@ class AgentStore {
     required String worklog,
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
-    await (_db.update(_db.agents)
-          ..where((a) => a.name.equals(name)))
-        .write(
+    await (_db.update(_db.agents)..where((a) => a.name.equals(name))).write(
       db.AgentsCompanion(
         knowledge: Value(knowledge),
         worklog: Value(worklog),
@@ -164,9 +170,7 @@ class AgentStore {
   /// can still be busy. The `lastIntention` stays (it feeds the
   /// "previous task" tooltip line), only the liveness flags clear.
   Future<void> resetAllToReady() async {
-    await (_db.update(_db.agents)
-          ..where((a) => a.status.equals('busy')))
-        .write(
+    await (_db.update(_db.agents)..where((a) => a.status.equals('busy'))).write(
       db.AgentsCompanion(
         status: Value('ready'),
         runOwnerSessionId: Value(null),
