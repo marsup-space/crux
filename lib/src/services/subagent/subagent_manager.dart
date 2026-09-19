@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../models/coding_plan_usage.dart';
 import '../../models/subagent.dart';
 import '../../storage/agent_store.dart';
 import '../../storage/database.dart' as db;
@@ -45,6 +46,14 @@ class SubagentManager {
   final String workingDirectory;
   final String userLanguage;
 
+  /// Upper bound for the one-shot coding-plan probe when no snapshot exists
+  /// yet. Must exceed the slowest provider's usage-endpoint timeout (Codex's
+  /// legacy `/wham/usage` allows 10s — see `codex_provider.dart`), otherwise
+  /// an exhausted plan that simply answers slowly is misread as "ample on
+  /// missing data" and the exhausted model gets hired. 12s covers that with
+  /// headroom; tests inject a shorter window.
+  final Duration budgetProbeTimeout;
+
   SubagentManager({
     required this.store,
     required this.providerService,
@@ -55,6 +64,7 @@ class SubagentManager {
     this.onReportEnvelope,
     this.onRunsChanged,
     this.userLanguage = 'English',
+    this.budgetProbeTimeout = const Duration(seconds: 12),
   });
 
   /// Live runs (for find_agents / chips / check_agent).
@@ -64,30 +74,85 @@ class SubagentManager {
 
   /// `remainingBudget(model)`: the plan's unified budget probe.
   ///
-  /// Coding-plan providers report window percentages; credit-balance
-  /// providers report availability. A provider with neither mixin (or
-  /// a fetch error / stale cache) reports [BudgetLevel.ample] — the
-  /// probe never blocks dispatch on missing data.
-  BudgetLevel remainingBudget(String model) {
-    final provider = _providerForModel(model);
-    if (provider == null) return BudgetLevel.ample;
-    if (provider is CodingPlanProvider) {
-      final usage = provider.latestCodingPlanUsage;
+  /// The coding-plan snapshot lives on the [LlmProvider] mixin, not the
+  /// [ProviderConfig] — so resolve through `llmProviderByName` (a
+  /// `providerByName` result is never a [CodingPlanProvider]; that latent
+  /// mismatch made this branch dead and let an exhausted model through).
+  ///
+  /// When the provider is a coding-plan source but has no snapshot yet
+  /// (polling never started — e.g. the user drives a different model), the
+  /// probe STARTS a live fetch and waits briefly for the first snapshot so
+  /// an exhausted weekly window actually blocks the hire instead of being
+  /// read as "ample on missing data". A provider with no API key can't be
+  /// probed — fail open. A fetch that stays empty still reports
+  /// [BudgetLevel.ample]: the probe never blocks dispatch on missing data.
+  Future<BudgetLevel> remainingBudget(String model) async {
+    final providerName = _providerNameForModel(model);
+    if (providerName == null) return BudgetLevel.ample;
+    final llm = providerService.llmProviderByName(providerName);
+    if (llm is CodingPlanProvider) {
+      var usage = llm.latestCodingPlanUsage;
+      if (usage == null) {
+        // No snapshot yet — kick a live fetch and wait for the first tick
+        // (bounded) so the verdict reflects real quota, not a blind ample.
+        final key = providerService.getApiKey(providerName);
+        if (key != null && key.isNotEmpty) {
+          usage = await _probeCodingPlanOnce(llm, providerName, key);
+        }
+      }
       if (usage == null) return BudgetLevel.ample;
-      final pct = usage.hasIntervalWindow
-          ? usage.intervalRemainingPct
-          : usage.weeklyRemainingPct;
+      // Judge by the WORST real window, not just the 5h one: a provider can
+      // have an empty 5h window yet a fully-exhausted weekly window (Codex
+      // with a burned 7-day quota: 5h=100% free, 1w=0%, allowed:false).
+      // Reading only `intervalRemainingPct` there reports the model as ample
+      // and hires it straight into a rate-limited wall. Take the minimum
+      // across whichever windows the snapshot actually carries.
+      var pct = 100;
+      var sawWindow = false;
+      if (usage.hasIntervalWindow) {
+        pct = usage.intervalRemainingPct;
+        sawWindow = true;
+      }
+      if (usage.hasWeeklyWindow) {
+        pct = sawWindow && pct < usage.weeklyRemainingPct
+            ? pct
+            : usage.weeklyRemainingPct;
+        sawWindow = true;
+      }
+      if (!sawWindow) return BudgetLevel.ample;
       if (pct <= 0) return BudgetLevel.exhausted;
       if (pct <= 10) return BudgetLevel.tight;
       return BudgetLevel.ample;
     }
-    if (provider is CreditBalanceProvider) {
-      final balance = provider.latestCreditBalance;
+    if (llm is CreditBalanceProvider) {
+      final balance = llm.latestCreditBalance;
       if (balance == null) return BudgetLevel.ample;
       if (!balance.isAvailable) return BudgetLevel.exhausted;
       return BudgetLevel.ample;
     }
     return BudgetLevel.ample;
+  }
+
+  /// Start a one-shot coding-plan poll and wait (bounded) for the first
+  /// snapshot. Returns the snapshot, or null when the fetch yielded nothing
+  /// within the window (the caller then fails open).
+  Future<CodingPlanUsage?> _probeCodingPlanOnce(
+    CodingPlanProvider provider,
+    String providerName,
+    String apiKey,
+  ) async {
+    provider.startCodingPlanPolling(
+      apiKey: apiKey,
+      baseUrl: providerService.providerByName(providerName)?.endpointUrl,
+    );
+    final deadline = budgetProbeTimeout;
+    final sw = Stopwatch()..start();
+    while (sw.elapsed < deadline) {
+      final usage = provider.latestCodingPlanUsage;
+      if (usage != null) return usage;
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+    }
+    return provider.latestCodingPlanUsage;
   }
 
   // ── Dispatch entry points ────────────────────────────────────
@@ -122,8 +187,18 @@ class SubagentManager {
           'current run ends.';
     }
     await _startRun(profile, intention, message, sessionId);
+    // The agent's model is bound for life (plan §模型分配: "绑定死"), so we
+    // never swap it on send. But if that bound model's budget has since run
+    // out, warn the dispatcher so it can fork to a live model instead of
+    // dispatching into a guaranteed quota failure.
+    final boundBudget = await remainingBudget(profile.model);
+    final budgetNote = boundBudget == BudgetLevel.exhausted
+        ? ' WARNING: the bound model ${profile.model} is out of budget — '
+            'this run will likely fail. send_agent with ifBusy: "fork" to '
+            'redispatch on a live pool model.'
+        : '';
     return 'Dispatched agent://$agentName (intention: $intention). It runs '
-        'in the background and will report back when done.';
+        'in the background and will report back when done.$budgetNote';
   }
 
   /// hire_agent semantics: create the roster row (model resolved
@@ -138,13 +213,18 @@ class SubagentManager {
     if (!toggles.anyOn) {
       return 'Subagent mode is off — enable it with /subagent first.';
     }
-    final model = _pickModelForHire(role);
+    final model = await _pickModelForHire(role);
     if (model == null) {
       return 'No model available for ${role.name}s: the '
           '[subagent.${role.name}s] pool is empty or every model is '
           'saturated / out of budget. Configure it in config.toml.';
     }
-    final profile = await store.hire(role: role, model: model, domain: domain);
+    final profile = await store.hire(
+      role: role,
+      model: model,
+      domain: domain,
+      createdBySessionId: sessionId,
+    );
     await _startRun(profile, intention, message, sessionId);
     return 'Hired agent://${profile.name} (${role.name}, $domain, $model) '
         'and dispatched the first task (intention: $intention).';
@@ -160,11 +240,16 @@ class SubagentManager {
   }) async {
     final role = _roleOf(source);
     var model = source.model;
-    if (remainingBudget(model) == BudgetLevel.exhausted ||
+    if (await remainingBudget(model) == BudgetLevel.exhausted ||
         !_hasCapacity(model)) {
-      model = _pickModelForHire(role, excludingCurrent: false) ?? model;
+      model = await _pickModelForHire(role, excludingCurrent: false) ?? model;
     }
-    final forked = await store.hire(role: role, model: model, domain: source.domain);
+    final forked = await store.hire(
+      role: role,
+      model: model,
+      domain: source.domain,
+      createdBySessionId: sessionId,
+    );
     if (source.knowledge.isNotEmpty || source.worklog.isNotEmpty) {
       await store.writeDistilled(
         name: forked.name,
@@ -308,11 +393,14 @@ class SubagentManager {
 
   /// Pool-order model pick: first entry with free concurrency AND
   /// budget. Null when the whole pool is unavailable.
-  String? _pickModelForHire(SubagentRole role, {bool excludingCurrent = false}) {
+  Future<String?> _pickModelForHire(SubagentRole role,
+      {bool excludingCurrent = false}) async {
     final pool = toggles.poolFor(role);
     for (final entry in pool.models) {
       if (_runningOnModel(entry.model) >= entry.concurrency) continue;
-      if (remainingBudget(entry.model) == BudgetLevel.exhausted) continue;
+      if (await remainingBudget(entry.model) == BudgetLevel.exhausted) {
+        continue;
+      }
       return entry.model;
     }
     return null;
@@ -339,10 +427,15 @@ class SubagentManager {
     return count;
   }
 
-  dynamic _providerForModel(String model) {
+  String? _providerNameForModel(String model) {
     final slash = model.indexOf('/');
-    if (slash <= 0) return null;
-    return providerService.providerByName(model.substring(0, slash));
+    return slash <= 0 ? null : model.substring(0, slash);
+  }
+
+  dynamic _providerForModel(String model) {
+    final name = _providerNameForModel(model);
+    if (name == null) return null;
+    return providerService.providerByName(name);
   }
 
   /// The bound model's context window, from the provider's model

@@ -90,6 +90,17 @@ class ProviderService {
   /// and updated by [setApiKey] / [removeApiKey].
   final Map<String, String> _envKeys = {};
 
+  /// Cache of resolved [LlmProvider] instances, keyed by provider name.
+  ///
+  /// A provider's mutable state (the coding-plan usage snapshot, the credit
+  /// balance) lives on the instance — so every consumer MUST share one
+  /// instance per provider. PollingCoordinator polls the instance it cached;
+  /// the subagent budget probe reads `latestCodingPlanUsage` off its own
+  /// resolution. Returning a fresh instance per call (the old behaviour)
+  /// gave each caller an empty snapshot, so an exhausted plan was misread
+  /// as "ample on missing data" and the model was hired into a dead pool.
+  final Map<String, LlmProvider> _llmProviderCache = {};
+
   /// The last model the user switched to via `/model`. Persisted in
   /// the auth file and loaded on startup. Used by [resolveDefaultModel].
   String? _lastUsedModel;
@@ -140,8 +151,13 @@ class ProviderService {
   }
 
   /// Performs a full reload of all provider configs from disk.
+  ///
+  /// Clears the [LlmProvider] instance cache too — a provider whose `type`
+  /// changed must re-resolve, and a stale cached instance would keep polling
+  /// the old endpoint with the old credential.
   Future<void> reload() async {
     await _loader.loadAll();
+    _llmProviderCache.clear();
   }
 
   // ---------------------------------------------------------------------------
@@ -153,10 +169,19 @@ class ProviderService {
 
   /// Resolve the [LlmProvider] implementation backing the named provider,
   /// based on its TOML `type`. Returns `null` if the provider is unknown.
+  ///
+  /// Instances are cached per provider name (see [_llmProviderCache]) so a
+  /// provider's mutable polling state (coding-plan snapshot, credit balance)
+  /// is shared by every consumer. [reload] clears the cache so a config
+  /// change re-resolves.
   LlmProvider? llmProviderByName(String name) {
+    final cached = _llmProviderCache[name];
+    if (cached != null) return cached;
     final cfg = _loader.providerByName(name);
     if (cfg == null) return null;
-    return resolveProvider(cfg.type).provider;
+    final resolved = resolveProvider(cfg.type).provider;
+    _llmProviderCache[name] = resolved;
+    return resolved;
   }
 
   /// Look up a model by its composite key `"provider/modelId"`.
