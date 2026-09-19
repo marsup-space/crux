@@ -47,7 +47,10 @@ import '../services/subagent/worker_name_localizer.dart';
 import '../services/subagent/subagent_controller.dart';
 import '../services/subagent/subagent_config_store.dart';
 import '../services/subagent/subagent_manager.dart';
-import '../services/subagent/subagent_prompts.dart' show subagentModeAnnouncement;
+import '../services/subagent/subagent_prompts.dart'
+    show subagentModeAnnouncement;
+import '../utils/subagent_meta.dart';
+import '../utils/terminal_symbols.dart';
 import '../tools/subagent_tools.dart';
 import 'subagents/subagent_bar.dart';
 import 'subagents/subagent_ui_models.dart';
@@ -405,27 +408,63 @@ class _ChatPanelState extends State<ChatPanel> {
     'git_prepare_commit',
   };
 
-  /// Subagent reports arrive here as formatted envelopes. The
-  /// envelope is injected into the main session as a user turn —
-  /// the `[Crux system note — subagent report]` prefix plus the
-  /// wire-layer's handling keeps it from ever being mistaken for
-  /// user speech, and the sendTurn pipeline handles streaming the
-  /// main agent's reaction. The main agent is never blocked: this
-  /// fires from a background run's completion callback.
+  /// Subagent reports arrive here as formatted envelopes. Two sinks:
+  ///
+  /// 1. **UI row** — persisted immediately as a `role: 'user'` row with
+  ///    empty content + an `agentBubble` meta blob (kind `report`). The
+  ///    wire layer drops empty-content user rows, so the model never sees
+  ///    the row; vibe folds it into the agents box, verbose renders an
+  ///    [AgentBubble]. This makes the report survive even when the wake
+  ///    turn below is deferred.
+  /// 2. **Model wake** — the envelope text goes to the orchestrator's
+  ///    wake queue. Idle → sendTurn fires at once; mid-turn → queued and
+  ///    drained when the current turn settles (previously a bare sendTurn
+  ///    was a no-op while isResponding, so reports vanished — the M2 bug).
+  ///
+  /// The main agent is never blocked: this fires from a background run's
+  /// completion callback.
   void _onSubagentReportEnvelope(
     String envelope,
     db.Agent agent,
     String status,
   ) {
-    // Runs complete off the turn pipeline; deliver through the same
-    // sendTurn path the queue-drain uses. fire-and-forget matches
-    // the manager's non-blocking contract.
-    unawaited(
-      _turnOrchestrator.sendTurn(
-        text: envelope,
-        allowAutoCompact: true,
+    unawaited(_persistAndEnqueueReport(envelope, agent, status));
+  }
+
+  Future<void> _persistAndEnqueueReport(
+    String envelope,
+    db.Agent agent,
+    String status,
+  ) async {
+    final sessionId = _sessionController.currentSessionId;
+    if (sessionId == null) return;
+
+    // 1. Persist the UI row (bubble content = the report's one-line
+    // summary). Read it from the envelope's `report: |` block — the
+    // envelope's first line is the `[Crux system note — subagent report]`
+    // marker, which must never surface in the agents box. The full report
+    // text stays in the wake envelope below.
+    final summary = subagentReportSummary(envelope) ?? '';
+    await _store.messageStore.addMessage(
+      sessionId,
+      role: 'user',
+      content: '',
+      meta: jsonEncode(
+        agentBubbleMetadata(
+          direction: AgentBubbleDirection.fromAgent,
+          agentId: agent.name,
+          agentName: agent.name,
+          kind: 'report',
+          message: summary,
+        ),
       ),
     );
+    final updated = await _store.messageStore.getMessages(sessionId);
+    _sessionController.putCachedMessages(sessionId, updated);
+    _refresh();
+
+    // 2. Queue the model wake (immediate when idle).
+    _turnOrchestrator.enqueueSubagentWake(envelope);
   }
 
   String _subagentUserLanguage() {
@@ -434,20 +473,28 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   /// Project the manager's live runs + the roster cache into chip-ready
-  /// [SubagentUiEntry] values. In-flight runs render as `busy`; roster
-  /// rows not currently running render as `ready` (with their last
-  /// intention). Names are localized through the shared constellation
-  /// table.
+  /// [SubagentUiEntry] values, scoped to THIS session. An in-flight run
+  /// shows only when the current session dispatched it (`runner.sessionId`);
+  /// a `ready` roster row shows when THIS session last used it
+  /// (`lastUsedBySessionId` — set at hire, re-stamped on every dispatch),
+  /// so an agent hired by another session and dispatched here keeps its
+  /// chip after the run ends. Rows predating the column (NULL = legacy
+  /// data) are hidden, as before. The home roster box stays a global view —
+  /// only this chat bar is session-scoped. Names are localized through the
+  /// shared constellation table.
   List<SubagentUiEntry> _subagentInFlightEntries() {
     final manager = _subagentManager;
     if (manager == null) return const [];
     final localizer = const WorkerNameLocalizer();
     final locale = component.localeController?.activeLocale;
+    final sessionId = _sessionController.currentSessionId;
     final entries = <SubagentUiEntry>[];
     final seen = <String>{};
 
-    // In-flight runs first — they are the most actively-changing state.
+    // In-flight runs dispatched by THIS session — the most
+    // actively-changing state.
     for (final runner in manager.runs.values) {
+      if (sessionId != null && runner.sessionId != sessionId) continue;
       seen.add(runner.agentName);
       entries.add(
         SubagentUiEntry(
@@ -464,15 +511,23 @@ class _ChatPanelState extends State<ChatPanel> {
       );
     }
 
-    // Roster agents not currently running: show as ready so the user
-    // still sees the agents the main agent created / used recently.
+    // Roster agents not currently running: show as ready when THIS
+    // session last used them (hired here, or dispatched here at some
+    // point — `lastUsedBySessionId`). Rows predating the column (NULL)
+    // are hidden too — the bar shows only what the current session
+    // explicitly used.
     for (final row in _rosterCache) {
       if (seen.contains(row.name)) continue;
+      if (sessionId == null || row.lastUsedBySessionId != sessionId) {
+        continue;
+      }
       entries.add(
         SubagentUiEntry(
           id: row.name,
           name: localizer.display(row.name, locale ?? AppLocale.en),
-          role: row.role == 'expert' ? SubagentRole.expert : SubagentRole.worker,
+          role: row.role == 'expert'
+              ? SubagentRole.expert
+              : SubagentRole.worker,
           domain: row.domain,
           status: SubagentUiStatus.ready,
           model: row.model,
@@ -612,7 +667,8 @@ class _ChatPanelState extends State<ChatPanel> {
               if (!controller.workersOn) return null;
               return ToolResult(
                 title: 'worker mode',
-                output: '[Crux system note — workers mode redirect]\n'
+                output:
+                    '[Crux system note — workers mode redirect]\n'
                     '"$toolName" is a hands-on tool and workers mode is ON. '
                     'Do not run it yourself: send_agent the task to a '
                     'worker (or hire_agent if nobody owns the domain) and '
@@ -645,6 +701,11 @@ class _ChatPanelState extends State<ChatPanel> {
         userLanguage: _subagentUserLanguage(),
       );
       _subagentManager = manager;
+      // Populate the roster cache once at panel init so the home
+      // `subagent-pool` box is populated/visible on a fresh start —
+      // without this the cache stays empty until the first run
+      // transition or toggle flip fires a refresh.
+      _scheduleRosterRefresh();
       subagentController.addListener(_refresh);
       // Roster snapshot refresh on every flip / run transition so the
       // home `subagent-pool` box stays current.
@@ -2129,6 +2190,8 @@ class _ChatPanelState extends State<ChatPanel> {
           model: row.model,
           intention: row.lastIntention,
           busy: busyNames.contains(row.name),
+          createdBySessionId: row.createdBySessionId,
+          lastUsedBySessionId: row.lastUsedBySessionId,
         ),
     ];
   }
@@ -2188,43 +2251,7 @@ class _ChatPanelState extends State<ChatPanel> {
       final rows = await _loadSubagentRoster();
       if (_rosterRefreshSerial != serial || !mounted) return;
       setState(() => _rosterCache = rows);
-      _writeSubagentPoolProjection(rows);
     }());
-  }
-
-  /// Projection for the `subagent-config` plugin spec: a tiny JSON
-  /// file the plugin row polls (same pattern as my-notes). Carries a
-  /// pre-rendered `display` line (switch states + busy count) and the
-  /// roster for the plugin's rows. Best-effort — a failed write must
-  /// never break the panel.
-  void _writeSubagentPoolProjection(List<SubagentRosterEntry> rows) {
-    try {
-      final busy = rows.where((r) => r.busy).length;
-      final controller = component.subagentController;
-      final display =
-          '✎ ${controller?.workersOn == true ? 'on' : 'off'}'
-          ' · ✦ ${controller?.expertsOn == true ? 'on' : 'off'}'
-          '${rows.isEmpty ? '' : ' · $busy/${rows.length} busy'}';
-      final file = File('.dart_tool/subagent_pool.json');
-      file.parent.createSync(recursive: true);
-      file.writeAsStringSync(
-        jsonEncode({
-          'display': display,
-          'agents': [
-            for (final r in rows)
-              {
-                'name': r.name,
-                'role': r.role,
-                'busy': r.busy,
-                'domain': r.domain,
-              },
-          ],
-        }),
-        flush: true,
-      );
-    } catch (_) {
-      // Projection is a convenience; never surface.
-    }
   }
 
   /// A `screen`-kind plugin action opens an in-process fullpane. The
@@ -2518,12 +2545,42 @@ class _ChatPanelState extends State<ChatPanel> {
                         onSessionLinkTap: _handleSessionLinkTap,
                         // Localize agent:// references in assistant
                         // prose via the shared constellation table.
-                        agentDisplayName: (id) => const WorkerNameLocalizer()
-                            .display(
+                        agentDisplayName: (id) =>
+                            const WorkerNameLocalizer().display(
                               id,
                               component.localeController?.activeLocale ??
                                   AppLocale.en,
                             ),
+                        // Upgrade agent:// references to chips: role glyph
+                        // (✎ worker / ✦ expert, the same language as the
+                        // agent bar) + localized name. Unknown ids (not in
+                        // the roster) return '' so the renderer falls back
+                        // to the plain localized name above.
+                        agentChipText: (id) {
+                          String? role;
+                          for (final entry in _rosterCache) {
+                            if (entry.name == id) {
+                              role = entry.role;
+                              break;
+                            }
+                          }
+                          if (role == null) return '';
+                          final expert = role == 'expert';
+                          final name = const WorkerNameLocalizer().display(
+                            id,
+                            component.localeController?.activeLocale ??
+                                AppLocale.en,
+                          );
+                          // Same glyph + spacing as the agent bar chip
+                          // (`SubagentBar._agentLabel`), reusing the
+                          // shared rich/ASCII fallback so terminals
+                          // without the glyph degrade identically.
+                          final glyph = terminalSymbol(
+                            expert ? '✦' : '✎',
+                            expert ? '*' : '>',
+                          );
+                          return '$glyph $name';
+                        },
                         onQuickReplyTap: _handleQuickReplyTap,
                         onLinkTap: _handleMarkdownLinkTap,
                         onRetryContinue: _retryContinue,
@@ -2582,22 +2639,20 @@ class _ChatPanelState extends State<ChatPanel> {
                     ],
                   ),
                 ),
-                // The subagent bar mounts above the toolbar whenever
-                // either switch is on — clicking a toggle flips it via
-                // the controller (persisted + re-render through the
-                // ChangeNotifier chain). Null controller (tests) or
-                // both-off → no bar, toolbar layout untouched. The
-                // in-flight chips read the manager's live runs; the
-                // manager's onRunsChanged fires _refresh so chips
-                // appear / disappear as runs start and end.
-                if (component.subagentController
-                    case final subagentController?)
+                // The subagent bar always mounts above the toolbar (when a
+                // controller exists) so the per-session switches are ALWAYS
+                // visible — off included. A per-session switch persists in
+                // the sessions table and overrides the global default, which
+                // made the mode effectively invisible when the bar hid on
+                // both-off: the user could not tell whether this session had
+                // workers on. Always-on keeps the state on screen and the
+                // toggles one click away. The in-flight chips read the
+                // manager's live runs; the manager's onRunsChanged fires
+                // _refresh so chips appear / disappear as runs start and end.
+                if (component.subagentController case final subagentController?)
                   ListenableBuilder(
                     listenable: subagentController,
                     builder: (context, _) {
-                      if (!subagentController.anyOn) {
-                        return const SizedBox(height: 0);
-                      }
                       return SubagentBar(
                         toggles: subagentController.toggles,
                         agents: _subagentInFlightEntries(),
