@@ -433,16 +433,23 @@ class _ChatPanelState extends State<ChatPanel> {
     return locale == null ? 'English' : locale.label;
   }
 
-  /// Project the manager's live runs into chip-ready [SubagentUiEntry]
-  /// values. Busy-only by definition (a run IS in flight); names are
-  /// localized through the shared constellation table.
+  /// Project the manager's live runs + the roster cache into chip-ready
+  /// [SubagentUiEntry] values. In-flight runs render as `busy`; roster
+  /// rows not currently running render as `ready` (with their last
+  /// intention). Names are localized through the shared constellation
+  /// table.
   List<SubagentUiEntry> _subagentInFlightEntries() {
     final manager = _subagentManager;
     if (manager == null) return const [];
     final localizer = const WorkerNameLocalizer();
     final locale = component.localeController?.activeLocale;
-    return [
-      for (final runner in manager.runs.values)
+    final entries = <SubagentUiEntry>[];
+    final seen = <String>{};
+
+    // In-flight runs first — they are the most actively-changing state.
+    for (final runner in manager.runs.values) {
+      seen.add(runner.agentName);
+      entries.add(
         SubagentUiEntry(
           id: runner.agentName,
           name: localizer.display(runner.agentName, locale ?? AppLocale.en),
@@ -454,7 +461,28 @@ class _ChatPanelState extends State<ChatPanel> {
           assignmentIntent: runner.intention,
           lastActive: DateTime.now(),
         ),
-    ];
+      );
+    }
+
+    // Roster agents not currently running: show as ready so the user
+    // still sees the agents the main agent created / used recently.
+    for (final row in _rosterCache) {
+      if (seen.contains(row.name)) continue;
+      entries.add(
+        SubagentUiEntry(
+          id: row.name,
+          name: localizer.display(row.name, locale ?? AppLocale.en),
+          role: row.role == 'expert' ? SubagentRole.expert : SubagentRole.worker,
+          domain: row.domain,
+          status: SubagentUiStatus.ready,
+          model: row.model,
+          assignmentSummary: row.intention,
+          assignmentIntent: row.intention.isEmpty ? null : row.intention,
+          lastActive: DateTime.now(),
+        ),
+      );
+    }
+    return entries;
   }
 
   bool _providerServiceReady = false;
@@ -696,10 +724,24 @@ class _ChatPanelState extends State<ChatPanel> {
     // event in practice); boot and reassemble attach as before.
     _sessionSwitchSub = _sessionController.cubit.stream.listen((state) {
       final sid = state.currentSessionId;
-      if (sid != null) _planModeController.attachSession(sid);
+      if (sid != null) {
+        _planModeController.attachSession(sid);
+        // Subagent switches are per-session state: the effective
+        // mode follows the session the user is looking at.
+        unawaited(
+          component.subagentController?.attachSession(sid) ??
+              Future<void>.value(),
+        );
+      }
     });
     final bootSid = _sessionController.currentSessionId;
-    if (bootSid != null) _planModeController.attachSession(bootSid);
+    if (bootSid != null) {
+      _planModeController.attachSession(bootSid);
+      unawaited(
+        component.subagentController?.attachSession(bootSid) ??
+            Future<void>.value(),
+      );
+    }
     _turnOrchestrator = ChatTurnOrchestrator(
       store: _store,
       chatService: _chatService,

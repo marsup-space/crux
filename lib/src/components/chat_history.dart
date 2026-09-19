@@ -637,10 +637,13 @@ class _ChatHistoryState extends State<ChatHistory> {
           }
           userItemIndices.add(items.length);
           // Strip appended skill bodies + the LLM-only plan-context
-          // block so the jump-bar label shows only what the user typed
-          // (mirrors the bubble renderers).
+          // block + subagent-mode announcement so the jump-bar label
+          // shows only what the user typed (mirrors the bubble
+          // renderers).
           final text = stripPlanContext(
-            stripSkillBodies(seg.userMessage.content),
+            stripSubagentAnnouncement(
+              stripSkillBodies(seg.userMessage.content),
+            ),
           ).text.replaceAll('\n', ' ').trim();
           userItemLabels.add(text);
         }
@@ -837,11 +840,12 @@ class _ChatHistoryState extends State<ChatHistory> {
 
         if (msg.role == 'user') {
           userItemIndices.add(items.length);
-          // Strip skill bodies + the LLM-only plan-context block so the
-          // jump-bar label shows only what the user typed.
-          final text = stripPlanContext(stripSkillBodies(msg.content)).text
-              .replaceAll('\n', ' ')
-              .trim();
+          // Strip skill bodies + the LLM-only plan-context block +
+          // subagent-mode announcement so the jump-bar label shows
+          // only what the user typed.
+          final text = stripPlanContext(
+            stripSubagentAnnouncement(stripSkillBodies(msg.content)),
+          ).text.replaceAll('\n', ' ').trim();
           userItemLabels.add(text);
         }
 

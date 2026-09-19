@@ -173,12 +173,15 @@ class MessageBubble extends StatelessComponent {
   /// user actually typed.
   Component _buildUserMessageContent(BuildContext context) {
     final theme = CruxTheme.of(context);
-    // Strip the LLM-only `<plan-context>` block from the raw persisted
-    // content. Verbose mode is the debugging surface for LLM
-    // actions/context, so instead of echoing the block it leaves a
-    // plain dim one-line marker recording that context was sent; the
-    // full block stays inspectable via `/d-*` debug output.
-    final planStrip = stripPlanContext(stripSkillBodies(message.content));
+    // Strip the LLM-only `<plan-context>` block and the subagent-mode
+    // announcement from the raw persisted content. Verbose mode is the
+    // debugging surface for LLM actions/context, so instead of echoing
+    // the block it leaves a plain dim one-line marker recording that
+    // context was sent; the full block stays inspectable via `/d-*`
+    // debug output.
+    final planStrip = stripPlanContext(
+      stripSubagentAnnouncement(stripSkillBodies(message.content)),
+    );
     final content = planStrip.text;
 
     // Prefix for images.

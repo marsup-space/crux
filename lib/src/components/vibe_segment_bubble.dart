@@ -609,13 +609,16 @@ class VibeSegmentBubble extends StatelessComponent {
                     ),
                   ),
                   Expanded(
-                    // Strip the `Skill: <name>\n<body>` blocks and the
-                    // LLM-only `<plan-context>` block appended for the
-                    // LLM — the chat log shows only what the user
-                    // actually typed (mirrors the verbose `MessageBubble`).
+                    // Strip the `Skill: <name>\n<body>` blocks, the
+                    // LLM-only `<plan-context>` block, and the
+                    // subagent-mode announcement appended for the LLM —
+                    // the chat log shows only what the user actually
+                    // typed (mirrors the verbose `MessageBubble`).
                     child: Text(
                       stripPlanContext(
-                        stripSkillBodies(segment.userMessage.content),
+                        stripSubagentAnnouncement(
+                          stripSkillBodies(segment.userMessage.content),
+                        ),
                       ).text.trim(),
                     ),
                   ),
