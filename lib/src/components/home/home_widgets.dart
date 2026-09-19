@@ -9,6 +9,9 @@ import '../../services/git_status_service.dart';
 import '../../services/notes_service.dart';
 import '../../services/plugin.dart';
 import '../../services/skills/skill.dart';
+import '../../services/subagent/subagent_config_store.dart'
+    show SubagentRosterEntry;
+import '../../services/subagent/subagent_controller.dart';
 import '../plugin_content.dart';
 import '../polling_coordinator.dart';
 
@@ -161,6 +164,21 @@ class HomeContext {
   /// hide.
   final PluginHost Function()? pluginHost;
 
+  /// The subagent roster rows (agents table + live busy flags), read
+  /// on each home build. Feeds the `subagent-pool` box. Null (tests /
+  /// previews) means "no store wired" — the box shows switches only.
+  final List<SubagentRosterEntry> Function()? subagentRoster;
+
+  /// Open the subagent-config fullpane (the `subagent-pool` box's
+  /// activation, and the config plugin's `screen` action). Null in
+  /// tests/previews with no fullpane host.
+  final VoidCallback? openSubagentConfig;
+
+  /// The live subagent-mode controller, driving the `subagent-pool`
+  /// box's switches and its ChangeNotifier-driven rebuilds. Null
+  /// (tests / previews) → the box is not registered at all.
+  final SubagentController? subagentController;
+
   const HomeContext({
     required this.runCommand,
     required this.close,
@@ -188,7 +206,15 @@ class HomeContext {
     this.connectedUsageProviders = _noConnectedUsage,
     this.plugins,
     this.pluginHost,
+    this.subagentRoster,
+    this.openSubagentConfig,
+    this.subagentController,
   });
+
+  /// Convenience for the `subagent-pool` box's visibility gate: any
+  /// roster rows at all right now.
+  bool get hasSubagentRoster =>
+      (subagentRoster?.call() ?? const <SubagentRosterEntry>[]).isNotEmpty;
 
   static String? _noModel() => null;
   static bool _false() => false;
@@ -224,7 +250,10 @@ class HomeContext {
       openNotes = null,
       connectedUsageProviders = _noConnectedUsage,
       plugins = null,
-      pluginHost = null;
+      pluginHost = null,
+      subagentRoster = null,
+      openSubagentConfig = null,
+      subagentController = null;
 }
 
 /// One pluggable dashboard box.

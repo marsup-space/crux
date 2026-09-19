@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:nocterm/nocterm.dart';
@@ -44,11 +45,13 @@ import '../storage/database.dart' as db;
 import '../models/subagent.dart';
 import '../services/subagent/worker_name_localizer.dart';
 import '../services/subagent/subagent_controller.dart';
+import '../services/subagent/subagent_config_store.dart';
 import '../services/subagent/subagent_manager.dart';
 import '../services/subagent/subagent_prompts.dart' show subagentModeAnnouncement;
 import '../tools/subagent_tools.dart';
 import 'subagents/subagent_bar.dart';
 import 'subagents/subagent_ui_models.dart';
+import 'subagent_config_fullpane.dart';
 import '../i18n/reply_language.dart';
 import '../i18n/strings.dart';
 import '../services/a2ui/models.dart';
@@ -365,6 +368,11 @@ class _ChatPanelState extends State<ChatPanel> {
   /// note is loaded from the DB by the pane itself via [_notesService].
   bool _notesFullpaneOpen = false;
 
+  /// Whether the subagent-config fullpane is showing. Opened from the
+  /// home `subagent-pool` box or the `subagent-config` plugin screen
+  /// action; Esc / close tears it down like every other fullpane.
+  bool _subagentConfigFullpaneOpen = false;
+
   /// Whether the live working-tree Git review surface is open.
   bool _gitReviewFullpaneOpen = false;
   GitCommitReviewRequest? _gitCommitReviewRequest;
@@ -602,11 +610,17 @@ class _ChatPanelState extends State<ChatPanel> {
         toggles: subagentController,
         workingDirectory: Directory.current.path,
         onReportEnvelope: _onSubagentReportEnvelope,
-        onRunsChanged: _refresh,
+        onRunsChanged: () {
+          _refresh();
+          _scheduleRosterRefresh();
+        },
         userLanguage: _subagentUserLanguage(),
       );
       _subagentManager = manager;
       subagentController.addListener(_refresh);
+      // Roster snapshot refresh on every flip / run transition so the
+      // home `subagent-pool` box stays current.
+      subagentController.addListener(_scheduleRosterRefresh);
       registry.register(
         FindAgentsTool(manager: manager, toggles: subagentController),
       );
@@ -1273,6 +1287,7 @@ class _ChatPanelState extends State<ChatPanel> {
         runner.cancel();
       }
       component.subagentController?.removeListener(_refresh);
+      component.subagentController?.removeListener(_scheduleRosterRefresh);
     }
     _chatService.onToolExecutionCompleted = null;
     _chatService.dispose();
@@ -1605,6 +1620,19 @@ class _ChatPanelState extends State<ChatPanel> {
         strings: _strings,
       );
     }
+    if (_subagentConfigFullpaneOpen) {
+      final subagentController = component.subagentController;
+      if (subagentController != null) {
+        return SubagentConfigFullpane(
+          controller: subagentController,
+          configStore: SubagentConfigStore(_configTomlFile()),
+          availableModels: _configuredModelOptions(),
+          loadRoster: _loadSubagentRoster,
+          onClose: _closeFullpane,
+          strings: _strings,
+        );
+      }
+    }
     if (_gitReviewFullpaneOpen) {
       return GitReviewFullpane(
         backend: GitReviewService(projectPath: Directory.current.path),
@@ -1926,6 +1954,16 @@ class _ChatPanelState extends State<ChatPanel> {
       // spec widget — the box polls the same projection file.
       notesService: _notesService,
       openNotes: _openNotesFullpane,
+      // Subagent pool box + config fullpane (v2 home surface). The
+      // roster is re-read per home build so hires / run transitions
+      // surface on the next home open or controller notification.
+      subagentRoster: component.subagentController == null
+          ? null
+          : _cachedRosterNow,
+      openSubagentConfig: component.subagentController == null
+          ? null
+          : _openSubagentConfigFullpane,
+      subagentController: component.subagentController,
       // Coding-plan box: hand it every connected usage provider (not just
       // the active session's provider). The closure reads `_polling` on
       // each home build so the box tracks whatever is configured now.
@@ -1973,6 +2011,7 @@ class _ChatPanelState extends State<ChatPanel> {
       _shellLiveFullpane = null;
       _skillFullpane = null;
       _notesFullpaneOpen = false;
+      _subagentConfigFullpaneOpen = false;
       _gitReviewFullpaneOpen = false;
       _gitCommitReviewRequest = null;
     });
@@ -2018,6 +2057,130 @@ class _ChatPanelState extends State<ChatPanel> {
     });
   }
 
+  /// Open the subagent configuration fullpane. Requires a wired
+  /// [SubagentController] — tests without one never reach here (the
+  /// home box is not registered, the plugin action toasts instead).
+  void _openSubagentConfigFullpane() {
+    if (component.subagentController == null) return;
+    setState(() {
+      _subagentConfigFullpaneOpen = true;
+      _overlayController.showFullpane = true;
+    });
+  }
+
+  /// Roster rows for the home `subagent-pool` box and the config
+  /// fullpane: the agents table joined with the live busy flags from
+  /// the run manager.
+  Future<List<SubagentRosterEntry>> _loadSubagentRoster() async {
+    final rows = await _store.agentStore.listAll();
+    final busyNames = _subagentManager?.runs.keys.toSet() ?? const <String>{};
+    return [
+      for (final row in rows)
+        SubagentRosterEntry(
+          name: row.name,
+          role: row.role,
+          domain: row.domain,
+          model: row.model,
+          intention: row.lastIntention,
+          busy: busyNames.contains(row.name),
+        ),
+    ];
+  }
+
+  /// The user-level config.toml (same file the theme / locale /
+  /// subagent toggles live in). Resolved from the XDG-style config
+  /// home, mirroring bin/crux.dart's `_resolveUserConfigDir`.
+  File _configTomlFile() {
+    final configHome = Platform.isWindows
+        ? (Platform.environment['LOCALAPPDATA'] ??
+              Platform.environment['APPDATA'] ??
+              Directory.systemTemp.path)
+        : (Platform.environment['XDG_CONFIG_HOME'] ??
+              p.join(Platform.environment['HOME'] ?? '.', '.config'));
+    return File(p.join(configHome, 'crux', 'config.toml'));
+  }
+
+  /// Every model of every configured provider, as picker options for
+  /// the subagent config fullpane's add-entry flow. Keyed by the
+  /// composite `provider/model`; label is the provider's display name
+  /// (falling back to the raw model id).
+  List<({String key, String label})> _configuredModelOptions() {
+    if (!_providerServiceReady) return const [];
+    final options = <({String key, String label})>[];
+    for (final provider in _providerService.providers()) {
+      for (final model in provider.models) {
+        options.add((
+          key: '${provider.name}/${model.id}',
+          label: _providerService.displayLabelFor(
+            '${provider.name}/${model.id}',
+          ),
+        ));
+      }
+    }
+    return options;
+  }
+
+  // ── Subagent roster cache (home box feed) ─────────────────────
+  //
+  // HomeContext.subagentRoster is a SYNC callback (the home grid
+  // renders synchronously), but the roster lives in SQLite. Bridge:
+  // a cached snapshot refreshed in the background on relevant
+  // notifications (controller flips, run transitions) and on home
+  // open — the box shows the snapshot immediately and picks up the
+  // refresh on the next build.
+
+  List<SubagentRosterEntry> _rosterCache = const [];
+  int? _rosterRefreshSerial;
+
+  List<SubagentRosterEntry> _cachedRosterNow() => _rosterCache;
+
+  void _scheduleRosterRefresh() {
+    // Debounce by serial: a newer refresh supersedes an older one.
+    final serial = (_rosterRefreshSerial ?? 0) + 1;
+    _rosterRefreshSerial = serial;
+    unawaited(() async {
+      final rows = await _loadSubagentRoster();
+      if (_rosterRefreshSerial != serial || !mounted) return;
+      setState(() => _rosterCache = rows);
+      _writeSubagentPoolProjection(rows);
+    }());
+  }
+
+  /// Projection for the `subagent-config` plugin spec: a tiny JSON
+  /// file the plugin row polls (same pattern as my-notes). Carries a
+  /// pre-rendered `display` line (switch states + busy count) and the
+  /// roster for the plugin's rows. Best-effort — a failed write must
+  /// never break the panel.
+  void _writeSubagentPoolProjection(List<SubagentRosterEntry> rows) {
+    try {
+      final busy = rows.where((r) => r.busy).length;
+      final controller = component.subagentController;
+      final display =
+          '✎ ${controller?.workersOn == true ? 'on' : 'off'}'
+          ' · ✦ ${controller?.expertsOn == true ? 'on' : 'off'}'
+          '${rows.isEmpty ? '' : ' · $busy/${rows.length} busy'}';
+      final file = File('.dart_tool/subagent_pool.json');
+      file.parent.createSync(recursive: true);
+      file.writeAsStringSync(
+        jsonEncode({
+          'display': display,
+          'agents': [
+            for (final r in rows)
+              {
+                'name': r.name,
+                'role': r.role,
+                'busy': r.busy,
+                'domain': r.domain,
+              },
+          ],
+        }),
+        flush: true,
+      );
+    } catch (_) {
+      // Projection is a convenience; never surface.
+    }
+  }
+
   /// A `screen`-kind plugin action opens an in-process fullpane. The
   /// action's `screen` names which one; unknown names toast rather
   /// than failing silently. Pure UI — no session turn is started.
@@ -2025,6 +2188,8 @@ class _ChatPanelState extends State<ChatPanel> {
     switch (action.screen) {
       case 'notes':
         _openNotesFullpane();
+      case 'subagent-config':
+        _openSubagentConfigFullpane();
       default:
         _showToast(
           _strings.t('toast.unknownScreen', {'screen': '${action.screen}'}),

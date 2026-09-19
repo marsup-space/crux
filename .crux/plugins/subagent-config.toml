@@ -1,0 +1,32 @@
+# "subagent-config" plugin — the model-pool / switches configuration
+# surface for the subagent system.
+#
+# The real surface is an in-process fullpane (SubagentConfigFullpane)
+# that edits config.toml's [subagent] section (workers/experts
+# switches + per-role model pools with concurrency) and shows the
+# live roster. This spec is the always-present entry point: a static
+# status row (the switch states, pre-rendered by the process side
+# into .dart_tool/subagent_pool.json) plus the `configure` screen
+# action that opens the fullpane. Schema: lib/src/services/plugin.dart.
+
+id = "subagent-config"
+placement = "both"
+title = "Subagents"
+label = "{display}"
+refresh_ms = 3000
+
+[status]
+path = ".dart_tool/subagent_pool.json"
+# No heartbeat_field: file presence = alive. The process side writes
+# the projection on every toggle flip / run transition.
+fallback_alive_text = "workers off · experts off"
+fallback_absent_text = "subagent mode — open to configure"
+
+# Open the configuration fullpane. `screen` actions are pure UI and
+# render in any liveness state. `record = false`: opening a screen is
+# a UI action, not an agent signal.
+[[actions]]
+label = "subagent.plugin.configure"
+kind = "screen"
+screen = "subagent-config"
+record = false

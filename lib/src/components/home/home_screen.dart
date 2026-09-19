@@ -18,6 +18,7 @@ import 'widgets/settings_widget.dart';
 import 'widgets/skills_widget.dart';
 import 'widgets/tokens_widget.dart';
 import 'widgets/notes_widget.dart';
+import 'widgets/subagent_pool_widget.dart';
 import 'widgets/workspace_widget.dart';
 import 'widgets/yesterday_widget.dart';
 import 'plugin_home_widget.dart';
@@ -240,6 +241,14 @@ class _HomeScreenState extends State<HomeScreen> {
       ActivityHomeWidget(),
       SkillsHomeWidget(skills: _cachedSkills),
       NotesHomeWidget(service: ctx.notesService, openNotes: ctx.openNotes),
+      // Subagent pool box: switches + roster at a glance; Enter opens
+      // the config fullpane. Conditional on mode/roster via
+      // visibleWhen, so a fresh install's grid stays clean.
+      if (ctx.subagentController case final subagentController?)
+        SubagentPoolHomeWidget(
+          controller: subagentController,
+          openConfig: ctx.openSubagentConfig ?? component.onExit,
+        ),
       RecentSessionsHomeWidget(
         sessions: ctx.sessions,
         currentSessionId: ctx.currentSessionId,

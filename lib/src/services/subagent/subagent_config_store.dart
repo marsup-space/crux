@@ -156,3 +156,30 @@ class SubagentRuntimeToggles {
   @override
   int get hashCode => Object.hash(workersOn, expertsOn);
 }
+
+/// One roster row for UI surfaces (home box, config fullpane): the
+/// durable identity fields of an agent plus its live busy flag. Built
+/// by the host from the agents table + the run manager.
+class SubagentRosterEntry {
+  final String name;
+
+  /// `worker` or `expert`.
+  final String role;
+
+  final String domain;
+  final String model;
+
+  /// Current or last intention (busy → current, ready → last).
+  final String intention;
+
+  final bool busy;
+
+  const SubagentRosterEntry({
+    required this.name,
+    required this.role,
+    required this.domain,
+    required this.model,
+    required this.intention,
+    required this.busy,
+  });
+}
