@@ -61,6 +61,11 @@ class MessageBubble extends StatelessComponent {
   /// session links.
   final void Function(int sessionId)? onSessionLinkTap;
 
+  /// Localizes `agent://<id>` references for display: receives the
+  /// persisted constellation id, returns the locale's name. Null
+  /// renders the raw reference. Forwarded like [onSessionLinkTap].
+  final String Function(String id)? agentDisplayName;
+
   /// Callback when the user clicks a quick-reply token
   /// (`ask://label{answer}` or `ask://label`) in the assistant's
   /// prose. Forwarded to [HighlightedMarkdownText] so tokens
@@ -104,6 +109,7 @@ class MessageBubble extends StatelessComponent {
     this.reasoningPresets,
     this.onToolCallTap,
     this.onSessionLinkTap,
+    this.agentDisplayName,
     this.onQuickReplyTap,
     this.onLinkTap,
     this.onRetryContinue,
@@ -344,6 +350,8 @@ class MessageBubble extends StatelessComponent {
         content,
         highlightText: highlightText,
         onSessionLinkTap: onSessionLinkTap,
+        onAgentLinkTap: null,
+        agentDisplayName: agentDisplayName,
         onQuickReplyTap: onQuickReplyTap,
         onLinkTap: onLinkTap,
       );
@@ -357,6 +365,8 @@ class MessageBubble extends StatelessComponent {
         content,
         highlightText: highlightText,
         onSessionLinkTap: onSessionLinkTap,
+        onAgentLinkTap: null,
+        agentDisplayName: agentDisplayName,
         onQuickReplyTap: onQuickReplyTap,
         onLinkTap: onLinkTap,
       );
@@ -373,6 +383,8 @@ class MessageBubble extends StatelessComponent {
               text,
               highlightText: highlightText,
               onSessionLinkTap: onSessionLinkTap,
+              onAgentLinkTap: null,
+              agentDisplayName: agentDisplayName,
               onQuickReplyTap: onQuickReplyTap,
               onLinkTap: onLinkTap,
             ),

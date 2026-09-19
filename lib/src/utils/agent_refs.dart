@@ -80,13 +80,28 @@ List<AgentRef> parseAgentRefs(List<InlineSpan> spans) {
 /// Apply link styling on top of an inline-span tree for each [AgentRef]
 /// region — the agent-counterpart of [applySessionLinkStyles].
 ///
+/// [displayNames] optionally localizes the rendered text: it receives
+/// the persisted id and returns the display form (e.g. `orion` →
+/// `猎户座`). The link still targets the stable id; only what the user
+/// READS changes. Null renders the raw reference verbatim.
+///
 /// Returns the original [spans] unchanged when [refs] is empty.
 List<InlineSpan> applyAgentLinkStyles(
   List<InlineSpan> spans,
-  List<AgentRef> refs,
-  TextStyle linkStyle,
-) {
+  List<AgentRef> refs, {
+  TextStyle? linkStyle,
+  TextStyle? hoverStyle,
+  AgentRef? hoveredRef,
+  String Function(String id)? displayNames,
+}) {
   if (refs.isEmpty) return spans;
+  final effectiveLinkStyle = linkStyle ?? const TextStyle();
+
+  String displayFor(AgentRef r) {
+    if (displayNames == null) return r.displayText;
+    final localized = displayNames(r.name);
+    return localized.isEmpty ? r.displayText : localized;
+  }
 
   final flat = <_FlatSpan>[];
   void flatten(InlineSpan span, TextStyle? inherited) {
@@ -142,12 +157,15 @@ List<InlineSpan> applyAgentLinkStyles(
         ));
       }
 
+      final isHovered =
+          hoveredRef != null &&
+          hoveredRef.offset == r.offset &&
+          hoveredRef.length == r.length;
       result.add((
-        text.substring(
-          (refStart - spanStart).clamp(0, text.length),
-          (refEnd - spanStart).clamp(0, text.length),
-        ),
-        _mergeStyles(baseStyle, linkStyle),
+        displayFor(r),
+        isHovered && hoverStyle != null
+            ? _mergeStyles(baseStyle, hoverStyle)
+            : _mergeStyles(baseStyle, effectiveLinkStyle),
       ));
       cursor = refEnd;
     }

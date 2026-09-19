@@ -42,11 +42,13 @@ import '../i18n/app_locale.dart';
 import '../i18n/locale_controller.dart';
 import '../storage/database.dart' as db;
 import '../models/subagent.dart';
+import '../services/subagent/worker_name_localizer.dart';
 import '../services/subagent/subagent_controller.dart';
 import '../services/subagent/subagent_manager.dart';
 import '../services/subagent/subagent_prompts.dart' show subagentModeAnnouncement;
 import '../tools/subagent_tools.dart';
 import 'subagents/subagent_bar.dart';
+import 'subagents/subagent_ui_models.dart';
 import '../i18n/reply_language.dart';
 import '../i18n/strings.dart';
 import '../services/a2ui/models.dart';
@@ -421,6 +423,30 @@ class _ChatPanelState extends State<ChatPanel> {
   String _subagentUserLanguage() {
     final locale = component.localeController?.activeLocale;
     return locale == null ? 'English' : locale.label;
+  }
+
+  /// Project the manager's live runs into chip-ready [SubagentUiEntry]
+  /// values. Busy-only by definition (a run IS in flight); names are
+  /// localized through the shared constellation table.
+  List<SubagentUiEntry> _subagentInFlightEntries() {
+    final manager = _subagentManager;
+    if (manager == null) return const [];
+    final localizer = const WorkerNameLocalizer();
+    final locale = component.localeController?.activeLocale;
+    return [
+      for (final runner in manager.runs.values)
+        SubagentUiEntry(
+          id: runner.agentName,
+          name: localizer.display(runner.agentName, locale ?? AppLocale.en),
+          role: runner.role,
+          domain: runner.profile.domain,
+          status: SubagentUiStatus.busy,
+          model: runner.profile.model,
+          assignmentSummary: runner.intention,
+          assignmentIntent: runner.intention,
+          lastActive: DateTime.now(),
+        ),
+    ];
   }
 
   bool _providerServiceReady = false;
@@ -2279,6 +2305,14 @@ class _ChatPanelState extends State<ChatPanel> {
                         strings: _strings,
                         onToolCallTap: _openToolDetail,
                         onSessionLinkTap: _handleSessionLinkTap,
+                        // Localize agent:// references in assistant
+                        // prose via the shared constellation table.
+                        agentDisplayName: (id) => const WorkerNameLocalizer()
+                            .display(
+                              id,
+                              component.localeController?.activeLocale ??
+                                  AppLocale.en,
+                            ),
                         onQuickReplyTap: _handleQuickReplyTap,
                         onLinkTap: _handleMarkdownLinkTap,
                         onRetryContinue: _retryContinue,
@@ -2341,7 +2375,10 @@ class _ChatPanelState extends State<ChatPanel> {
                 // either switch is on — clicking a toggle flips it via
                 // the controller (persisted + re-render through the
                 // ChangeNotifier chain). Null controller (tests) or
-                // both-off → no bar, toolbar layout untouched.
+                // both-off → no bar, toolbar layout untouched. The
+                // in-flight chips read the manager's live runs; the
+                // manager's onRunsChanged fires _refresh so chips
+                // appear / disappear as runs start and end.
                 if (component.subagentController
                     case final subagentController?)
                   ListenableBuilder(
@@ -2352,6 +2389,7 @@ class _ChatPanelState extends State<ChatPanel> {
                       }
                       return SubagentBar(
                         toggles: subagentController.toggles,
+                        agents: _subagentInFlightEntries(),
                         onToggleWorkers: () => subagentController.setToggle(
                           SubagentRole.worker,
                           !subagentController.workersOn,

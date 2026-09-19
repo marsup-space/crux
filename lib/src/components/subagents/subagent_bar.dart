@@ -1,9 +1,12 @@
 import 'package:nocterm/nocterm.dart';
 
 import '../../i18n/strings.dart';
+import '../../models/subagent.dart';
 import '../../services/subagent/subagent_config_store.dart';
 import '../../theme/crux_theme.dart';
+import '../../utils/terminal_symbols.dart';
 import '../ui/hoverable.dart';
+import 'subagent_ui_models.dart';
 
 /// The subagent bar — a single row rendered **above** the chat toolbar
 /// whenever either subagent-mode switch is on.
@@ -28,6 +31,15 @@ class SubagentBar extends StatefulComponent {
   /// Flip the experts switch. Null disables interaction (render-only).
   final VoidCallback? onToggleExperts;
 
+  /// In-flight agent chips rendered inside the bar after the toggles
+  /// (plan §UI: "Bar 内 chips = 当前 in-flight 的执行体"). Each shows
+  /// the ✎/✦ role glyph + localized name; the tooltip carries
+  /// domain / intention / model / status. Empty list → toggles only.
+  final List<SubagentUiEntry> agents;
+
+  /// Open the agent's detail view when a chip is pressed.
+  final ValueChanged<SubagentUiEntry>? onAgentPressed;
+
   final Strings strings;
 
   const SubagentBar({
@@ -35,6 +47,8 @@ class SubagentBar extends StatefulComponent {
     required this.toggles,
     this.onToggleWorkers,
     this.onToggleExperts,
+    this.agents = const [],
+    this.onAgentPressed,
     this.strings = kEnglishStrings,
   });
 
@@ -91,8 +105,50 @@ class _SubagentBarState extends State<SubagentBar> {
             component.toggles.expertsOn,
             component.onToggleExperts,
           ),
+          // In-flight agent chips. The glyph prefixes the localized
+          // constellation name; hovering shows the six-line tooltip
+          // (domain / intention / model / status) via the shared
+          // Hinted wrapper — same interaction as every other chip.
+          for (final agent in component.agents) ...[
+            Text('  ·  ', style: TextStyle(color: theme.outline)),
+            Hinted(
+              hint: _agentHint(agent),
+              delay: Duration.zero,
+              maxLines: 6,
+              child: Hoverable(
+                onTap: component.onAgentPressed == null
+                    ? null
+                    : () => component.onAgentPressed!(agent),
+                builder: (context, hovered) => Text(
+                  '${terminalSymbol(agent.role == SubagentRole.expert ? '✦' : '✎', agent.role == SubagentRole.expert ? '*' : '>')} '
+                  '${agent.name}',
+                  style: TextStyle(
+                    color: hovered ? theme.foreground : theme.accent,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  String _agentHint(SubagentUiEntry agent) {
+    final s = component.strings;
+    final status = switch (agent.status) {
+      SubagentUiStatus.ready => s.t('subagent.tooltip.statusReady'),
+      SubagentUiStatus.queued => s.t('subagent.tooltip.statusQueued'),
+      SubagentUiStatus.busy => s.t('subagent.tooltip.statusBusy'),
+    };
+    return [
+      s.t('subagent.tooltip.domain', {'domain': agent.domain}),
+      if (agent.assignmentIntent != null &&
+          agent.assignmentIntent!.isNotEmpty)
+        s.t('subagent.tooltip.intent', {'intent': agent.assignmentIntent!}),
+      s.t('subagent.tooltip.model', {'model': agent.model}),
+      status,
+    ].join('\n');
   }
 }

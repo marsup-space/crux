@@ -567,7 +567,15 @@ List<VibeSegment> walkSegments(
           // Subagent orchestration calls bypass the tools box — they
           // render as commander↔worker rows in the agents box instead
           // (the tool result's `agentBubble` meta carries the payload).
+          // v2 tool set (find/hire/send/check/cancel); the v1 names
+          // stay matched so pre-migration sessions still fold right.
           final isSubagentTool =
+              tc.name == 'find_agents' ||
+              tc.name == 'hire_agent' ||
+              tc.name == 'send_agent' ||
+              tc.name == 'check_agent' ||
+              tc.name == 'cancel_agent' ||
+              // v1 legacy names (pre-v2 sessions replayed from history).
               tc.name == 'send_worker' ||
               tc.name == 'spawn_worker' ||
               tc.name == 'assign_worker' ||

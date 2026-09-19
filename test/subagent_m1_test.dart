@@ -210,7 +210,7 @@ models = [{ model = "zhipu/glm-5.3", concurrency = 1 }]
       final styled = applyAgentLinkStyles(
         spans,
         refs,
-        const nt.TextStyle(decoration: nt.TextDecoration.underline),
+        linkStyle: const nt.TextStyle(decoration: nt.TextDecoration.underline),
       );
       final flat = styled.cast<nt.TextSpan>();
       expect(flat.length, 3); // before · link · after
@@ -218,6 +218,29 @@ models = [{ model = "zhipu/glm-5.3", concurrency = 1 }]
       expect(flat[1].text, 'agent://orion');
       expect(flat[1].style!.decoration, nt.TextDecoration.underline);
       expect(flat[2].text, ' now');
+    });
+
+    test('displayNames localizes the rendered link text', () {
+      const text = 'ask agent://orion now';
+      final spans = [const nt.TextSpan(text: text)];
+      final refs = parseAgentRefs(spans);
+      final styled = applyAgentLinkStyles(
+        spans,
+        refs,
+        displayNames: (id) => id == 'orion' ? '猎户座' : id,
+      );
+      final flat = styled.cast<nt.TextSpan>();
+      expect(flat[1].text, '猎户座');
+      // Un-localized ids fall back to the raw reference.
+      final styledFallback = applyAgentLinkStyles(
+        spans,
+        refs,
+        displayNames: (id) => '',
+      );
+      expect(
+        styledFallback.cast<nt.TextSpan>()[1].text,
+        'agent://orion',
+      );
     });
   });
 }

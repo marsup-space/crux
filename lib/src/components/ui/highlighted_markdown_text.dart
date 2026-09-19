@@ -36,6 +36,7 @@ class HighlightedMarkdownText extends StatefulComponent {
     this.useIsolate = false,
     this.onSessionLinkTap,
     this.onAgentLinkTap,
+    this.agentDisplayName,
     this.sessionLinkStyle,
     this.sessionLinkHoverStyle,
     this.onQuickReplyTap,
@@ -88,6 +89,12 @@ class HighlightedMarkdownText extends StatefulComponent {
   /// Same gating rules as [onSessionLinkTap]: null skips parsing
   /// entirely; the isolate path never wires it up.
   final void Function(String name)? onAgentLinkTap;
+
+  /// Localizes an agent's display name for rendering: receives the
+  /// stable persisted id (`orion`), returns the locale's constellation
+  /// name (猎户座 / Orion). Null (default) renders the raw id — tests
+  /// and callers without a locale wired.
+  final String Function(String id)? agentDisplayName;
 
   /// Override the style applied to recognized `ses://` regions.
   /// Defaults to the theme's `tldrLink` color + underline.
@@ -449,6 +456,11 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
           // Hover state for agents is conveyed through the same reverse-
           // video treatment via [applyAgentLinkStyles]'s per-ref styling
           // below; the non-hovered pass runs here on the whole tree.
+          //
+          // Display names localize at the presentation boundary: the
+          // persisted constellation id (`agent://orion`) renders as the
+          // locale's name (猎户座 / Orion) while the link still targets
+          // the stable id.
           final agentLinkStyle =
               component.sessionLinkStyle ??
               TextStyle(
@@ -457,27 +469,16 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
               );
           renderedSpans = applyAgentLinkStyles(
             renderedSpans,
-            _hoveredAgentRef == null
-                ? _agentRefs
-                : [
-                    // Hover: only the hovered ref gets the reverse-video
-                    // treatment; the rest keep the plain link style.
-                    for (final r in _agentRefs)
-                      if (!identical(r, _hoveredAgentRef)) r,
-                  ],
-            agentLinkStyle,
+            _agentRefs,
+            linkStyle: agentLinkStyle,
+            hoverStyle: TextStyle(
+              color: theme.onColor(theme.tldrLink),
+              backgroundColor: theme.tldrLink,
+              fontWeight: FontWeight.bold,
+            ),
+            hoveredRef: _hoveredAgentRef,
+            displayNames: component.agentDisplayName,
           );
-          if (_hoveredAgentRef != null) {
-            renderedSpans = applyAgentLinkStyles(
-              renderedSpans,
-              [_hoveredAgentRef!],
-              TextStyle(
-                color: theme.onColor(theme.tldrLink),
-                backgroundColor: theme.tldrLink,
-                fontWeight: FontWeight.bold,
-              ),
-            );
-          }
         }
 
         // Overlay markdown-link styles on top of the highlight and

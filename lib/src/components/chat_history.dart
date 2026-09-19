@@ -89,6 +89,11 @@ class ChatHistory extends StatefulComponent {
   /// if the id is stale).
   final void Function(int sessionId)? onSessionLinkTap;
 
+  /// Localizes `agent://<id>` references in assistant prose for
+  /// display (persisted constellation id → locale's name). Null
+  /// renders the raw reference.
+  final String Function(String id)? agentDisplayName;
+
   /// Callback fired when the user clicks a quick-reply token
   /// (`ask://label{answer}` or `ask://label`) inside an assistant
   /// message bubble. The chat panel implements this to submit the
@@ -165,6 +170,7 @@ class ChatHistory extends StatefulComponent {
     required this.refresh,
     this.onToolCallTap,
     this.onSessionLinkTap,
+    this.agentDisplayName,
     this.onQuickReplyTap,
     this.onLinkTap,
     this.onCompactionTap,
@@ -921,6 +927,7 @@ class _ChatHistoryState extends State<ChatHistory> {
             reasoningPresets: reasoningPresets,
             onToolCallTap: component.onToolCallTap,
             onSessionLinkTap: component.onSessionLinkTap,
+            agentDisplayName: component.agentDisplayName,
             onQuickReplyTap: enableQuickReplies
                 ? component.onQuickReplyTap
                 : null,
