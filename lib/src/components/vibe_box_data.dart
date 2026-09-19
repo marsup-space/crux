@@ -406,9 +406,9 @@ List<VibeSegment> walkSegments(
       // `userLineShown = true` suppresses the line itself. Without this the
       // raw envelope (from:/intention:/status:/report:) leaked into the
       // vibe-mode chat as if the user had typed it.
-      if (msg.content
-          .trimLeft()
-          .startsWith('[Crux system note — subagent report]')) {
+      if (msg.content.trimLeft().startsWith(
+        '[Crux system note — subagent report]',
+      )) {
         _emitSegment(
           segments,
           currentUser,

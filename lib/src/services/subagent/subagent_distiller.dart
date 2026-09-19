@@ -82,7 +82,8 @@ must carry everything needed to continue seamlessly.
     return [
       {
         'role': 'system',
-        'content': 'You are the distillation pass for $agentName, a '
+        'content':
+            'You are the distillation pass for $agentName, a '
             'subagent in domain "$domain", mid-assignment '
             '"$intention".\n$_taskHead',
       },
@@ -129,9 +130,7 @@ extension DistillationHistoryTokens on List<Map<String, dynamic>> {
   int get estimatedTokens {
     var total = 0;
     for (final message in this) {
-      total += estimateTokens(
-        message['content']?.toString() ?? '',
-      );
+      total += estimateTokens(message['content']?.toString() ?? '');
     }
     return total;
   }
@@ -148,8 +147,9 @@ enum DistillationStage {
 
 /// Pure three-stage gate: given how many context-full events this
 /// run has already absorbed (BEFORE this one), decide what to do.
-DistillationStage stageFor(int priorFullEvents) =>
-    priorFullEvents >= 2 ? DistillationStage.distill : DistillationStage.compact;
+DistillationStage stageFor(int priorFullEvents) => priorFullEvents >= 2
+    ? DistillationStage.distill
+    : DistillationStage.compact;
 
 /// Build the resume context from distillation products: the fresh
 /// opening history an agent continues on after the third full.
@@ -161,7 +161,8 @@ List<Map<String, dynamic>> buildResumeHistory({
     {'role': 'system', 'content': systemPrompt},
     {
       'role': 'user',
-      'content': '===CONTINUATION===\n'
+      'content':
+          '===CONTINUATION===\n'
           'Your context was distilled after hitting the limit. '
           'Continue the SAME assignment now.\n\n'
           '===KNOWLEDGE===\n${products.knowledge}\n\n'

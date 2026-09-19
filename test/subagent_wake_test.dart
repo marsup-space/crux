@@ -95,7 +95,9 @@ void main() {
       final rt = sessionController.runtime(s.id);
       rt.isResponding = true; // main agent mid-turn → sendTurn is a no-op
 
-      orchestrator.enqueueSubagentWake('[Crux system note — subagent report] done');
+      orchestrator.enqueueSubagentWake(
+        '[Crux system note — subagent report] done',
+      );
 
       // The M2 bug dropped this envelope. It must now be queued, so the
       // drain after the turn settles can deliver it.

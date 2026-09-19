@@ -34,10 +34,7 @@ class SubagentModelEntry {
     concurrency: concurrency ?? this.concurrency,
   );
 
-  Map<String, dynamic> toJson() => {
-    'model': model,
-    'concurrency': concurrency,
-  };
+  Map<String, dynamic> toJson() => {'model': model, 'concurrency': concurrency};
 
   /// Parses one entry, returning null for anything unusable (missing model,
   /// non-positive concurrency falls back to a single slot).
@@ -72,7 +69,7 @@ class SubagentModelEntry {
 /// Index 0 is the preferred model; the rest are the fallback chain, in the
 /// order the user wrote them (recovery walks the pool front to back, so the
 /// list is a priority order and is never re-sorted). Every entry carries its
-  /// own concurrency, so the pool is the single source of truth for both
+/// own concurrency, so the pool is the single source of truth for both
 /// "which models may run" and "how many of them at once".
 ///
 /// An empty pool means the role has not been configured, so callers must not

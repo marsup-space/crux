@@ -35,7 +35,8 @@ class SubagentController extends ChangeNotifier
     int sessionId, {
     required bool? workersOn,
     required bool? expertsOn,
-  })? persistToggles;
+  })?
+  persistToggles;
 
   /// Loads the persisted switches for one session. Null in tests —
   /// every session then reads as "never set" (global default).
@@ -97,7 +98,8 @@ class SubagentController extends ChangeNotifier
       int sessionId, {
       required bool? workersOn,
       required bool? expertsOn,
-    })? persistToggles,
+    })?
+    persistToggles,
     Future<({bool? workers, bool? experts})> Function(int sessionId)?
     loadToggles,
   }) async {
@@ -129,9 +131,9 @@ class SubagentController extends ChangeNotifier
   /// The effective toggles for the active session: the session's
   /// persisted value where set, else the global default.
   SubagentRuntimeToggles get toggles => SubagentRuntimeToggles(
-        workersOn: _sessionWorkersOn ?? _globalDefault.workersOn,
-        expertsOn: _sessionExpertsOn ?? _globalDefault.expertsOn,
-      );
+    workersOn: _sessionWorkersOn ?? _globalDefault.workersOn,
+    expertsOn: _sessionExpertsOn ?? _globalDefault.expertsOn,
+  );
 
   SubagentRuntimeToggles get globalDefault => _globalDefault;
 
@@ -189,13 +191,13 @@ class SubagentController extends ChangeNotifier
   Future<SubagentToggleResult> setToggle(SubagentRole role, bool value) async {
     final next = switch (role) {
       SubagentRole.worker => SubagentRuntimeToggles(
-          workersOn: value,
-          expertsOn: expertsOn,
-        ),
+        workersOn: value,
+        expertsOn: expertsOn,
+      ),
       SubagentRole.expert => SubagentRuntimeToggles(
-          workersOn: workersOn,
-          expertsOn: value,
-        ),
+        workersOn: workersOn,
+        expertsOn: value,
+      ),
     };
     switch (role) {
       case SubagentRole.worker:

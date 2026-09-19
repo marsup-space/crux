@@ -183,7 +183,7 @@ class AuxiliaryService {
     return collapsed;
   }
 
-      /// One-shot distillation pass for the MAIN agent's three-stage
+  /// One-shot distillation pass for the MAIN agent's three-stage
   /// ladder (plan §上下文与蒸馏): sends the distillation request over
   /// the auxiliary model and returns the raw reply. The caller (turn
   /// orchestrator) parses it with [SubagentDistiller.parse] — the

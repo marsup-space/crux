@@ -77,8 +77,11 @@ void main() {
           ),
         );
         await tester.pump(const Duration(milliseconds: 200));
-        expect(tester.findComponent<GlossyModelButton>(), isNull,
-            reason: 'ready chip must stay static');
+        expect(
+          tester.findComponent<GlossyModelButton>(),
+          isNull,
+          reason: 'ready chip must stay static',
+        );
         print('READY:\n${tester.renderToString(showBorders: false)}');
       });
     });

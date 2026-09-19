@@ -45,13 +45,15 @@ void main() {
         )
         .get();
     expect(
-      rows.firstWhere((r) => r.read<String>('name') == 'orion')
+      rows
+          .firstWhere((r) => r.read<String>('name') == 'orion')
           .read<int?>('last_used_by_session_id'),
       42,
       reason: 'backfilled from created_by_session_id',
     );
     expect(
-      rows.firstWhere((r) => r.read<String>('name') == 'vega')
+      rows
+          .firstWhere((r) => r.read<String>('name') == 'vega')
           .read<int?>('last_used_by_session_id'),
       isNull,
       reason: 'a NULL creator stays NULL (hidden in the bar, as before)',

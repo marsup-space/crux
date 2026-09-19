@@ -106,17 +106,16 @@ SubagentManager _manager(
   AgentStore store,
   ProviderService providers,
   Directory tmpDir,
-) =>
-    SubagentManager(
-      store: store,
-      providerService: providers,
-      toolExecutor: ToolExecutor(ToolRegistry()),
-      toolRegistry: ToolRegistry(),
-      toggles: const _TogglesOn(),
-      workingDirectory: tmpDir.path,
-      // Tests must not wait out the production 12s probe window.
-      budgetProbeTimeout: const Duration(milliseconds: 300),
-    );
+) => SubagentManager(
+  store: store,
+  providerService: providers,
+  toolExecutor: ToolExecutor(ToolRegistry()),
+  toolRegistry: ToolRegistry(),
+  toggles: const _TogglesOn(),
+  workingDirectory: tmpDir.path,
+  // Tests must not wait out the production 12s probe window.
+  budgetProbeTimeout: const Duration(milliseconds: 300),
+);
 
 void main() {
   late Directory tmpDir;
@@ -162,38 +161,40 @@ void main() {
       expect(cp.pollStarts, 0); // already had data → no probe
     });
 
-    test('empty 5h window + exhausted weekly → exhausted (worst-window)',
-        () async {
-      // Regression for the live Codex failure: the 5h window is empty
-      // (100% remaining) but the weekly window is fully burned (0%,
-      // allowed:false). Reading ONLY the interval window reports ample and
-      // hires terra into a rate-limited wall. The probe must judge by the
-      // worst real window.
-      final cp = _FakeCodingPlanProvider(
-        snapshot: CodingPlanUsage(
-          providerName: 'codex',
-          modelName: 'general',
-          intervalRemainingPct: 100, // 5h window empty
-          weeklyRemainingPct: 0,     // 1w window exhausted
-          fetchedAt: DateTime.now(),
-          hasIntervalWindow: true,
-          hasWeeklyWindow: true,
-        ),
-      );
-      final manager = _manager(
-        store,
-        _CodingPlanProviderService(
-          userProvidersDir: tmpDir.path,
-          providerName: 'codex',
-          llmProvider: cp,
-        ),
-        tmpDir,
-      );
-      expect(
-        await manager.remainingBudget('codex/gpt-5.6-terra'),
-        BudgetLevel.exhausted,
-      );
-    });
+    test(
+      'empty 5h window + exhausted weekly → exhausted (worst-window)',
+      () async {
+        // Regression for the live Codex failure: the 5h window is empty
+        // (100% remaining) but the weekly window is fully burned (0%,
+        // allowed:false). Reading ONLY the interval window reports ample and
+        // hires terra into a rate-limited wall. The probe must judge by the
+        // worst real window.
+        final cp = _FakeCodingPlanProvider(
+          snapshot: CodingPlanUsage(
+            providerName: 'codex',
+            modelName: 'general',
+            intervalRemainingPct: 100, // 5h window empty
+            weeklyRemainingPct: 0, // 1w window exhausted
+            fetchedAt: DateTime.now(),
+            hasIntervalWindow: true,
+            hasWeeklyWindow: true,
+          ),
+        );
+        final manager = _manager(
+          store,
+          _CodingPlanProviderService(
+            userProvidersDir: tmpDir.path,
+            providerName: 'codex',
+            llmProvider: cp,
+          ),
+          tmpDir,
+        );
+        expect(
+          await manager.remainingBudget('codex/gpt-5.6-terra'),
+          BudgetLevel.exhausted,
+        );
+      },
+    );
 
     test('ample 5h + tight weekly → tight (worst-window)', () async {
       final cp = _FakeCodingPlanProvider(
@@ -275,22 +276,24 @@ void main() {
       expect(level, BudgetLevel.exhausted); // landed data wins
     });
 
-    test('null snapshot, fetch yields nothing → ample (never blocks)',
-        () async {
-      final cp = _FakeCodingPlanProvider(snapshot: null); // stays null
-      final manager = _manager(
-        store,
-        _CodingPlanProviderService(
-          userProvidersDir: tmpDir.path,
-          providerName: 'codex',
-          llmProvider: cp,
-        ),
-        tmpDir,
-      );
-      final level = await manager.remainingBudget('codex/gpt-5.6-terra');
-      expect(cp.pollStarts, greaterThan(0)); // still probed
-      expect(level, BudgetLevel.ample); // fail-open
-    });
+    test(
+      'null snapshot, fetch yields nothing → ample (never blocks)',
+      () async {
+        final cp = _FakeCodingPlanProvider(snapshot: null); // stays null
+        final manager = _manager(
+          store,
+          _CodingPlanProviderService(
+            userProvidersDir: tmpDir.path,
+            providerName: 'codex',
+            llmProvider: cp,
+          ),
+          tmpDir,
+        );
+        final level = await manager.remainingBudget('codex/gpt-5.6-terra');
+        expect(cp.pollStarts, greaterThan(0)); // still probed
+        expect(level, BudgetLevel.ample); // fail-open
+      },
+    );
 
     test('no API key → cannot probe → ample (fail-open)', () async {
       final cp = _FakeCodingPlanProvider(snapshot: null);
@@ -338,8 +341,11 @@ context_size = 256000
       final a = service.llmProviderByName('codex');
       final b = service.llmProviderByName('codex');
       expect(a, isNotNull);
-      expect(identical(a, b), isTrue,
-          reason: 'the budget probe and the poller must share one instance');
+      expect(
+        identical(a, b),
+        isTrue,
+        reason: 'the budget probe and the poller must share one instance',
+      );
       expect(a, isA<CodingPlanProvider>());
     });
 
@@ -360,8 +366,11 @@ context_size = 256000
       final before = service.llmProviderByName('codex');
       await service.reload();
       final after = service.llmProviderByName('codex');
-      expect(identical(before, after), isFalse,
-          reason: 'reload must drop the stale instance');
+      expect(
+        identical(before, after),
+        isFalse,
+        reason: 'reload must drop the stale instance',
+      );
     });
   });
 }

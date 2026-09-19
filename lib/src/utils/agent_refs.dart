@@ -21,7 +21,11 @@ class AgentRef {
   /// Length of the matched substring in characters.
   final int length;
 
-  const AgentRef({required this.name, required this.offset, required this.length});
+  const AgentRef({
+    required this.name,
+    required this.offset,
+    required this.length,
+  });
 
   bool containsIndex(int index) => index >= offset && index < offset + length;
 

@@ -314,8 +314,14 @@ const List<SlashCommand> _baseCommands = [
     params: ['role', 'state'],
     suggestionsPerParam: [
       [
-        CommandSuggestion(value: 'workers', description: 'sug.subagent.workers'),
-        CommandSuggestion(value: 'experts', description: 'sug.subagent.experts'),
+        CommandSuggestion(
+          value: 'workers',
+          description: 'sug.subagent.workers',
+        ),
+        CommandSuggestion(
+          value: 'experts',
+          description: 'sug.subagent.experts',
+        ),
       ],
       [
         CommandSuggestion(value: 'on', description: 'sug.subagent.on'),

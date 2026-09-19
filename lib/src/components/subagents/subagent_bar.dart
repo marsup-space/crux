@@ -63,32 +63,29 @@ class _SubagentBarState extends State<SubagentBar> {
     final theme = CruxTheme.of(context);
     final strings = component.strings;
 
-    Component toggleCell(
-      String label,
-      bool value,
-      VoidCallback? onTap,
-    ) => Hoverable(
-      onTap: onTap,
-      builder: (context, isHovered) {
-        final color = value
-            ? theme.success
-            : (isHovered ? theme.foreground : theme.onSurfaceDim);
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label, style: TextStyle(color: theme.onSurfaceDim)),
-            const SizedBox(width: 1),
-            Text(
-              value ? 'on' : 'off',
-              style: TextStyle(
-                color: color,
-                fontWeight: value ? FontWeight.bold : null,
-              ),
-            ),
-          ],
+    Component toggleCell(String label, bool value, VoidCallback? onTap) =>
+        Hoverable(
+          onTap: onTap,
+          builder: (context, isHovered) {
+            final color = value
+                ? theme.success
+                : (isHovered ? theme.foreground : theme.onSurfaceDim);
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label, style: TextStyle(color: theme.onSurfaceDim)),
+                const SizedBox(width: 1),
+                Text(
+                  value ? 'on' : 'off',
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: value ? FontWeight.bold : null,
+                  ),
+                ),
+              ],
+            );
+          },
         );
-      },
-    );
 
     return Container(
       width: double.infinity,
@@ -165,8 +162,7 @@ class _SubagentBarState extends State<SubagentBar> {
     };
     return [
       s.t('subagent.tooltip.domain', {'domain': agent.domain}),
-      if (agent.assignmentIntent != null &&
-          agent.assignmentIntent!.isNotEmpty)
+      if (agent.assignmentIntent != null && agent.assignmentIntent!.isNotEmpty)
         s.t('subagent.tooltip.intent', {'intent': agent.assignmentIntent!}),
       s.t('subagent.tooltip.model', {'model': agent.model}),
       status,

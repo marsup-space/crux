@@ -219,7 +219,7 @@ class ChatTurnOrchestrator {
     );
   }
 
-      /// The main agent's distillation pass (three-stage ladder, 3rd
+  /// The main agent's distillation pass (three-stage ladder, 3rd
   /// rung — plan §上下文与蒸馏, main-agent side). Runs the shared
   /// distillation request over the auxiliary model and returns the
   /// CONTINUATION block to prefix the resuming turn's user message,

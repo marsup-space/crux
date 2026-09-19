@@ -95,13 +95,13 @@ class SubagentRunner {
 
   /// Live progress snapshot for check_agent and the toolbar chips.
   SubagentRunStatus snapshot() => SubagentRunStatus(
-        agentName: agentName,
-        round: _round,
-        lastTool: _lastTool,
-        status: _cancelled
-            ? 'cancelled'
-            : (_finished ? 'done' : (_round == 0 ? 'starting' : 'running')),
-      );
+    agentName: agentName,
+    round: _round,
+    lastTool: _lastTool,
+    status: _cancelled
+        ? 'cancelled'
+        : (_finished ? 'done' : (_round == 0 ? 'starting' : 'running')),
+  );
 
   int _round = 0;
   String? _lastTool;
@@ -129,8 +129,11 @@ class SubagentRunner {
   Future<void> _runLoop() async {
     final resolved = _resolveModel();
     if (resolved == null) {
-      _finish('failed', 'No provider serves model ${profile.model} — '
-          'cannot start the run.');
+      _finish(
+        'failed',
+        'No provider serves model ${profile.model} — '
+            'cannot start the run.',
+      );
       return;
     }
     final (provider, apiKey, modelId) = resolved;
@@ -163,8 +166,7 @@ class SubagentRunner {
       // the model's window (the tool definitions and the response
       // headroom claim the rest). On pressure, escalate: compact
       // twice, then distill-and-resume on the third event.
-      final pressure =
-          history.estimatedTokens > contextCapacity * 0.75;
+      final pressure = history.estimatedTokens > contextCapacity * 0.75;
       if (pressure) {
         final stage = stageFor(fullEvents);
         if (stage == DistillationStage.distill) {
@@ -178,7 +180,7 @@ class SubagentRunner {
             _finish(
               'failed',
               'Context filled a third time and distillation failed. '
-              'Partial work:\n$roundReport',
+                  'Partial work:\n$roundReport',
             );
             return;
           }
@@ -221,16 +223,13 @@ class SubagentRunner {
           userId: 'subagent-$agentName',
           cancelToken: _cancelToken(),
         );
-        _sub = stream.listen(
-          (chunk) {
-            if (chunk.error != null) {
-              streamError = chunk.error;
-              return;
-            }
-            chunks.add(chunk);
-          },
-          cancelOnError: true,
-        );
+        _sub = stream.listen((chunk) {
+          if (chunk.error != null) {
+            streamError = chunk.error;
+            return;
+          }
+          chunks.add(chunk);
+        }, cancelOnError: true);
         await _sub!.asFuture().catchError((Object e) {});
       } catch (e) {
         streamError = LlmError(
@@ -250,7 +249,7 @@ class SubagentRunner {
         _finish(
           'failed',
           'Model stream failed at round $_round: '
-          '${streamError!.toUserMessage()}',
+              '${streamError!.toUserMessage()}',
         );
         return;
       }
@@ -287,16 +286,23 @@ class SubagentRunner {
           ),
         );
         history.add(
-          toolExecutor.formatToolResultForApi(call, result, provider.wireFamily),
+          toolExecutor.formatToolResultForApi(
+            call,
+            result,
+            provider.wireFamily,
+          ),
         );
         if (_cancelled) break;
       }
     }
 
     if (_cancelled) {
-      _finish('cancelled', roundReport.isEmpty
-          ? 'Cancelled at round $_round before any output.'
-          : 'Cancelled at round $_round. Partial work:\n$roundReport');
+      _finish(
+        'cancelled',
+        roundReport.isEmpty
+            ? 'Cancelled at round $_round before any output.'
+            : 'Cancelled at round $_round. Partial work:\n$roundReport',
+      );
       return;
     }
     if (_round >= maxRounds) {

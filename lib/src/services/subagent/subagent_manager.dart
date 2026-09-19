@@ -179,9 +179,9 @@ class SubagentManager {
           sessionId: sessionId,
         );
       }
-      _queues.putIfAbsent(agentName, () => []).add(
-        _QueuedDispatch(intention: intention, message: message),
-      );
+      _queues
+          .putIfAbsent(agentName, () => [])
+          .add(_QueuedDispatch(intention: intention, message: message));
       return 'agent://$agentName is busy — message queued (position '
           '${_queues[agentName]!.length}). It will be delivered when the '
           'current run ends.';
@@ -194,8 +194,8 @@ class SubagentManager {
     final boundBudget = await remainingBudget(profile.model);
     final budgetNote = boundBudget == BudgetLevel.exhausted
         ? ' WARNING: the bound model ${profile.model} is out of budget — '
-            'this run will likely fail. send_agent with ifBusy: "fork" to '
-            'redispatch on a live pool model.'
+              'this run will likely fail. send_agent with ifBusy: "fork" to '
+              'redispatch on a live pool model.'
         : '';
     return 'Dispatched agent://$agentName (intention: $intention). It runs '
         'in the background and will report back when done.$budgetNote';
@@ -339,7 +339,11 @@ class SubagentManager {
     unawaited(runner.start());
   }
 
-  Future<void> _onRunDone(db.Agent profile, String status, String report) async {
+  Future<void> _onRunDone(
+    db.Agent profile,
+    String status,
+    String report,
+  ) async {
     _runs.remove(profile.name);
     await store.markReady(profile.name);
     onRunsChanged?.call();
@@ -362,7 +366,12 @@ class SubagentManager {
       if (queue.isEmpty) _queues.remove(profile.name);
       final current = await store.byName(profile.name);
       if (current != null) {
-        await _startRun(current, next.intention, next.message, _ownerOf(profile));
+        await _startRun(
+          current,
+          next.intention,
+          next.message,
+          _ownerOf(profile),
+        );
       }
     }
   }
@@ -393,8 +402,10 @@ class SubagentManager {
 
   /// Pool-order model pick: first entry with free concurrency AND
   /// budget. Null when the whole pool is unavailable.
-  Future<String?> _pickModelForHire(SubagentRole role,
-      {bool excludingCurrent = false}) async {
+  Future<String?> _pickModelForHire(
+    SubagentRole role, {
+    bool excludingCurrent = false,
+  }) async {
     final pool = toggles.poolFor(role);
     for (final entry in pool.models) {
       if (_runningOnModel(entry.model) >= entry.concurrency) continue;

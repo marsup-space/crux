@@ -120,16 +120,17 @@ class _StubProviderService extends ProviderService {
 }
 
 /// Every `content` part of every message in [messages], flattened.
-List<Map<String, dynamic>> _contentParts(List<Map<String, dynamic>> messages) => [
-  for (final message in messages)
-    if (message['content'] case final List<dynamic> parts)
-      for (final part in parts)
-        if (part is Map<String, dynamic>) part,
-];
+List<Map<String, dynamic>> _contentParts(List<Map<String, dynamic>> messages) =>
+    [
+      for (final message in messages)
+        if (message['content'] case final List<dynamic> parts)
+          for (final part in parts)
+            if (part is Map<String, dynamic>) part,
+    ];
 
-bool _hasImagePart(List<Map<String, dynamic>> messages) => _contentParts(
-  messages,
-).any((part) => part['type'] == 'image_url' || part['type'] == 'image');
+bool _hasImagePart(List<Map<String, dynamic>> messages) =>
+    _contentParts(messages)
+        .any((part) => part['type'] == 'image_url' || part['type'] == 'image');
 
 void main() {
   group('wire_format image capability gate', () {
@@ -179,7 +180,8 @@ void main() {
 
     setUp(() async {
       tempDir = await Directory.systemTemp.createTemp('crux_image_gate');
-      await File('${tempDir.path}/$kProvider.toml').writeAsString(_providerToml);
+      await File('${tempDir.path}/$kProvider.toml')
+          .writeAsString(_providerToml);
       db = CruxDatabase.forTesting(NativeDatabase.memory());
       store = SessionStore(db);
       providerService = _StubProviderService(userProvidersDir: tempDir.path);
@@ -255,7 +257,8 @@ void main() {
 
     setUp(() async {
       tempDir = await Directory.systemTemp.createTemp('crux_image_toast');
-      await File('${tempDir.path}/$kProvider.toml').writeAsString(_providerToml);
+      await File('${tempDir.path}/$kProvider.toml')
+          .writeAsString(_providerToml);
       db = CruxDatabase.forTesting(NativeDatabase.memory());
       store = SessionStore(db);
       providerService = _StubProviderService(userProvidersDir: tempDir.path);
@@ -327,27 +330,29 @@ void main() {
       // inside the executor a few microtasks later.
       await pumpEventQueue();
       final rows = await store.messageStore.getMessages(session.id);
-      return rows
-          .firstWhere((row) => row.role == 'user')
-          .images;
+      return rows.firstWhere((row) => row.role == 'user').images;
     }
 
-    test('the row is stored without the image and the user is told why',
-        () async {
-      final images = await sendWithImage('text-only');
+    test(
+      'the row is stored without the image and the user is told why',
+      () async {
+        final images = await sendWithImage('text-only');
 
-      expect(images, isEmpty);
-      expect(
-        toasts.where((toast) => toast.contains('does not accept image input')),
-        isNotEmpty,
-        reason: 'a silently dropped screenshot is as confusing as the 400',
-      );
-      expect(
-        toasts.any((toast) => toast.contains('$kProvider/text-only')),
-        isTrue,
-        reason: 'the toast must name the model to switch away from',
-      );
-    });
+        expect(images, isEmpty);
+        expect(
+          toasts.where(
+            (toast) => toast.contains('does not accept image input'),
+          ),
+          isNotEmpty,
+          reason: 'a silently dropped screenshot is as confusing as the 400',
+        );
+        expect(
+          toasts.any((toast) => toast.contains('$kProvider/text-only')),
+          isTrue,
+          reason: 'the toast must name the model to switch away from',
+        );
+      },
+    );
 
     test('an image-capable model keeps the attachment', () async {
       final images = await sendWithImage('vision');

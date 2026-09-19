@@ -86,20 +86,22 @@ void main() {
       addTearDown(() => dir.delete(recursive: true));
     });
 
-    test('sessions that never flipped fall back to the global default',
-        () async {
-      // config.toml says workers on globally.
-      final file = File('${dir.path}/config.toml');
-      await file.writeAsString('[subagent]\nworkers_on = true\n');
-      final controller = await SubagentController.create(
-        configStore: SubagentConfigStore(file),
-        loadToggles: (sessionId) async => (workers: null, experts: null),
-      );
-      // Session 7 never flipped anything: global default applies.
-      await controller.attachSession(7);
-      expect(controller.workersOn, isTrue);
-      expect(controller.expertsOn, isFalse);
-    });
+    test(
+      'sessions that never flipped fall back to the global default',
+      () async {
+        // config.toml says workers on globally.
+        final file = File('${dir.path}/config.toml');
+        await file.writeAsString('[subagent]\nworkers_on = true\n');
+        final controller = await SubagentController.create(
+          configStore: SubagentConfigStore(file),
+          loadToggles: (sessionId) async => (workers: null, experts: null),
+        );
+        // Session 7 never flipped anything: global default applies.
+        await controller.attachSession(7);
+        expect(controller.workersOn, isTrue);
+        expect(controller.expertsOn, isFalse);
+      },
+    );
 
     test('a flipped session wins over the global default', () async {
       final file = File('${dir.path}/config.toml');
@@ -117,35 +119,37 @@ void main() {
       expect(controller.workersOn, isTrue);
     });
 
-    test('setToggle persists to the active session and arms the announcement',
-        () async {
-      final persisted = <int, ({bool? workers, bool? experts})>{};
-      final controller = await SubagentController.create(
-        configStore: SubagentConfigStore(File('${dir.path}/config.toml')),
-        persistToggles: (sessionId,
-            {required workersOn, required expertsOn}) async {
-          persisted[sessionId] = (workers: workersOn, experts: expertsOn);
-        },
-        loadToggles: (sessionId) async =>
-            (workers: null, experts: sessionId == 3 ? true : null),
-      );
-      await controller.attachSession(3);
-      // The loaded value shows through immediately.
-      expect(controller.expertsOn, isTrue);
+    test(
+      'setToggle persists to the active session and arms the announcement',
+      () async {
+        final persisted = <int, ({bool? workers, bool? experts})>{};
+        final controller = await SubagentController.create(
+          configStore: SubagentConfigStore(File('${dir.path}/config.toml')),
+          persistToggles:
+              (sessionId, {required workersOn, required expertsOn}) async {
+                persisted[sessionId] = (workers: workersOn, experts: expertsOn);
+              },
+          loadToggles: (sessionId) async =>
+              (workers: null, experts: sessionId == 3 ? true : null),
+        );
+        await controller.attachSession(3);
+        // The loaded value shows through immediately.
+        expect(controller.expertsOn, isTrue);
 
-      await controller.setToggle(SubagentRole.worker, true);
-      expect(controller.workersOn, isTrue);
-      // Persisted with BOTH fields for session 3 (experts kept).
-      expect(persisted[3]!.workers, isTrue);
-      expect(persisted[3]!.experts, isTrue);
-      // Announcement armed.
-      expect(controller.consumePendingAnnouncement(), isTrue);
+        await controller.setToggle(SubagentRole.worker, true);
+        expect(controller.workersOn, isTrue);
+        // Persisted with BOTH fields for session 3 (experts kept).
+        expect(persisted[3]!.workers, isTrue);
+        expect(persisted[3]!.experts, isTrue);
+        // Announcement armed.
+        expect(controller.consumePendingAnnouncement(), isTrue);
 
-      // Session 4: fresh state, the flip on session 3 stays there.
-      await controller.attachSession(4);
-      expect(controller.workersOn, isFalse);
-      expect(controller.expertsOn, isFalse);
-    });
+        // Session 4: fresh state, the flip on session 3 stays there.
+        await controller.attachSession(4);
+        expect(controller.workersOn, isFalse);
+        expect(controller.expertsOn, isFalse);
+      },
+    );
 
     test('rapid A→B→A switching drops stale loads', () async {
       final file = File('${dir.path}/config.toml');
@@ -171,50 +175,52 @@ void main() {
   });
 
   group('workers-mode guard in ToolExecutor', () {
-    test('hands-on tool blocked while workers on; reads pass; off passes all',
-        () async {
-      final registry = ToolRegistry();
-      registry.register(_EchoTool('edit'));
-      registry.register(_EchoTool('read'));
+    test(
+      'hands-on tool blocked while workers on; reads pass; off passes all',
+      () async {
+        final registry = ToolRegistry();
+        registry.register(_EchoTool('edit'));
+        registry.register(_EchoTool('read'));
 
-      var workersOn = true;
-      ToolResult? guard(String toolName) {
-        if (toolName == 'edit' && workersOn) {
-          return ToolResult(
-            title: 'worker mode',
-            output: '[Crux system note — workers mode redirect]',
-          );
+        var workersOn = true;
+        ToolResult? guard(String toolName) {
+          if (toolName == 'edit' && workersOn) {
+            return ToolResult(
+              title: 'worker mode',
+              output: '[Crux system note — workers mode redirect]',
+            );
+          }
+          return null;
         }
-        return null;
-      }
 
-      final executor = ToolExecutor(registry, subagentWorkersGuard: guard);
-      final ctx = ToolContext(
-        sessionId: 1,
-        messageId: 0,
-        abort: AbortSignal(),
-        workingDirectory: Directory.current.path,
-      );
+        final executor = ToolExecutor(registry, subagentWorkersGuard: guard);
+        final ctx = ToolContext(
+          sessionId: 1,
+          messageId: 0,
+          abort: AbortSignal(),
+          workingDirectory: Directory.current.path,
+        );
 
-      final blocked = await executor.executeTool(
-        ToolCall(callId: '1', name: 'edit', input: {}),
-        ctx,
-      );
-      expect(blocked.output, contains('workers mode redirect'));
+        final blocked = await executor.executeTool(
+          ToolCall(callId: '1', name: 'edit', input: {}),
+          ctx,
+        );
+        expect(blocked.output, contains('workers mode redirect'));
 
-      final allowedRead = await executor.executeTool(
-        ToolCall(callId: '2', name: 'read', input: {}),
-        ctx,
-      );
-      expect(allowedRead.output, 'echo:read');
+        final allowedRead = await executor.executeTool(
+          ToolCall(callId: '2', name: 'read', input: {}),
+          ctx,
+        );
+        expect(allowedRead.output, 'echo:read');
 
-      workersOn = false;
-      final allowedEdit = await executor.executeTool(
-        ToolCall(callId: '3', name: 'edit', input: {}),
-        ctx,
-      );
-      expect(allowedEdit.output, 'echo:edit');
-    });
+        workersOn = false;
+        final allowedEdit = await executor.executeTool(
+          ToolCall(callId: '3', name: 'edit', input: {}),
+          ctx,
+        );
+        expect(allowedEdit.output, 'echo:edit');
+      },
+    );
 
     test('null guard (subagent runner path) never blocks', () async {
       final registry = ToolRegistry();

@@ -117,13 +117,13 @@ void main() {
     });
 
     SubagentManager managerWith(_Toggles toggles) => SubagentManager(
-          store: store,
-          providerService: providers,
-          toolExecutor: ToolExecutor(ToolRegistry()),
-          toolRegistry: ToolRegistry(),
-          toggles: toggles,
-          workingDirectory: Directory.current.path,
-        );
+      store: store,
+      providerService: providers,
+      toolExecutor: ToolExecutor(ToolRegistry()),
+      toolRegistry: ToolRegistry(),
+      toggles: toggles,
+      workingDirectory: Directory.current.path,
+    );
 
     test('send to unknown agent names the mistake', () async {
       final manager = managerWith(const _Toggles());
@@ -203,11 +203,11 @@ void main() {
     });
 
     ToolContext ctx() => ToolContext(
-          sessionId: 1,
-          messageId: 0,
-          abort: AbortSignal(),
-          workingDirectory: Directory.current.path,
-        );
+      sessionId: 1,
+      messageId: 0,
+      abort: AbortSignal(),
+      workingDirectory: Directory.current.path,
+    );
 
     test('all five tools redirect when mode is off', () async {
       final manager = SubagentManager(
@@ -266,11 +266,7 @@ void main() {
 
     test('find_agents lists the roster with role glyphs', () async {
       await store.hire(role: SubagentRole.worker, model: 'a/b', domain: 'db');
-      await store.hire(
-        role: SubagentRole.expert,
-        model: 'a/b',
-        domain: 'auth',
-      );
+      await store.hire(role: SubagentRole.expert, model: 'a/b', domain: 'auth');
       final manager = SubagentManager(
         store: store,
         providerService: providers,
