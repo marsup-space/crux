@@ -6,13 +6,148 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
-## [1.1.0] - 2026-09-16
+## [Unreleased]
 
-<!-- The subagent runtime shipped in 1.1.0 (status bar, constellation
-     names, domain constraints) was removed on feature/subagent-v2 to
-     rebuild the feature on a clean architecture. The retained UI
-     shells (worker chips, tooltip, vibe agents box) are re-landed
-     as presentation-only components with no runtime behind them. -->
+## [1.1.0] - 2026-09-19
+
+fae62ca2
+
+### Features
+
+- **Subagent runtime v2 — roster, pools and `agent://`** (`fba91164`) — add a
+  persistent `agents` roster (drift v33) that separates identity from execution
+  (name / role / domain / bound model / status / knowledge / worklog / last
+  intention), split the 87 IAU constellations into an expert pool (the 12 zodiac
+  signs) and a worker pool, rename the advisor role to expert, and wire the
+  `agent://` reference scheme, the `[subagent]` config section, the
+  `/subagent workers|experts on|off` command and the toolbar mode bar.
+
+- **Subagent runtime v2 — runner and five tools** (`f138e03a`) — run dispatched
+  work on a background `SubagentRunner` that reuses the streaming client and tool
+  executor so the main agent never blocks, with cancellation (stream force-close
+  plus a partial report) and a 40-round cap; `SubagentManager` owns run
+  lifecycle, per-model concurrency, queue/fork/cancel dispatch and budget
+  normalization; the five tools (`find_agents` / `hire_agent` / `send_agent` /
+  `check_agent` / `cancel_agent`) register statically with a redirect notice when
+  the mode is off, and worker/expert prompt templates plus the five-part
+  `[Crux system note — subagent report]` envelope are added.
+
+- **Subagent runtime v2 — mode behavior** (`8e9ed36a`) — zero-cache-invalidation
+  mode announcements ride the first user message after a toggle flip;
+  `ToolExecutor.subagentWorkersGuard` redirects the main agent's mutating tools
+  (`edit` / `write` / `bash` / `powershell` / `cmd` / `git_prepare_commit`) to
+  `send_agent` while workers are on, leaving read-only tools free; worker and
+  expert prompts share the main agent's engineering-rules section.
+
+- **Subagent runtime v2 — UI data wiring** (`f5ea613c`) — render live in-flight
+  chips in the agent bar (role glyph, localized constellation name, six-line
+  tooltip fed the domain / intention / model / status), update the agents-box
+  tool-name set to the v2 five tools (v1 names kept for replaying old sessions),
+  and display `agent://` references with localized constellation names.
+
+- **Subagent runtime v2 — three-stage context distillation** (`48319d10`) —
+  a shared `SubagentDistiller` compacts on the first two fills and distills on
+  the third into knowledge / worklog / instruction artifacts; subagents resume
+  the same assignment from the instruction, and the main agent routes its third
+  auto-compaction through the auxiliary model and rides the continuation on the
+  next message without touching the system prompt.
+
+- **Subagent configuration panel** (`c22e8185`, `7c6e0055`, `ae4a3d4d`) — the
+  `subagent-config` fullpane and plugin render the worker and expert model pools
+  side by side with a single shared keyboard cursor, per-model concurrency,
+  inline add through a model picker, copy-on-edit Save to config.toml, and a
+  read-only roster; a home `subagent-pool` box mirrors the live state.
+
+- **Subagent UI shell (presentation-only)** (`c1b7eb33`) — re-land the toolbar
+  row chips, the six-line hint tooltip, the vibe agents box, the display models,
+  constellation naming/localization and the bilingual strings as components
+  decoupled from the runtime; also drop empty user rows at the wire layer and
+  make `truncateToWidth` CJK-aware.
+
+- **Toolbar and home agent chips** (`e322e46f`, `1ff35d6c`, `06b3d8b7`,
+  `716faec4`) — animate in-flight agents as busy in the bar, turn the home
+  Agents box into a scrollable chip list (role glyph + name + domain / model /
+  status badges), render `agent://` references as role chips, and wire
+  `chat_panel` for a persistent bar, per-session chip scoping, report
+  persistence and roster caching.
+
+- **Per-session subagent mode and agent ownership** (`39340591`) — persist the
+  workers/experts toggles per session (drift v34; `NULL` falls back to the global
+  default) and record each agent's creating and last-using session (v35/v36), so
+  a run's chip stays in the session that dispatched it.
+
+- **Subagent prompting: narrow domains and `agent://` references** (`73ed7a11`,
+  `2ca3a47e`, `d3830461`) — make "doing the work" include investigation and
+  diagnosis, require narrow user-language domains and mandate `agent://`
+  references everywhere; `hire_agent` now rejects an empty domain, and
+  `canonicalSubagentSection` normalizes singular/plural section names.
+
+- **`/upgrade` command** (`b5ec6af8`, `0fccc0a0`, `ab31fb9d`) — pull the latest
+  published release and replace `crux` and `cruxd` in place; refuse to run under
+  a JIT / `dart run` build, install via write-to-temp + rename, stop `cruxd`
+  before replacing it, resolve versions through the `releases/latest` redirect
+  (avoiding the anonymous 60/hour API limit), and reach GitHub through the system
+  proxy then a mirror chain for censored networks.
+
+- **cruxd sidecar shipped and installed; installer converged** (`8e1d82c8`) —
+  the release bundle now builds and ships `bin/cruxd` (previously any plugin
+  declaring a `[producer]` silently never got one), and the installer accepts
+  only the three published targets.
+
+- **Single source of truth for published targets** (`b375c41c`) — move
+  `kPublishedCruxTargets` into `bundled_executable.dart` and share it across the
+  build tool, `install.sh`, `release.yml` and `/upgrade`; the builder now fails
+  in CI when asked for an unpublished target, and a test pins the four artifacts
+  together.
+
+- **ripgrep first-download proxy/mirror chain with per-attempt verification**
+  (`7a4575e2`) — route `ensureRipgrep` through the shared transport chain
+  (direct → system proxy → gh-proxy mirrors) and verify the sha256 inside each
+  attempt, so a mirror returning an HTML error page advances instead of failing
+  the install.
+
+- **Structured-answer prompt hardening** (`8d57155b`) — replace the terse
+  diagram guidance with concise, triggerable rules (tables for comparisons,
+  Mermaid/D2 for flows and relationships, GenUI surfaces for choices,
+  configuration, review and progress), with table rules extended to Chat mode.
+
+- **OpenRouter Stealth moves to Union Alpha** (`49fd8f68`) — switch the free
+  provider from the deprecated Ox Alpha to Union Alpha with refreshed
+  context/image/output/reasoning config, and permanently exclude Ox Alpha from
+  future syncs.
+
+### Fixes
+
+- **Unsupported-model image sends 400 the whole session** (`e435aa3e`,
+  `0590e4a3`) — a pre-send capability gate drops images the active model can't
+  see (naming the model in a toast) and the wire layer's `includeImages` switch
+  is actually wired, so a pasted screenshot no longer poisons every later turn
+  with `invalidRequest` / code 1210; `deepseek-v4-flash` is declared
+  image-capable.
+
+- **Subagent budget probe read empty coding-plan snapshots** (`cb2d50aa`) —
+  cache providers by name so coding-plan quota state is shared, wait for a first
+  snapshot, and take the worst window, so a drained plan reads `exhausted`
+  instead of `ample`.
+
+- **Mid-turn subagent reports were dropped** (`30f0704f`) — the envelope's first
+  line was shown as the summary and a report arriving while the main agent was
+  streaming vanished; reports now parse the `report:` block, queue, and drain
+  after the turn, and the envelope no longer renders as a `You:` line in vibe
+  mode.
+
+- **`SubagentRunner.start()` aborted every tool call** (`749dfb41`) — a stray
+  `_abort.abort()` marked each run aborted at start so no tool ever executed; the
+  signal is now set only by `cancel()`.
+
+- **Vibe mode rendered the mode announcement as a user turn** (`44c5ec92`) —
+  strip the `[Crux system note — subagent mode on/off]` block from user bubbles
+  and jump-bar labels, and show ready agents in the bar as well as in-flight
+  ones.
+
+- **Parallel tests fought over the process cwd** (`e458b575`) — `SessionController`
+  hard-coded `Directory.current` in 11 places, so concurrently running suites
+  that changed the cwd raced; the project path is now injectable.
 
 ## [1.0.2] - 2026-09-12
 
