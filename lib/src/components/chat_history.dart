@@ -25,9 +25,11 @@ import '../tools/registry.dart';
 import 'ui/toast.dart';
 import 'annotated_scrollbar.dart';
 import 'ask_answer_bubble.dart';
+import 'subagents/agent_bubble.dart';
 import 'surface_action_bubble.dart';
 import '../tools/surface_tool.dart';
 import '../tools/surface_update_tool.dart';
+import '../utils/subagent_meta.dart';
 import 'btw_bubble.dart';
 import 'btw_cubit.dart';
 import 'chat_turn_cubit.dart';
@@ -887,12 +889,24 @@ class _ChatHistoryState extends State<ChatHistory> {
         final surfaceAction = msg.role == 'user'
             ? A2uiAction.tryParseDisplayString(msg.content)
             : null;
+        // Worker→commander report rows (role `user`, empty content,
+        // `agentBubble` meta) render as [AgentBubble]s instead of the
+        // normal user bubble. Mirrors the vibe-mode agents box.
+        final agentReport = msg.role == 'user' && msg.content.trim().isEmpty
+            ? parseAgentBubble(msg.meta)
+            : null;
         items.add((ctx) {
           if (askView != null) {
             return AskAnswerBubble(answer: askView, strings: component.strings);
           }
           if (surfaceAction != null) {
             return SurfaceActionBubble(action: surfaceAction);
+          }
+          if (agentReport != null) {
+            return AgentBubble(
+              payload: agentReport,
+              strings: component.strings,
+            );
           }
           return MessageBubble(
             message: msg,

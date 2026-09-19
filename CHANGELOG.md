@@ -8,20 +8,11 @@ below the version header. Each version has at most two categories:
 
 ## [1.1.0] - 2026-09-16
 
-aafc70d, fc3917e, 2fa8937
-
-### Features
-
-- **Subagent status bar** (`aafc70d`) — label Workers and Advisor groups,
-  render Worker chips as names only, and keep compact chips flowing horizontally
-  before wrapping on narrow layouts.
-- **Worker constellation names** (`fc3917e`) — automatically assign the first
-  available IAU constellation name when creating or forking an unnamed Worker,
-  while retaining explicit naming and duplicate-name protection.
-- **Worker domain constraints and v35 migration** (`2fa8937`) — add Worker
-  domains to runtime, tools, prompts, and persistence; enforce domain-aware
-  delegation, preserve domains across forks, and migrate existing Workers to
-  the default `general` domain.
+<!-- The subagent runtime shipped in 1.1.0 (status bar, constellation
+     names, domain constraints) was removed on feature/subagent-v2 to
+     rebuild the feature on a clean architecture. The retained UI
+     shells (worker chips, tooltip, vibe agents box) are re-landed
+     as presentation-only components with no runtime behind them. -->
 
 ## [1.0.2] - 2026-09-12
 

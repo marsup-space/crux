@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import '../models/message.dart';
 import '../tools/tool_def.dart';
 import '../tools/registry.dart';
+import '../utils/subagent_meta.dart';
 import '../utils/token_estimate.dart';
 import '../utils/tool_meta.dart';
 
@@ -191,6 +192,18 @@ ProgressBoxData mergeProgress(ProgressBoxData a, ProgressBoxData b) {
   );
 }
 
+/// Aggregated agents-box data for one vibe segment — the commander↔worker
+/// communication rows parsed from `agentBubble` meta (see `subagent_meta.dart`).
+///
+/// Rows preserve emission order. [entries] is capped at 6 with
+/// [overflowCount] carrying the remainder, mirroring the files box's shape.
+class AgentsBoxData {
+  final List<AgentBubblePayload> entries;
+  final int overflowCount;
+
+  const AgentsBoxData({required this.entries, required this.overflowCount});
+}
+
 /// One [VibeSegment] per prose boundary in the message list.
 ///
 /// Spec (see `docs/design-vibe-mode.md`, "Segmentation" section):
@@ -232,6 +245,7 @@ class VibeSegment {
   final ToolBoxData? tools;
   final ModBoxData? mods;
   final ProgressBoxData? progress;
+  final AgentsBoxData? agents;
   final Message? prose;
   final bool showUserMessage;
 
@@ -257,6 +271,7 @@ class VibeSegment {
     this.tools,
     this.mods,
     this.progress,
+    this.agents,
     this.prose,
     this.showUserMessage = true,
     this.modCalls = const [],
@@ -328,6 +343,12 @@ List<VibeSegment> walkSegments(
   // The segment's surface tool calls, preserved so the vibe bubble
   // can render A2UI surfaces inline.
   final surfaceToolCalls = <ToolCallData>[];
+  // The segment's commander↔worker communication rows, parsed from
+  // `agentBubble` meta on subagent tool results and from dedicated
+  // role:'user' report rows. Kept SEPARATE from toolEntries so the
+  // subagent orchestration calls don't pollute the tools box — they
+  // render in the agents box instead.
+  final agentRows = <AgentBubblePayload>[];
   // Merged progress summary for the progress box: at most one entry
   // per segment, folded from every bash run that reported signals.
   ProgressBoxData? progressAccum;
@@ -352,6 +373,30 @@ List<VibeSegment> walkSegments(
     if (_systemRoles.contains(msg.role)) continue;
 
     if (msg.role == 'user') {
+      // Worker→commander report row (persisted with `agentBubble` meta,
+      // empty content). Not a user turn — fold into the running segment's
+      // agents accumulator so the row lands in the CURRENT segment's
+      // agents box, in order, without resetting any accumulator.
+      //
+      // When there is no current user anchor yet — the row is the session's
+      // first non-system message (a wake that opens the log, e.g. a report
+      // row left first after a compaction) — anchor the segment to this row
+      // instead of leaving `currentUser` null. Otherwise the next
+      // `role: 'ai'` reply closes nothing (`_emitSegment` returns early on a
+      // null anchor) and the whole wake turn renders as an empty segment
+      // list: the reply silently vanishes in vibe mode. The row itself
+      // already renders in the agents box below, so its `You:` line is
+      // suppressed — matching how a mid-turn report folds in without a user
+      // turn of its own.
+      if (msg.content.trim().isEmpty && parseAgentBubble(msg.meta) != null) {
+        if (currentUser == null) {
+          currentUser = msg;
+          userLineShown = true;
+        }
+        agentRows.add(parseAgentBubble(msg.meta)!);
+        lastWasToolResult = false;
+        continue;
+      }
       // Ask-answer boundary: a `role: 'user'` row that lands right
       // after a tool result is the submitted `ask` form, not a new
       // turn. Flush the in-flight segment (the ask call + its prose
@@ -377,6 +422,7 @@ List<VibeSegment> walkSegments(
           modLinesRemoved,
           modCalls,
           surfaceToolCalls,
+          agentRows,
           progressAccum,
           stopErrorAccum,
           null,
@@ -400,6 +446,7 @@ List<VibeSegment> walkSegments(
           const {},
           const [],
           const [],
+          const [],
           null,
           null,
           null,
@@ -421,6 +468,7 @@ List<VibeSegment> walkSegments(
         modLinesRemoved.clear();
         modCalls.clear();
         surfaceToolCalls.clear();
+        agentRows.clear();
         progressAccum = null;
         stopErrorAccum = null;
         lastWasToolResult = false;
@@ -445,6 +493,7 @@ List<VibeSegment> walkSegments(
         modLinesRemoved,
         modCalls,
         surfaceToolCalls,
+        agentRows,
         progressAccum,
         stopErrorAccum,
         null,
@@ -464,6 +513,7 @@ List<VibeSegment> walkSegments(
       modLinesRemoved.clear();
       modCalls.clear();
       surfaceToolCalls.clear();
+      agentRows.clear();
       progressAccum = null;
       stopErrorAccum = null;
       lastWasToolResult = false;
@@ -514,6 +564,21 @@ List<VibeSegment> walkSegments(
         for (final tc in msg.toolCalls) {
           final toolDef = toolRegistry.lookup(tc.name);
           final resultMsg = resultsByCallId[tc.callId];
+          // Subagent orchestration calls bypass the tools box — they
+          // render as commander↔worker rows in the agents box instead
+          // (the tool result's `agentBubble` meta carries the payload).
+          final isSubagentTool =
+              tc.name == 'send_worker' ||
+              tc.name == 'spawn_worker' ||
+              tc.name == 'assign_worker' ||
+              tc.name == 'fork_worker' ||
+              tc.name == 'cancel_assignment' ||
+              tc.name == 'read_worker';
+          if (isSubagentTool) {
+            final agentBubble = parseAgentBubble(resultMsg?.meta);
+            if (agentBubble != null) agentRows.add(agentBubble);
+            continue;
+          }
           int callTokens = 0;
           // Construct the ToolResult once so both the collapsedSummary
           // and modSummary calls share the same object.
@@ -680,6 +745,7 @@ List<VibeSegment> walkSegments(
           modLinesRemoved,
           modCalls,
           surfaceToolCalls,
+          agentRows,
           progressAccum,
           stopErrorAccum,
           msg,
@@ -702,6 +768,7 @@ List<VibeSegment> walkSegments(
         modLinesRemoved.clear();
         modCalls.clear();
         surfaceToolCalls.clear();
+        agentRows.clear();
         progressAccum = null;
         stopErrorAccum = null;
         // Critically, do NOT clear `currentUser` here. The
@@ -735,6 +802,7 @@ List<VibeSegment> walkSegments(
     modLinesRemoved,
     modCalls,
     surfaceToolCalls,
+    agentRows,
     progressAccum,
     stopErrorAccum,
     null,
@@ -783,6 +851,7 @@ void _emitSegment(
   Map<String, int> modLinesRemoved,
   List<ToolCallData> modCalls,
   List<ToolCallData> surfaceToolCalls,
+  List<AgentBubblePayload> agentRows,
   ProgressBoxData? progress,
   Message? stopError,
   Message? closing, {
@@ -793,7 +862,11 @@ void _emitSegment(
   final entries = toolOrder.map((name) => toolEntries[name]!).toList();
   final hasThink = thinkDuration.inMilliseconds > 0 || thinkTokens > 0;
   final hasBoxes =
-      hasThink || entries.isNotEmpty || modPaths.isNotEmpty || progress != null;
+      hasThink ||
+      entries.isNotEmpty ||
+      modPaths.isNotEmpty ||
+      agentRows.isNotEmpty ||
+      progress != null;
   final hasProse = closing != null;
 
   // Skip when the flush has nothing to show: no boxes, no
@@ -858,6 +931,12 @@ void _emitSegment(
           : null,
       prose: closing,
       progress: progress,
+      agents: agentRows.isEmpty
+          ? null
+          : AgentsBoxData(
+              entries: agentRows.take(6).toList(),
+              overflowCount: agentRows.length > 6 ? agentRows.length - 6 : 0,
+            ),
       modCalls: List.unmodifiable(modCalls),
       surfaceToolCalls: List.unmodifiable(surfaceToolCalls),
       stopError: stopError,
@@ -874,6 +953,7 @@ VibeSegment _withStopError(VibeSegment seg, Message stopError) {
     tools: seg.tools,
     mods: seg.mods,
     progress: seg.progress,
+    agents: seg.agents,
     prose: seg.prose,
     modCalls: seg.modCalls,
     surfaceToolCalls: seg.surfaceToolCalls,

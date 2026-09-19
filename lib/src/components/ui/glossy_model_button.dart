@@ -34,13 +34,20 @@ class GlossyModelButton extends StatefulComponent {
   /// width. Null (default) = size to label, the historic behavior.
   final int? minWidth;
 
+  /// Whether the animated branch shrink-wraps to its label. Defaults to
+  /// false to preserve the historic full-width toolbar behavior; flow layouts
+  /// such as the Subagent status bar opt in so adjacent chips can share a run.
+  final bool compact;
+
   const GlossyModelButton({
+    super.key,
     required this.label,
     this.hoverLabel,
     required this.isAnimating,
     this.onPressed,
     this.centerLabel = false,
     this.minWidth,
+    this.compact = false,
   });
 
   @override
@@ -288,7 +295,10 @@ class GlossyModelButtonState extends State<GlossyModelButton> {
       child: GestureDetector(
         onTap: btn.onPressed,
         behavior: HitTestBehavior.opaque,
-        child: Row(children: cells),
+        child: Row(
+          mainAxisSize: btn.compact ? MainAxisSize.min : MainAxisSize.max,
+          children: cells,
+        ),
       ),
     );
   }

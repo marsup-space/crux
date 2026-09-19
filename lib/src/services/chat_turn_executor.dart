@@ -2166,6 +2166,17 @@ class ChatTurnExecutor {
         lspStatus != 'disabled') {
       metaFields.add('"lsp":${_jsonString(lspStatus)}');
     }
+    // Commander↔worker communication row for the AgentBubble /
+    // vibe agents box. The metadata map carries a ready-shaped
+    // `agentBubble` object (see `subagent_meta.dart`); serialize
+    // it as a nested JSON object literal.
+    final agentBubble = result.metadata['agentBubble'];
+    if (agentBubble is Map<String, dynamic> && agentBubble.isNotEmpty) {
+      final fields = agentBubble.entries
+          .map((e) => '"${e.key}":${_jsonString(e.value.toString())}')
+          .join(',');
+      metaFields.add('"agentBubble":{$fields}');
+    }
     final meta = metaFields.isEmpty ? '' : '{${metaFields.join(',')}}';
 
     final lsp = result.metadata['lsp'];

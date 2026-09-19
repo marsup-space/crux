@@ -13,6 +13,7 @@ import '../utils/token_estimate.dart';
 import '../utils/tool_meta.dart';
 import 'lsp_state_glyph.dart';
 import 'streaming_controller.dart';
+import 'subagents/agent_bubble.dart';
 import 'ui/highlighted_markdown_text.dart';
 import 'vibe_box.dart';
 import 'vibe_box_data.dart';
@@ -428,6 +429,51 @@ class _VibeStreamingBubbleState extends State<VibeStreamingBubble> {
           active: filesActive,
           mutedColor: theme.success,
           activeColor: theme.warning,
+        ),
+      );
+    }
+
+    // Agents box: the commander↔worker communication rows of the persisted
+    // OPEN segment (spawns/assigns/sends the commander made, worker
+    // reports/questions that landed mid-segment), carried on [baseSegment].
+    // While streaming, chat_history suppresses that segment's static boxes and
+    // hands them to this live bubble, so this is their only renderer — without
+    // it a report row that folded into the open segment was invisible until
+    // the turn ended. Same shape as the persisted `VibeSegmentBubble` agents
+    // box: one row per payload (an [AgentBubble] with zero padding so rows
+    // align inside the box body) plus an overflow tail. Never active once
+    // persisted.
+    final baseAgents = component.baseSegment?.agents;
+    if (baseAgents != null) {
+      final rows = <Component>[
+        for (final entry in baseAgents.entries)
+          AgentBubble(
+            key: ValueKey(
+              'vibe-agent-${entry.agentId}-${entry.kind}-'
+              '${baseAgents.entries.indexOf(entry)}',
+            ),
+            payload: entry,
+            strings: component.strings,
+            padding: 0,
+            // The box gives its rows unbounded width, so the row must not use
+            // the verbose flexible layout (see [AgentBubble.inline]).
+            inline: true,
+          ),
+      ];
+      if (baseAgents.overflowCount > 0) {
+        rows.add(
+          Text(
+            '+${baseAgents.overflowCount} more',
+            style: TextStyle(color: theme.onSurfaceDim),
+          ),
+        );
+      }
+      boxes.add(
+        VibeBox(
+          title: component.strings.t('chat.vibe.agents'),
+          bodyRowComponents: rows,
+          mutedColor: theme.secondary,
+          activeColor: theme.accent,
         ),
       );
     }

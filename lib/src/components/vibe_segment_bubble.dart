@@ -15,6 +15,7 @@ import '../utils/markdown_links.dart';
 import '../utils/quick_reply_parser.dart';
 import '../utils/strip_skill_bodies.dart';
 import 'surface_bubble.dart';
+import 'subagents/agent_bubble.dart';
 import 'ui/highlighted_markdown_text.dart';
 import 'lsp_state_glyph.dart';
 import 'vibe_box.dart';
@@ -486,6 +487,45 @@ class VibeSegmentBubble extends StatelessComponent {
           bodyRowComponents: rows,
           mutedColor: theme.success,
           activeColor: theme.warning,
+        ),
+      );
+    }
+
+    // Agents box: the commander↔worker communication rows of this
+    // segment — spawns/assigns/sends the main agent made, worker
+    // reports/questions that landed mid-segment, and read_worker
+    // pulls. One row per payload (an [AgentBubble] with zero padding
+    // so rows align inside the box body), plus an overflow tail.
+    // Never active once persisted.
+    if (segment.agents != null) {
+      final agents = segment.agents!;
+      final rows = <Component>[
+        for (final entry in agents.entries)
+          AgentBubble(
+            key: ValueKey('vibe-agent-${entry.agentId}-${entry.kind}-'
+                '${agents.entries.indexOf(entry)}'),
+            payload: entry,
+            strings: strings,
+            padding: 0,
+            // The box gives its rows unbounded width, so the row must not
+            // use the verbose flexible layout (see [AgentBubble.inline]).
+            inline: true,
+          ),
+      ];
+      if (agents.overflowCount > 0) {
+        rows.add(
+          Text(
+            '+${agents.overflowCount} more',
+            style: TextStyle(color: theme.onSurfaceDim),
+          ),
+        );
+      }
+      boxes.add(
+        VibeBox(
+          title: strings.t('chat.vibe.agents'),
+          bodyRowComponents: rows,
+          mutedColor: theme.secondary,
+          activeColor: theme.accent,
         ),
       );
     }
