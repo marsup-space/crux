@@ -31,7 +31,16 @@ class _ToolCallAccum {
 class ToolExecutor {
   final ToolRegistry _registry;
 
-  ToolExecutor(this._registry);
+  /// Runtime gate for the subagent workers-mode guard (plan §模式切换
+  /// 与 cache item 3): when the workers switch is on, hands-on tools
+  /// (edit / write / bash / powershell / cmd) called by the MAIN agent
+  /// are redirected to send_agent instead of executed. Null (tests,
+  /// legacy harnesses) disables the guard.
+  ///
+  /// Returns the redirect ToolResult, or null to allow the call.
+  final ToolResult? Function(String toolName)? subagentWorkersGuard;
+
+  ToolExecutor(this._registry, {this.subagentWorkersGuard});
 
   ToolDef? lookupTool(String name) => _registry.lookup(name);
 
@@ -80,6 +89,14 @@ class ToolExecutor {
     final tool = _registry.lookup(call.name);
     if (tool == null) {
       return ToolResult.error('Unknown tool: ${call.name}');
+    }
+    // Subagent workers-mode guard: reflect the LIVE switch state on
+    // every call (an announcement the model forgot does not matter —
+    // the guard is the enforcement).
+    if (subagentWorkersGuard case final guard?) {
+      if (guard(call.name) case final blocked?) {
+        return blocked;
+      }
     }
     return tool.execute(call.input, ctx);
   }

@@ -44,6 +44,7 @@ import '../storage/database.dart' as db;
 import '../models/subagent.dart';
 import '../services/subagent/subagent_controller.dart';
 import '../services/subagent/subagent_manager.dart';
+import '../services/subagent/subagent_prompts.dart' show subagentModeAnnouncement;
 import '../tools/subagent_tools.dart';
 import 'subagents/subagent_bar.dart';
 import '../i18n/reply_language.dart';
@@ -381,6 +382,19 @@ class _ChatPanelState extends State<ChatPanel> {
   /// tools are then not registered.
   SubagentManager? _subagentManager;
 
+  /// Tools the workers-mode guard redirects (plan §模式切换 item 3):
+  /// the hands-on mutation/exec surface. Everything else — reads,
+  /// searches, session/notes, subagent tools themselves — stays
+  /// available to the main agent.
+  static const _kWorkersGuardedTools = {
+    'edit',
+    'write',
+    'bash',
+    'powershell',
+    'cmd',
+    'git_prepare_commit',
+  };
+
   /// Subagent reports arrive here as formatted envelopes. The
   /// envelope is injected into the main session as a user turn —
   /// the `[Crux system note — subagent report]` prefix plus the
@@ -521,16 +535,43 @@ class _ChatPanelState extends State<ChatPanel> {
       planModeController: _planModeController,
       gitCommitReviewOpener: _openPreparedCommitReview,
     );
-    final toolExecutor = ToolExecutor(registry);
+    final toolExecutor = ToolExecutor(
+      registry,
+      // Subagent workers-mode guard (plan §模式切换与 cache item 3):
+      // reflect the LIVE switch on every tool call — when workers is
+      // on, hands-on tools called by the main agent redirect to
+      // send_agent instead of executing. Read-only tools stay
+      // available to the main agent (decomposition needs them).
+      subagentWorkersGuard: component.subagentController == null
+          ? null
+          : (toolName) {
+              if (!_kWorkersGuardedTools.contains(toolName)) return null;
+              final controller = component.subagentController!;
+              if (!controller.workersOn) return null;
+              return ToolResult(
+                title: 'worker mode',
+                output: '[Crux system note — workers mode redirect]\n'
+                    '"$toolName" is a hands-on tool and workers mode is ON. '
+                    'Do not run it yourself: send_agent the task to a '
+                    'worker (or hire_agent if nobody owns the domain) and '
+                    'verify its report. Read-only tools remain yours.',
+              );
+            },
+    );
     // Subagent v2 (M2): the five tools are statically registered with
     // the mode-off redirect built in (see SubagentToolBase.gate), so
     // the tool list — and therefore the provider prompt cache — never
     // changes when the user flips the switches.
     if (component.subagentController case final subagentController?) {
+      // The runner executes tools WITHOUT the workers guard — the
+      // guard only constrains the MAIN agent (a worker doing its
+      // dispatched job is the whole point). A separate executor over
+      // the same registry gives each caller its own gate.
+      final runnerExecutor = ToolExecutor(registry);
       final manager = SubagentManager(
         store: _store.agentStore,
         providerService: _providerService,
-        toolExecutor: toolExecutor,
+        toolExecutor: runnerExecutor,
         toolRegistry: registry,
         toggles: subagentController,
         workingDirectory: Directory.current.path,
@@ -632,6 +673,19 @@ class _ChatPanelState extends State<ChatPanel> {
       tracker: _tracker,
       pendingAskCubit: _pendingAskCubit,
       mentionChipsProvider: () => _overlayController.mentionChips,
+      // Subagent mode announcement: consumes the controller's
+      // one-shot pending flag so the FIRST user message after a
+      // toggle flip carries the guide.
+      subagentAnnouncementProvider: () {
+        final controller = component.subagentController;
+        if (controller == null || !controller.consumePendingAnnouncement()) {
+          return null;
+        }
+        return subagentModeAnnouncement(
+          workersOn: controller.workersOn,
+          expertsOn: controller.expertsOn,
+        );
+      },
       planModeController: _planModeController,
       strings: _strings,
     );

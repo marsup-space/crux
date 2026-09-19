@@ -69,6 +69,13 @@ class ChatTurnOrchestrator {
   /// picked a mention via the chat input's overlay).
   final List<MentionChip> Function()? _mentionChipsProvider;
 
+  /// Provides the pending subagent mode announcement, or null when no
+  /// toggle flipped since the last consumed turn. The one-shot
+  /// consume lives inside the provider (the controller clears its
+  /// pending flag when read) so the orchestrator stays stateless
+  /// about subagent mode. Null in tests.
+  final String? Function()? _subagentAnnouncementProvider;
+
   final Set<int> _interruptedSessions = {};
   final Map<int, List<AbortSignal>> _activeAbortSignals = {};
   final Set<int> _streamingGuardAbortedSessions = {};
@@ -87,6 +94,7 @@ class ChatTurnOrchestrator {
     required this._tracker,
     this._pendingAskCubit,
     this._mentionChipsProvider,
+    this._subagentAnnouncementProvider,
     this.planModeController,
     Strings strings = kEnglishStrings,
   }) : _store = store,
@@ -331,6 +339,16 @@ class ChatTurnOrchestrator {
       final planBlock = _buildPlanContextBlock(sessionId);
       if (planBlock != null) {
         llmText = '$llmText\n\n$planBlock';
+      }
+
+      // Subagent mode announcement (plan §模式切换与 cache item 2):
+      // the FIRST user message after a toggle flip carries the mode
+      // guide as a Crux system note. One-shot — the controller's
+      // pending flag is consumed here, so later messages are clean.
+      // Riding the message (not the system prompt) keeps the prompt
+      // cache prefix intact.
+      if (_subagentAnnouncementProvider?.call() case final announcement?) {
+        llmText = '$llmText\n\n$announcement';
       }
     }
 

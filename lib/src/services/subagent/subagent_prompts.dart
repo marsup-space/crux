@@ -8,6 +8,42 @@ library;
 
 import '../../models/subagent.dart';
 
+/// The engineering-rule skeleton shared with the main agent's system
+/// prompt (plan §提示词: "骨架复用主 agent 提示词的工程规则段") — a
+/// condensed form of the Codebase exploration / Authoritative sources
+/// / no-godfiles / dense-shell sections. Subagents get the same
+/// discipline; the main-agent-only sections (quick reply, plugins,
+/// human-reviewed commits) are omitted.
+const String kSubagentEngineeringRules = '''
+## Codebase exploration
+
+For coding tasks, always start with `semantic_search` (or `grep` when
+you already know the symbol). One structured query returns ranked
+snippets across the whole codebase fast. Skip the search only when the
+dispatching message already pointed at a specific file or identifier.
+
+## Authoritative sources
+
+Do NOT trust your training data over the code on disk. Read the code;
+the code wins. State contradictions explicitly rather than hedging.
+
+## Writing code — no godfiles, always reuse
+
+Before writing a function, assume the functionality may already exist —
+search first (semantic_search by concept, grep for symbols). Reuse or
+extend the existing implementation; do not write a private copy. Write
+new code to be small, single-purpose, and placed where the next caller
+will look for it. Never grow an oversized file that mixes unrelated
+concerns.
+
+## Dense shell commands
+
+Combine shell operations into a single call using pipes, `&&`, `||`,
+and subshells. Keep output deliberately small: request only the lines
+needed for the next decision; prefer a summary (counts, failing test
+names, exit status) over raw dumps.
+''';
+
 /// Read-only tools an expert may use. Workers get everything except
 /// the subagent tools themselves (no recursion).
 const List<String> kExpertToolNames = [
@@ -88,6 +124,9 @@ String subagentSystemPrompt({
     buffer.write('YOUR WORK RECORD\n$worklog\n\n');
   }
 
+  // Shared engineering discipline (same skeleton as the main agent).
+  buffer.write(kSubagentEngineeringRules);
+
   return buffer.toString();
 }
 
@@ -117,4 +156,54 @@ String subagentReportEnvelope({
 String _indentBlock(String text) {
   final lines = text.trimRight().split('\n');
   return lines.map((l) => '  ${l.trimRight()}').join('\n');
+}
+
+/// The mode announcement attached to the FIRST user message after a
+/// toggle flip (plan §模式切换与 cache: rides the message, never the
+/// system prompt — zero cache invalidation).
+///
+/// [workersOn]/[expertsOn] select the on-announcement's emphasis; a
+/// both-off call renders the symmetric exit announcement. The text is
+/// English (the system-prompt language); the dispatching user message
+/// may be any language.
+String subagentModeAnnouncement({
+  required bool workersOn,
+  required bool expertsOn,
+}) {
+  if (!workersOn && !expertsOn) {
+    return '[Crux system note — subagent mode off]\n'
+        'Subagent mode has been turned OFF. Edit/write/shell tools are '
+        'yours to use directly again — no dispatching required.\n'
+        'Agents you hired earlier stay on the roster '
+        '(find_agents still lists them) and remain dispatchable the '
+        'moment the switches go back on.';
+  }
+  final buffer = StringBuffer('[Crux system note — subagent mode on]\n');
+  if (workersOn) {
+    buffer.writeln(
+      'Worker dispatch is ON: hands-on work (edit, write, shell/build/test '
+      'runs) MUST go to a worker via send_agent / hire_agent. You do the '
+      'decomposition, dispatching, and acceptance — not the edits.',
+    );
+  }
+  if (expertsOn) {
+    buffer.writeln(
+      'Expert consultation is ON: when unsure about an approach or when a '
+      'change needs a read-only second opinion, hire or send an expert '
+      '(read-only advisor) and weigh its answer.',
+    );
+  }
+  buffer.writeAll([
+    'Workflow:\n'
+        '- find_agents first — someone may already own the domain.\n'
+        '- Dispatch with intention (one line, shown to the user) and a '
+        'message that states the task boundary, acceptance criteria, and '
+        'the report granularity you want (one-line conclusion vs '
+        'detailed).\n'
+        '- check_agent asks progress; cancel_agent is the brake; a busy '
+        'agent queues by default — fork only when it cannot wait.\n'
+        '- Agents report back on their own as system notes; relay their '
+        'conclusions to the user, then verify / accept.\n',
+  ]);
+  return buffer.toString();
 }

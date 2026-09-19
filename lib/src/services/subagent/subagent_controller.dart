@@ -25,6 +25,26 @@ class SubagentController extends ChangeNotifier
   SubagentRuntimeToggles _toggles;
   final SubagentConfig _pools;
 
+  /// Set when a switch flipped since the last user turn; consumed by
+  /// the turn orchestrator to attach the mode announcement to the
+  /// next user message (plan §模式切换与 cache item 2). One-shot per
+  /// flip: reading clears it.
+  bool _announcementPending = false;
+
+  /// Whether a mode announcement is waiting to ride the next user
+  /// message. True after any setToggle call until the next
+  /// [consumePendingAnnouncement].
+  bool get announcementPending => _announcementPending;
+
+  /// The one-shot read: returns the pending flag and clears it. The
+  /// orchestrator calls this when building a user turn — the FIRST
+  /// message after a flip carries the announcement, later ones don't.
+  bool consumePendingAnnouncement() {
+    final pending = _announcementPending;
+    _announcementPending = false;
+    return pending;
+  }
+
   // Private factory-shape constructor: `create` is the only public
   // entry (it does the async config read + fallback handling).
   // Positional formals — named parameters cannot start with `_`.
@@ -80,6 +100,7 @@ class SubagentController extends ChangeNotifier
       SubagentRole.expert => _toggles.copyWith(expertsOn: value),
     };
     _toggles = next;
+    _announcementPending = true;
     notifyListeners();
     try {
       await configStore.writeToggles(next);
