@@ -188,6 +188,15 @@ class SessionRuntimeState implements SessionRuntimeSink {
   /// at N>=4, or we never entered it).
   int turnsSinceLastCompact;
 
+  /// How many auto-compactions this session has absorbed in a row
+  /// (plan §上下文与蒸馏, main-agent side): 1st and 2nd compact
+  /// normally; the 3rd escalates to distillation (summarize +
+  /// resume) instead of another lossy compression. Reset when a
+  /// turn runs without hitting the compact threshold. In-memory
+  /// only — a restarted session starts the ladder fresh, which is
+  /// the safe default.
+  int compactionsThisSession;
+
   /// Number of consecutive shell-tool fallback violations in this
   /// session. Powers the `shell-tool fallback` guard in
   /// `lib/src/tools/shell_guard.dart` — catches the model using
@@ -344,6 +353,7 @@ class SessionRuntimeState implements SessionRuntimeSink {
     this.consecutiveSingleToolCallRounds = 0,
     this.consecutiveCompactionFailures = 0,
     this.turnsSinceLastCompact = 0,
+    this.compactionsThisSession = 0,
     this.consecutiveShellViolations = 0,
     this.hasShownsemanticSearchHint = false,
     this.semanticSearchHintLastThreshold = 0,

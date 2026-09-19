@@ -675,6 +675,8 @@ const Map<String, String> _en = {
   'toast.compactDone': 'Compacted — {n} messages (~{post} ← {pre} tokens)',
   'toast.autoCompactDone':
       'Context was getting full — compacted (~{post} ← {pre} tokens)',
+  'toast.autoDistilled':
+      'Context distilled — resuming on summarized knowledge',
 
   // ── BTW (side-question) missing-key toasts ──
   'toast.btwMissingKey': 'No API key for provider "{name}". Use /provider {name} to configure an API key, then try again.',
@@ -1395,6 +1397,7 @@ const Map<String, String> _zh = {
   'toast.nothingToCompact': '没有可压缩的内容',
   'toast.compactDone': '已压缩 {n} 条消息（约 {post} ← {pre} token）',
   'toast.autoCompactDone': '上下文即将溢出——已自动压缩（约 {post} ← {pre} token）',
+  'toast.autoDistilled': '上下文已蒸馏——以总结知识续跑',
 
   // ── BTW（侧问）缺少密钥 toast ──
   'toast.btwMissingKey': '提供商 "{name}" 未配置 API 密钥。请用 /provider {name} 配置后重试。',

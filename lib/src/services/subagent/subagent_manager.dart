@@ -240,6 +240,12 @@ class SubagentManager {
       sessionId: sessionId,
       workingDirectory: workingDirectory,
       userLanguage: userLanguage,
+      contextCapacity: _contextCapacityFor(profile.model),
+      onDistilled: (name, products) => store.writeDistilled(
+        name: name,
+        knowledge: products.knowledge,
+        worklog: products.worklog,
+      ),
       onStatus: (_) => onRunsChanged?.call(),
       onDone: (status, report) => _onRunDone(profile, status, report),
     );
@@ -337,6 +343,17 @@ class SubagentManager {
     final slash = model.indexOf('/');
     if (slash <= 0) return null;
     return providerService.providerByName(model.substring(0, slash));
+  }
+
+  /// The bound model's context window, from the provider's model
+  /// config; a conservative default when metadata is unavailable.
+  int _contextCapacityFor(String model) {
+    final provider = _providerForModel(model);
+    if (provider == null) return 128000;
+    final slash = model.indexOf('/');
+    final modelId = model.substring(slash + 1);
+    final config = provider.modelById(modelId);
+    return config?.contextSize ?? 128000;
   }
 }
 

@@ -11,6 +11,7 @@ import '../models/message.dart';
 import '../models/session.dart';
 import '../services/auxiliary_prompts.dart';
 import '../services/chat_service.dart';
+import '../models/provider_config.dart' show WireFamily;
 import '../services/git_status_service.dart';
 import '../services/llm_client.dart';
 import '../services/provider_service.dart';
@@ -26,6 +27,7 @@ import '../utils/run_metrics.dart';
 import '../utils/skill_chip_substitution.dart';
 import '../utils/session_mention.dart';
 import '../utils/token_estimate.dart';
+import '../services/subagent/subagent_distiller.dart';
 import 'btw_turn_handler.dart';
 import 'session_controller.dart';
 import 'streaming_controller.dart';
@@ -209,6 +211,60 @@ class ChatTurnOrchestrator {
     );
   }
 
+      /// The main agent's distillation pass (three-stage ladder, 3rd
+  /// rung — plan §上下文与蒸馏, main-agent side). Runs the shared
+  /// distillation request over the auxiliary model and returns the
+  /// CONTINUATION block to prefix the resuming turn's user message,
+  /// or null when the pass failed / produced no valid products (the
+  /// caller then falls back to ordinary compaction).
+  Future<String?> _distillMainAgentSession(
+    int sessionId,
+    Session session,
+  ) async {
+    try {
+      final history = await _messageStore.getMessages(sessionId);
+      if (history.isEmpty) return null;
+      final apiHistory = buildApiMessages(
+        history,
+        WireFamily.openaiCompatible,
+        systemPrompt: session.systemPrompt,
+      );
+      final request = SubagentDistiller.buildRequest(
+        agentName: 'main-agent',
+        domain: 'the current session',
+        intention: _latestUserIntention(history),
+        history: apiHistory,
+      );
+      final reply = await _chatService.distillSession(request: request);
+      if (reply == null) return null;
+      final products = SubagentDistiller.parse(reply);
+      if (!products.isValid) return null;
+      return '===CONTINUATION===\n'
+          'Your context was distilled after hitting the limit a third '
+          'time. Continue the task now.\n\n'
+          '===KNOWLEDGE===\n${products.knowledge}\n\n'
+          '===WORKLOG===\n${products.worklog}\n\n'
+          '===INSTRUCTION===\n${products.instruction}\n';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The most recent non-empty user message content — the distiller's
+  /// "intention" framing for the main agent.
+  static String _latestUserIntention(List<Message> history) {
+    for (final message in history.reversed) {
+      if (message.role == 'user' && message.content.trim().isNotEmpty) {
+        // Cap at one line: this frames the pass, it is not the task.
+        final firstLine = message.content.trim().split('\n').first;
+        return firstLine.length > 120
+            ? '${firstLine.substring(0, 120)}…'
+            : firstLine;
+      }
+    }
+    return '(unknown)';
+  }
+
   /// Build the `<plan-context>` block appended to the LLM-bound user
   /// text while plan mode is active (design doc §5 P3d). Returns null
   /// when plan mode is off. The visible bubble never shows this; only
@@ -276,6 +332,14 @@ class ChatTurnOrchestrator {
     List<ImageAttachment> images = const [],
     bool allowAutoCompact = true,
     TextEditingController? textController,
+
+    /// Distilled continuation context (three-stage ladder's 3rd rung):
+    /// when non-null, the turn's user message is prefixed with the
+    /// KNOWLEDGE / WORKLOG / INSTRUCTION block so the main agent
+    /// resumes on the distilled context instead of the compacted
+    /// history. The prefix rides the message (never the system
+    /// prompt) — zero cache-prefix invalidation.
+    String? distilledContext,
   }) async {
     final sessionId = _sessionController.currentSessionId;
     if (sessionId == null) return;
@@ -331,6 +395,14 @@ class ChatTurnOrchestrator {
         rt.loadedSkillNames.addAll(expansion.includedSkills);
       }
 
+      // Distilled continuation (three-stage ladder, 3rd rung): the
+      // resuming turn's user message carries the KNOWLEDGE / WORKLOG
+      // / INSTRUCTION block so the main agent continues on the
+      // distilled context. Rides the message — cache-safe.
+      if (distilledContext != null && distilledContext.isNotEmpty) {
+        llmText = '$llmText\n\n$distilledContext';
+      }
+
       // Plan-mode context injection (design doc §5 P3d): when plan
       // mode is active, every user message carries a structured
       // <plan-context> block describing the plan path, view mode,
@@ -367,6 +439,38 @@ class ChatTurnOrchestrator {
           )) {
             // Below threshold — fall through
           } else {
+            // Three-stage ladder (plan §上下文与蒸馏, main-agent
+            // side): compactions 1–2 compress normally; the 3rd
+            // escalates to distillation — summarize the session into
+            // knowledge / worklog / instruction and continue the
+            // SAME turn on the distilled context instead of another
+            // lossy compression.
+            final stage = stageFor(rt.compactionsThisSession);
+            if (stage == DistillationStage.distill) {
+              final distilled = await _distillMainAgentSession(
+                sessionId,
+                session,
+              );
+              if (distilled != null) {
+                rt.compactionsThisSession++;
+                rt.turnsSinceLastCompact = 1;
+                _showToast(
+                  _strings.t('toast.autoDistilled'),
+                  mode: ToastMode.status,
+                );
+                await _sessionController.loadMessages(sessionId);
+                _refresh();
+                await sendTurn(
+                  text: text,
+                  images: turnImages,
+                  allowAutoCompact: false,
+                  distilledContext: distilled,
+                );
+                return;
+              }
+              // Distillation failed — fall through to ordinary
+              // compaction rather than failing the turn.
+            }
             try {
               final result = await _chatService.createChatLogCompaction(
                 sessionId: sessionId,
@@ -389,6 +493,7 @@ class ChatTurnOrchestrator {
                   );
                 }
                 rt.turnsSinceLastCompact = 1;
+                rt.compactionsThisSession++;
                 _showToast(
                   _strings.t('toast.autoCompactDone', {
                     'post': '${result.postEstimateTokens}',
@@ -406,6 +511,7 @@ class ChatTurnOrchestrator {
                 return;
               }
               rt.turnsSinceLastCompact = 0;
+              rt.compactionsThisSession = 0;
             } catch (e) {
               rt.turnsSinceLastCompact = 1;
               _showToast(

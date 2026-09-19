@@ -8,6 +8,7 @@ import '../llm_client.dart';
 import '../llm_error.dart';
 import '../provider_service.dart';
 import '../tool_executor.dart';
+import 'subagent_distiller.dart';
 import 'subagent_prompts.dart';
 
 /// A single in-memory subagent run — one assignment executing in the
@@ -54,6 +55,17 @@ class SubagentRunner {
   final String workingDirectory;
   final int sessionId;
 
+  /// The bound model's context capacity (tokens). The three-stage
+  /// gate estimates the running history against a fraction of this
+  /// (tools definitions + response headroom consume the rest).
+  final int contextCapacity;
+
+  /// Write path for distillation products (the roster's
+  /// knowledge / worklog columns). Optional — null keeps the run
+  /// self-contained (tests).
+  final Future<void> Function(String name, DistillationProducts products)?
+  onDistilled;
+
   final LlmClient _client = LlmClient();
   final AbortSignal _abort = AbortSignal();
   StreamSubscription<LlmChunk>? _sub;
@@ -75,6 +87,8 @@ class SubagentRunner {
     this.onStatus,
     this.maxRounds = 40,
     this.userLanguage = 'English',
+    this.contextCapacity = 128000,
+    this.onDistilled,
   });
 
   bool get isFinished => _finished;
@@ -138,8 +152,45 @@ class SubagentRunner {
 
     var systemText = '';
     var roundReport = '';
+    var fullEvents = 0;
 
     while (_round < maxRounds && !_cancelled) {
+      // ── Three-stage context gate (plan §上下文与蒸馏) ──────────
+      // Estimate the running history against a working fraction of
+      // the model's window (the tool definitions and the response
+      // headroom claim the rest). On pressure, escalate: compact
+      // twice, then distill-and-resume on the third event.
+      final pressure =
+          history.estimatedTokens > contextCapacity * 0.75;
+      if (pressure) {
+        final stage = stageFor(fullEvents);
+        if (stage == DistillationStage.distill) {
+          final resumed = await _distillAndResume(
+            provider,
+            apiKey,
+            modelId,
+            history,
+          );
+          if (resumed == null) {
+            _finish(
+              'failed',
+              'Context filled a third time and distillation failed. '
+              'Partial work:\n$roundReport',
+            );
+            return;
+          }
+          history
+            ..clear()
+            ..addAll(resumed);
+          fullEvents++;
+          continue; // Round counter unchanged: resumption is not a round.
+        }
+        // Stage 1–2: drop tool-result payloads (keep the call lines),
+        // the lightweight in-run "compact".
+        _compactHistory(history);
+        fullEvents++;
+      }
+
       _round++;
       onStatus?.call(snapshot());
 
@@ -258,6 +309,108 @@ class SubagentRunner {
   }
 
   LlmStreamCancelToken? _cancelToken() => null;
+
+  /// Stage-1/2 lightweight compact: replace each tool result's
+  /// content with a one-line placeholder (the call line keeps the
+  /// tool name + args), halving the history without a model call.
+  /// Deliberately lossy — the durable record lives in the report.
+  void _compactHistory(List<Map<String, dynamic>> history) {
+    for (final message in history) {
+      if (message['role'] == 'tool') {
+        final content = message['content'];
+        if (content is String && content.length > 200) {
+          message['content'] =
+              '[compacted — ${content.length} chars, read again if needed]';
+        }
+      }
+    }
+  }
+
+  /// Stage-3 distill-and-resume (plan §上下文与蒸馏 item 2–3): one
+  /// extra LLM call over the full history produces the three
+  /// products; the run then continues on a clean
+  /// `system + CONTINUATION` context. Products also land in the
+  /// roster (knowledge / worklog) via [onDistilled]. Returns the
+  /// resume history, or null when the distillation call failed /
+  /// produced an unparseable reply.
+  Future<List<Map<String, dynamic>>?> _distillAndResume(
+    ProviderConfig provider,
+    String apiKey,
+    String modelId,
+    List<Map<String, dynamic>> history,
+  ) async {
+    final request = SubagentDistiller.buildRequest(
+      agentName: agentName,
+      domain: profile.domain,
+      intention: intention,
+      history: history,
+    );
+    final reply = await _oneShot(
+      provider,
+      apiKey,
+      modelId,
+      request,
+      tools: null,
+    );
+    if (reply == null) return null;
+    final products = SubagentDistiller.parse(reply);
+    if (!products.isValid) return null;
+
+    if (onDistilled != null) {
+      try {
+        await onDistilled!(agentName, products);
+      } catch (_) {
+        // Roster write is best-effort: the resume must proceed even
+        // if persistence hiccups.
+      }
+    }
+
+    return buildResumeHistory(
+      systemPrompt: subagentSystemPrompt(
+        agentName: agentName,
+        role: role,
+        domain: profile.domain,
+        knowledge: products.knowledge,
+        worklog: products.worklog,
+        intention: intention,
+        userLanguage: userLanguage,
+      ),
+      products: products,
+    );
+  }
+
+  /// Single non-streaming-equivalent call: stream without tools and
+  /// collect the text. Shared by the distillation pass.
+  Future<String?> _oneShot(
+    ProviderConfig provider,
+    String apiKey,
+    String modelId,
+    List<Map<String, dynamic>> messages, {
+    List<Map<String, dynamic>>? tools,
+  }) async {
+    final chunks = <LlmChunk>[];
+    try {
+      final stream = _client.streamChat(
+        endpointUrl: provider.endpointUrl,
+        config: provider,
+        apiKey: apiKey,
+        modelId: modelId,
+        messages: messages,
+        thinkingMode: 'disabled',
+        tools: tools,
+        userId: 'subagent-distill-$agentName',
+        cancelToken: _cancelToken(),
+      );
+      await for (final chunk in stream) {
+        if (chunk.error != null) return null;
+        chunks.add(chunk);
+      }
+    } catch (_) {
+      return null;
+    }
+    final text = _textOf(chunks);
+    return text.isEmpty ? null : text;
+  }
 
   (ProviderConfig, String, String)? _resolveModel() {
     final model = profile.model;

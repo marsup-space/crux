@@ -235,6 +235,14 @@ class ChatService {
     String? language,
   }) => _auxiliaryService.summarizeYesterday(sessions, language: language);
 
+  /// One-shot distillation pass for the main agent's three-stage
+  /// ladder — forwards to the auxiliary service, which streams the
+  /// request over the auxiliary model. Returns the raw reply; the
+  /// caller parses it with the shared [SubagentDistiller.parse].
+  Future<String?> distillSession({
+    required List<Map<String, dynamic>> request,
+  }) => _auxiliaryService.distillSession(request: request);
+
   // ── Compaction ────────────────────────────────────────────────────
 
   /// In-place chat-log compaction. Returns a [ChatLogCompactionResult]

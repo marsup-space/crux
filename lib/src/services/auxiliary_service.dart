@@ -183,6 +183,22 @@ class AuxiliaryService {
     return collapsed;
   }
 
+      /// One-shot distillation pass for the MAIN agent's three-stage
+  /// ladder (plan §上下文与蒸馏): sends the distillation request over
+  /// the auxiliary model and returns the raw reply. The caller (turn
+  /// orchestrator) parses it with [SubagentDistiller.parse] — the
+  /// same parser the subagent runner uses, keeping one shared
+  /// implementation across both callers.
+  Future<String?> distillSession({
+    required List<Map<String, dynamic>> request,
+  }) {
+    return _streamAuxiliaryCall(
+      systemPrompt: '',
+      messages: request,
+      logTag: 'distill',
+    );
+  }
+
   /// Generate a commit message from the exact staged patch. Recent subjects
   /// are style-only context so the auxiliary model follows the repository's
   /// established convention without borrowing facts from old commits.
