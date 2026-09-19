@@ -1,24 +1,11 @@
-/// The per-session collaboration mode. This deliberately lives outside
-/// [Session]: subagent state is persisted in its own table so adding the
-/// feature does not widen the hot Session model used across the app.
-enum SubagentSessionMode {
-  off,
-  commander,
-  consult;
-
-  String get storageValue => name;
-
-  static SubagentSessionMode parse(String? value) => switch (value) {
-    'commander' => commander,
-    'consult' => consult,
-    _ => off,
-  };
-}
-
 /// A preconfigured model role. Roles are user-defined routing labels, not a
 /// Crux judgement about a model's quality or vendor.
+///
+/// v2 naming: `expert` (read-only advisors you consult) and `worker`
+/// (agents you dispatch to do work). The persisted config key and database
+/// values use the same words.
 enum SubagentRole {
-  advisor,
+  expert,
   worker;
 
   String get configKey => name;
@@ -85,7 +72,7 @@ class SubagentModelEntry {
 /// Index 0 is the preferred model; the rest are the fallback chain, in the
 /// order the user wrote them (recovery walks the pool front to back, so the
 /// list is a priority order and is never re-sorted). Every entry carries its
-/// own concurrency, so the pool is the single source of truth for both
+  /// own concurrency, so the pool is the single source of truth for both
 /// "which models may run" and "how many of them at once".
 ///
 /// An empty pool means the role has not been configured, so callers must not
@@ -156,34 +143,38 @@ class SubagentModelConfig {
 }
 
 /// The complete `[subagent]` section of user `config.toml`.
+///
+/// v2 keys: `workers` and `experts` (each an ordered model pool). The v1
+/// `advisor` key is read as an alias for `experts` so an existing config
+/// file migrates silently on first save.
 class SubagentConfig {
-  final SubagentModelConfig advisor;
-  final SubagentModelConfig worker;
+  final SubagentModelConfig workers;
+  final SubagentModelConfig experts;
 
   const SubagentConfig({
-    this.advisor = const SubagentModelConfig(),
-    this.worker = const SubagentModelConfig(),
+    this.workers = const SubagentModelConfig(),
+    this.experts = const SubagentModelConfig(),
   });
 
   SubagentModelConfig forRole(SubagentRole role) => switch (role) {
-    SubagentRole.advisor => advisor,
-    SubagentRole.worker => worker,
+    SubagentRole.worker => workers,
+    SubagentRole.expert => experts,
   };
 
   SubagentConfig copyWith({
-    SubagentModelConfig? advisor,
-    SubagentModelConfig? worker,
+    SubagentModelConfig? workers,
+    SubagentModelConfig? experts,
   }) => SubagentConfig(
-    advisor: advisor ?? this.advisor,
-    worker: worker ?? this.worker,
+    workers: workers ?? this.workers,
+    experts: experts ?? this.experts,
   );
 
   @override
   bool operator ==(Object other) =>
       other is SubagentConfig &&
-      other.advisor == advisor &&
-      other.worker == worker;
+      other.workers == workers &&
+      other.experts == experts;
 
   @override
-  int get hashCode => Object.hash(advisor, worker);
+  int get hashCode => Object.hash(workers, experts);
 }

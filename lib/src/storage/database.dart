@@ -21,6 +21,7 @@ part 'database.g.dart';
     FileLastWriter,
     ShellMonitorLogs,
     ProjectNotes,
+    Agents,
   ],
 )
 class CruxDatabase extends _$CruxDatabase {
@@ -143,8 +144,15 @@ class CruxDatabase extends _$CruxDatabase {
   ///         exactly that text are indistinguishable and also reset —
   ///         acceptable: the next LLM title generation will re-title
   ///         them from content anyway.
+  ///   v33 – added `agents` (the persistent subagent roster): one
+  ///         row per agent identity — name (unique constellation id),
+  ///         role (`worker`/`expert`), domain, bound model, status
+  ///         (`ready`/`busy`), distilled knowledge + worklog,
+  ///         lastIntention, run-owner session. Runs themselves are
+  ///         never persisted (execution is transient by design), so
+  ///         restart leaves every agent `ready`.
   @override
-  int get schemaVersion => 32;
+  int get schemaVersion => 33;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -504,6 +512,9 @@ CREATE TABLE IF NOT EXISTS project_notes (
           "UPDATE sessions SET title = '' "
           "WHERE title IN ('New Session', 'New Chat')",
         );
+      }
+      if (from < 33) {
+        await m.createTable(agents);
       }
     },
   );

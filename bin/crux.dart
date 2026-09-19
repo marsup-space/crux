@@ -9,6 +9,8 @@ import 'package:crux/src/components/home/home_layout_store.dart';
 import 'package:crux/src/i18n/locale_config_store.dart';
 import 'package:crux/src/i18n/locale_controller.dart';
 import 'package:crux/src/services/recent_projects_store.dart';
+import 'package:crux/src/services/subagent/subagent_config_store.dart';
+import 'package:crux/src/services/subagent/subagent_controller.dart';
 import 'package:crux/src/services/plugin_registry.dart';
 import 'package:crux/src/services/daemon_client.dart';
 import 'package:crux/src/tools/semble_warmup.dart';
@@ -217,6 +219,7 @@ void main(List<String> args) async {
       builtInProvidersDir: builtInDir.existsSync() ? builtInDir.path : null,
       themeController: results.themeController,
       localeController: results.localeController,
+      subagentController: results.subagentController,
       bootState: results.chatPanelBootState,
       gitStatusService: results.gitStatusService,
       recentProjectsStore: results.recentProjectsStore,
@@ -381,6 +384,7 @@ class _LoadingResults {
   final List<SeedResult> providerSeedResults;
   final ThemeController themeController;
   final LocaleController localeController;
+  final SubagentController subagentController;
   final ChatPanelBootState chatPanelBootState;
   final GitStatusService gitStatusService;
   final RecentProjectsStore recentProjectsStore;
@@ -389,6 +393,7 @@ class _LoadingResults {
     required this.providerSeedResults,
     required this.themeController,
     required this.localeController,
+    required this.subagentController,
     required this.chatPanelBootState,
     required this.gitStatusService,
     required this.recentProjectsStore,
@@ -428,6 +433,9 @@ Future<_LoadingResults> _doLoading(
   final localeController = await LocaleController.create(
     configStore: LocaleConfigStore(themeConfigFile),
   );
+  final subagentController = await SubagentController.create(
+    configStore: SubagentConfigStore(themeConfigFile),
+  );
   await HighlightService.initialize();
   await gitStatusFuture;
   gitStatusService.start(refreshImmediately: false);
@@ -436,6 +444,7 @@ Future<_LoadingResults> _doLoading(
     providerSeedResults: providerSeedResults,
     themeController: themeController,
     localeController: localeController,
+    subagentController: subagentController,
     chatPanelBootState: chatPanelBootState,
     gitStatusService: gitStatusService,
     recentProjectsStore: recentProjectsStore,
@@ -631,6 +640,7 @@ class _CruxApp extends StatefulComponent {
   final String? builtInProvidersDir;
   final ThemeController themeController;
   final LocaleController localeController;
+  final SubagentController subagentController;
   final ChatPanelBootState bootState;
   final GitStatusService gitStatusService;
   final RecentProjectsStore recentProjectsStore;
@@ -656,6 +666,7 @@ class _CruxApp extends StatefulComponent {
     this.builtInProvidersDir,
     required this.themeController,
     required this.localeController,
+    required this.subagentController,
     required this.bootState,
     required this.gitStatusService,
     required this.recentProjectsStore,
@@ -677,6 +688,7 @@ class _CruxAppState extends State<_CruxApp> {
     super.initState();
     component.themeController.addListener(_handleThemeChanged);
     component.localeController.addListener(_handleLocaleChanged);
+    component.subagentController.addListener(_handleLocaleChanged);
     // Override nocterm's default 30fps to 60fps for smoother animations
     // (streaming text, status indicators, context bar, etc.).
     SchedulerBinding.instance.targetFrameDuration = const Duration(
@@ -693,6 +705,8 @@ class _CruxAppState extends State<_CruxApp> {
     component.themeController.dispose();
     component.localeController.removeListener(_handleLocaleChanged);
     component.localeController.dispose();
+    component.subagentController.removeListener(_handleLocaleChanged);
+    component.subagentController.dispose();
     // The chat panel already disposed this store, but be defensive:
     // if the panel never mounted (e.g. the app bailed out before
     // its first frame) we still need to release the listener
@@ -726,6 +740,7 @@ class _CruxAppState extends State<_CruxApp> {
             builtInProvidersDir: component.builtInProvidersDir,
             themeController: component.themeController,
             localeController: component.localeController,
+            subagentController: component.subagentController,
             bootState: component.bootState,
             gitStatusService: component.gitStatusService,
             pluginRegistry: component.pluginRegistry,

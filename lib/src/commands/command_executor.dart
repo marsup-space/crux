@@ -9,6 +9,7 @@ import '../services/auxiliary_prompts.dart';
 import '../services/plan_mode_controller.dart';
 import '../services/provider_service.dart';
 import '../services/recent_projects_store.dart';
+import '../services/subagent/subagent_controller.dart';
 import '../services/web_provider_registry.dart';
 import '../storage/session_store.dart';
 import '../storage/shell_monitor_log_store.dart';
@@ -25,6 +26,7 @@ import 'cmd_session.dart';
 import 'cmd_new.dart';
 import 'cmd_chat.dart';
 import 'cmd_plan.dart';
+import 'cmd_subagent.dart';
 import 'cmd_provider.dart';
 import 'cmd_web_provider.dart';
 import 'cmd_theme.dart';
@@ -136,6 +138,11 @@ class CommandContext {
   /// reports unavailable).
   final PlanModeController? planModeController;
 
+  /// The subagent-mode controller, so `/subagent` can flip the two
+  /// independent switches. Null in tests and legacy harnesses (the
+  /// command then reports unavailable).
+  final SubagentController? subagentController;
+
   CommandContext({
     required this.store,
     required this.providerService,
@@ -177,6 +184,7 @@ class CommandContext {
     this.appendLocalMessage,
     this.shellMonitorLogStore,
     this.planModeController,
+    this.subagentController,
   });
 }
 
@@ -215,6 +223,8 @@ class CommandExecutor {
         await executeView(parts, ctx);
       case '/plan':
         await executePlan(parts, ctx);
+      case '/subagent':
+        await executeSubagent(parts, ctx);
       case '/temperature':
         await executeTemperature(parts, ctx);
       case '/tldr':

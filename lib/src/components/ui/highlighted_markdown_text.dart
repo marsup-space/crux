@@ -20,6 +20,7 @@ import '../../theme/crux_theme.dart';
 import '../../utils/frame_profiler.dart';
 import '../../utils/markdown_links.dart';
 import '../../utils/quick_reply_parser.dart';
+import '../../utils/agent_refs.dart';
 import '../../utils/session_refs.dart';
 
 class HighlightedMarkdownText extends StatefulComponent {
@@ -34,6 +35,7 @@ class HighlightedMarkdownText extends StatefulComponent {
     this.highlightText,
     this.useIsolate = false,
     this.onSessionLinkTap,
+    this.onAgentLinkTap,
     this.sessionLinkStyle,
     this.sessionLinkHoverStyle,
     this.onQuickReplyTap,
@@ -78,6 +80,14 @@ class HighlightedMarkdownText extends StatefulComponent {
   /// carry clickable refs and the main-isolate overlay pass would
   /// race with the worker's per-frame span updates.
   final void Function(int sessionId)? onSessionLinkTap;
+
+  /// Callback fired when the user clicks an `agent://<name>` reference
+  /// in the rendered text. Receives the parsed agent name (the stable
+  /// constellation id, e.g. `orion`).
+  ///
+  /// Same gating rules as [onSessionLinkTap]: null skips parsing
+  /// entirely; the isolate path never wires it up.
+  final void Function(String name)? onAgentLinkTap;
 
   /// Override the style applied to recognized `ses://` regions.
   /// Defaults to the theme's `tldrLink` color + underline.
@@ -204,6 +214,13 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   /// change alongside `_spans` — the overlay pass in [_buildInner]
   /// re-runs cheaply on every hover/state change without re-parsing.
   List<SessionRef> _sessionRefs = const [];
+
+  /// Agent refs (`agent://<name>`) parsed from the current spans.
+  /// Same caching policy as `_sessionRefs`.
+  List<AgentRef> _agentRefs = const [];
+
+  /// The agent ref currently under the pointer, if any.
+  AgentRef? _hoveredAgentRef;
 
   /// Quick-reply tokens parsed from the current spans. Same
   /// caching policy as `_sessionRefs`.
@@ -336,6 +353,8 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
           // session-refs pass.
           _sessionRefs = wantLinks ? parseSessionRefs(_spans) : const [];
           _hoveredSessionRef = null;
+          _agentRefs = wantLinks ? parseAgentRefs(_spans) : const [];
+          _hoveredAgentRef = null;
           _quickReplies = component.useIsolate
               ? const []
               : parseQuickReplies(_spans);
@@ -385,6 +404,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
         //     normal text, with no `ask://…` syntax leaking
         //     through.
         final haveSessionLinks = wantLinks && _sessionRefs.isNotEmpty;
+        final haveAgentLinks = wantLinks && _agentRefs.isNotEmpty;
         final haveMarkdownLinks =
             wantMarkdownLinks && _markdownLinks.isNotEmpty;
         final haveButtonReplies = wantQuickReplies && _quickReplies.isNotEmpty;
@@ -422,6 +442,42 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
             hoverStyle,
             _hoveredSessionRef,
           );
+        }
+        if (!hasDiagrams && haveAgentLinks) {
+          // Agent refs reuse the session-link visual language: the same
+          // tldrLink color + underline (hover swaps to reverse video).
+          // Hover state for agents is conveyed through the same reverse-
+          // video treatment via [applyAgentLinkStyles]'s per-ref styling
+          // below; the non-hovered pass runs here on the whole tree.
+          final agentLinkStyle =
+              component.sessionLinkStyle ??
+              TextStyle(
+                color: theme.tldrLink,
+                decoration: TextDecoration.underline,
+              );
+          renderedSpans = applyAgentLinkStyles(
+            renderedSpans,
+            _hoveredAgentRef == null
+                ? _agentRefs
+                : [
+                    // Hover: only the hovered ref gets the reverse-video
+                    // treatment; the rest keep the plain link style.
+                    for (final r in _agentRefs)
+                      if (!identical(r, _hoveredAgentRef)) r,
+                  ],
+            agentLinkStyle,
+          );
+          if (_hoveredAgentRef != null) {
+            renderedSpans = applyAgentLinkStyles(
+              renderedSpans,
+              [_hoveredAgentRef!],
+              TextStyle(
+                color: theme.onColor(theme.tldrLink),
+                backgroundColor: theme.tldrLink,
+                fontWeight: FontWeight.bold,
+              ),
+            );
+          }
         }
 
         // Overlay markdown-link styles on top of the highlight and
@@ -631,10 +687,12 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
             onHover: _handleHover,
             onExit: (_) {
               if (_hoveredSessionRef != null ||
+                  _hoveredAgentRef != null ||
                   _hoveredQuickReply != null ||
                   _hoveredMarkdownLink != null) {
                 setState(() {
                   _hoveredSessionRef = null;
+                  _hoveredAgentRef = null;
                   _hoveredQuickReply = null;
                   _hoveredMarkdownLink = null;
                 });
@@ -674,18 +732,28 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
   void _handleHover(MouseEvent event) {
     final hit = _linkAtEvent(event);
     final newSession = hit is SessionRef ? hit : null;
+    final newAgent = hit is AgentRef ? hit : null;
     final newReply = hit is QuickReply ? hit : null;
     final newLink = hit is MarkdownLink ? hit : null;
 
     final sessionChanged =
         newSession?.sessionId != _hoveredSessionRef?.sessionId;
+    final agentChanged =
+        newAgent?.displayText != _hoveredAgentRef?.displayText;
     final replyChanged = !_sameQuickReply(newReply, _hoveredQuickReply);
     final linkChanged = !_sameMarkdownLink(newLink, _hoveredMarkdownLink);
 
-    if (!sessionChanged && !replyChanged && !linkChanged && hit == null) return;
+    if (!sessionChanged &&
+        !agentChanged &&
+        !replyChanged &&
+        !linkChanged &&
+        hit == null) {
+      return;
+    }
 
     setState(() {
       _hoveredSessionRef = newSession;
+      _hoveredAgentRef = newAgent;
       _hoveredQuickReply = newReply;
       _hoveredMarkdownLink = newLink;
     });
@@ -695,6 +763,11 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
     final ref = _hoveredSessionRef;
     if (ref != null) {
       component.onSessionLinkTap?.call(ref.sessionId);
+      return;
+    }
+    final agentRef = _hoveredAgentRef;
+    if (agentRef != null) {
+      component.onAgentLinkTap?.call(agentRef.name);
       return;
     }
     final link = _hoveredMarkdownLink;
@@ -710,6 +783,7 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
 
   Object? _linkAtEvent(MouseEvent event) {
     if (_sessionRefs.isEmpty &&
+        _agentRefs.isEmpty &&
         _quickReplies.isEmpty &&
         _markdownLinks.isEmpty) {
       return null;
@@ -755,6 +829,9 @@ class _HighlightedMarkdownTextState extends State<HighlightedMarkdownText> {
     );
 
     for (final ref in sessionRefs) {
+      if (ref.containsIndex(charIndex)) return ref;
+    }
+    for (final ref in _agentRefs) {
       if (ref.containsIndex(charIndex)) return ref;
     }
     for (final link in markdownLinks) {

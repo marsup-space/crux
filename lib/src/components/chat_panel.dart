@@ -40,6 +40,9 @@ import '../theme/crux_theme.dart';
 import '../theme/theme_controller.dart';
 import '../i18n/app_locale.dart';
 import '../i18n/locale_controller.dart';
+import '../models/subagent.dart';
+import '../services/subagent/subagent_controller.dart';
+import 'subagents/subagent_bar.dart';
 import '../i18n/reply_language.dart';
 import '../i18n/strings.dart';
 import '../services/a2ui/models.dart';
@@ -238,6 +241,11 @@ class ChatPanel extends StatefulComponent {
   /// The UI-language controller. Null in tests (like `homeLayoutStore`) —
   /// then the settings box shows `en` and `/language` reports unavailable.
   final LocaleController? localeController;
+
+  /// The subagent-mode controller (two independent switches + model
+  /// pools). Null in tests — then the subagent bar never mounts and
+  /// `/subagent` reports unavailable.
+  final SubagentController? subagentController;
   final ChatPanelBootState? bootState;
   final GitStatusService? gitStatusService;
 
@@ -279,6 +287,7 @@ class ChatPanel extends StatefulComponent {
     this.builtInProvidersDir,
     required this.themeController,
     this.localeController,
+    this.subagentController,
     this.bootState,
     this.gitStatusService,
     this.pluginRegistry,
@@ -1236,6 +1245,7 @@ class _ChatPanelState extends State<ChatPanel> {
       },
       themeController: component.themeController,
       localeController: component.localeController,
+      subagentController: component.subagentController,
       rebuildSystemPrompt: _chatService.rebuildSystemPrompt,
       sendTurn: _turnOrchestrator.sendTurn,
       compactSession: _turnOrchestrator.compactCurrentSession,
@@ -2194,6 +2204,33 @@ class _ChatPanelState extends State<ChatPanel> {
                     ],
                   ),
                 ),
+                // The subagent bar mounts above the toolbar whenever
+                // either switch is on — clicking a toggle flips it via
+                // the controller (persisted + re-render through the
+                // ChangeNotifier chain). Null controller (tests) or
+                // both-off → no bar, toolbar layout untouched.
+                if (component.subagentController
+                    case final subagentController?)
+                  ListenableBuilder(
+                    listenable: subagentController,
+                    builder: (context, _) {
+                      if (!subagentController.anyOn) {
+                        return const SizedBox(height: 0);
+                      }
+                      return SubagentBar(
+                        toggles: subagentController.toggles,
+                        onToggleWorkers: () => subagentController.setToggle(
+                          SubagentRole.worker,
+                          !subagentController.workersOn,
+                        ),
+                        onToggleExperts: () => subagentController.setToggle(
+                          SubagentRole.expert,
+                          !subagentController.expertsOn,
+                        ),
+                        strings: _strings,
+                      );
+                    },
+                  ),
                 ChatToolbar(
                   sessionController: _sessionController,
                   streamingController: _streamingController,

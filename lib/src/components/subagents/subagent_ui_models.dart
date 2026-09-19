@@ -16,7 +16,7 @@ enum SubagentUiStatus { ready, queued, busy }
 
 extension SubagentUiRoleLabel on SubagentRole {
   String get label => switch (this) {
-    SubagentRole.advisor => 'Advisor',
+    SubagentRole.expert => 'Expert',
     SubagentRole.worker => 'Worker',
   };
 }

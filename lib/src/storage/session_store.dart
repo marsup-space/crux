@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 
+import 'agent_store.dart';
 import 'database.dart' as db;
 import '../models/session.dart';
 import '../services/llm_error.dart';
@@ -55,6 +56,13 @@ class SessionStore implements SessionStoreAccessor {
   /// feature). Shares this [SessionStore]'s database connection, same
   /// rationale as [shellMonitorLogStore].
   NotesStore get notesStore => _notesStore ??= NotesStore(_db);
+
+  AgentStore? _agentStore;
+
+  /// Lazily-created store for the `agents` roster (subagent v2).
+  /// Shares this [SessionStore]'s database connection, same rationale
+  /// as [notesStore].
+  AgentStore get agentStore => _agentStore ??= AgentStore(_db);
 
   /// Message store — set after construction to avoid a circular
   /// dependency. [MessageStore.sessionStore] points back here.

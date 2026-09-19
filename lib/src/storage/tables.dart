@@ -258,3 +258,61 @@ class ShellMonitorLogs extends Table {
 
   IntColumn get createdAt => integer()();
 }
+
+/// The persistent agent roster — one row per subagent identity (v33).
+///
+/// Identity is durable; execution is not. A row records who the agent
+/// *is* (name, role, domain, bound model) and what it has learned
+/// (knowledge / worklog, written by the distillation pipeline); the
+/// transient run that does the work lives only in memory. On restart
+/// no run exists, so every row simply reads as `ready` again — the
+/// v1 "stuck busy after restart" failure mode cannot occur.
+///
+/// `busy` is the in-memory run flag mirrored here for cross-session
+/// visibility (another Crux instance's find_agents reads the table).
+/// In practice each process owns its runs; the column exists so the
+/// roster query has one source of truth and so crash-orphaned `busy`
+/// rows are self-healing: a `busy` row with no live heartbeat owner
+/// is treated as `ready` by readers.
+class Agents extends Table {
+  /// Stable constellation id, e.g. `orion` / `libra` / `orion-2`.
+  /// The UI renders a localized display name from this id.
+  TextColumn get name => text().unique()();
+
+  /// `worker` or `expert`.
+  TextColumn get role => text()();
+
+  /// Free-form domain label, e.g. `token-refresh` / `release-pipeline`.
+  TextColumn get domain => text().withDefault(const Constant('general'))();
+
+  /// Composite `provider/model` bound at hire time. The binding is
+  /// sticky for the agent's lifetime: its knowledge / worklog were
+  /// distilled under this model's context scale, and provider caches
+  /// are per model.
+  TextColumn get model => text()();
+
+  /// `ready` or `busy`. See the class doc for the self-healing rule.
+  TextColumn get status => text().withDefault(const Constant('ready'))();
+
+  /// Distilled domain knowledge (the "what I learned" report). Empty
+  /// until the first distillation; fed back as context on later runs.
+  TextColumn get knowledge => text().withDefault(const Constant(''))();
+
+  /// Distilled work record (the "what I did, with what outcome"
+  /// report). Empty until the first distillation; fed back as
+  /// context on later runs.
+  TextColumn get worklog => text().withDefault(const Constant(''))();
+
+  /// The intention of the current (busy) or most recent (ready)
+  /// assignment — the dispatcher's stated purpose, one line. Drives
+  /// the chip tooltip and find_agents result rows.
+  TextColumn get lastIntention => text().withDefault(const Constant(''))();
+
+  /// Session that owns the live run, when `status = busy`. Readers
+  /// treat a `busy` row whose owning session is not live as `ready`
+  /// (crash-orphan self-healing).
+  IntColumn get runOwnerSessionId => integer().nullable()();
+
+  IntColumn get createdAt => integer()();
+  IntColumn get lastActiveAt => integer()();
+}

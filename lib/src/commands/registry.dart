@@ -304,6 +304,26 @@ const List<SlashCommand> _baseCommands = [
     params: ['name?'],
     availableDuringResponse: true,
   ),
+  // Toggle the two independent subagent-mode switches. Available
+  // mid-response: flipping a switch changes nothing about the
+  // in-flight turn — the first-message announcement rides the next
+  // user message regardless.
+  SlashCommand(
+    name: '/subagent',
+    description: 'cmd.subagent.desc',
+    params: ['role', 'state'],
+    suggestionsPerParam: [
+      [
+        CommandSuggestion(value: 'workers', description: 'sug.subagent.workers'),
+        CommandSuggestion(value: 'experts', description: 'sug.subagent.experts'),
+      ],
+      [
+        CommandSuggestion(value: 'on', description: 'sug.subagent.on'),
+        CommandSuggestion(value: 'off', description: 'sug.subagent.off'),
+      ],
+    ],
+    availableDuringResponse: true,
+  ),
   // Override the LLM sampling temperature for the rest of the
   // session. Input is clamped to [0.0, 1.0] regardless of what is
   // typed — the underlying APIs accept up to 2.0, but Crux
