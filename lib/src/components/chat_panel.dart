@@ -40,8 +40,11 @@ import '../theme/crux_theme.dart';
 import '../theme/theme_controller.dart';
 import '../i18n/app_locale.dart';
 import '../i18n/locale_controller.dart';
+import '../storage/database.dart' as db;
 import '../models/subagent.dart';
 import '../services/subagent/subagent_controller.dart';
+import '../services/subagent/subagent_manager.dart';
+import '../tools/subagent_tools.dart';
 import 'subagents/subagent_bar.dart';
 import '../i18n/reply_language.dart';
 import '../i18n/strings.dart';
@@ -373,6 +376,39 @@ class _ChatPanelState extends State<ChatPanel> {
   /// `ask_plan_mode` tool drive it.
   late final PlanModeController _planModeController;
 
+  /// The in-process subagent orchestrator (M2). Null when no
+  /// [SubagentController] was wired (tests) — the five subagent
+  /// tools are then not registered.
+  SubagentManager? _subagentManager;
+
+  /// Subagent reports arrive here as formatted envelopes. The
+  /// envelope is injected into the main session as a user turn —
+  /// the `[Crux system note — subagent report]` prefix plus the
+  /// wire-layer's handling keeps it from ever being mistaken for
+  /// user speech, and the sendTurn pipeline handles streaming the
+  /// main agent's reaction. The main agent is never blocked: this
+  /// fires from a background run's completion callback.
+  void _onSubagentReportEnvelope(
+    String envelope,
+    db.Agent agent,
+    String status,
+  ) {
+    // Runs complete off the turn pipeline; deliver through the same
+    // sendTurn path the queue-drain uses. fire-and-forget matches
+    // the manager's non-blocking contract.
+    unawaited(
+      _turnOrchestrator.sendTurn(
+        text: envelope,
+        allowAutoCompact: true,
+      ),
+    );
+  }
+
+  String _subagentUserLanguage() {
+    final locale = component.localeController?.activeLocale;
+    return locale == null ? 'English' : locale.label;
+  }
+
   bool _providerServiceReady = false;
   late bool _showSetup;
 
@@ -486,6 +522,40 @@ class _ChatPanelState extends State<ChatPanel> {
       gitCommitReviewOpener: _openPreparedCommitReview,
     );
     final toolExecutor = ToolExecutor(registry);
+    // Subagent v2 (M2): the five tools are statically registered with
+    // the mode-off redirect built in (see SubagentToolBase.gate), so
+    // the tool list — and therefore the provider prompt cache — never
+    // changes when the user flips the switches.
+    if (component.subagentController case final subagentController?) {
+      final manager = SubagentManager(
+        store: _store.agentStore,
+        providerService: _providerService,
+        toolExecutor: toolExecutor,
+        toolRegistry: registry,
+        toggles: subagentController,
+        workingDirectory: Directory.current.path,
+        onReportEnvelope: _onSubagentReportEnvelope,
+        onRunsChanged: _refresh,
+        userLanguage: _subagentUserLanguage(),
+      );
+      _subagentManager = manager;
+      subagentController.addListener(_refresh);
+      registry.register(
+        FindAgentsTool(manager: manager, toggles: subagentController),
+      );
+      registry.register(
+        HireAgentTool(manager: manager, toggles: subagentController),
+      );
+      registry.register(
+        SendAgentTool(manager: manager, toggles: subagentController),
+      );
+      registry.register(
+        CheckAgentTool(manager: manager, toggles: subagentController),
+      );
+      registry.register(
+        CancelAgentTool(manager: manager, toggles: subagentController),
+      );
+    }
     _toolRegistry = registry;
     _chatService = ChatService(
       _store,
@@ -1115,6 +1185,15 @@ class _ChatPanelState extends State<ChatPanel> {
     _recentProjectsStore.removeListener(_refresh);
     _recentProjectsStore.removeListener(_refreshGitStatus);
     component.pluginRegistry?.removeListener(_refresh);
+    // Cancel every live subagent run and detach the toggle listener.
+    // The roster self-heals (restart = all ready), so a plain sweep
+    // is enough — no per-run teardown sequencing needed.
+    if (_subagentManager case final manager?) {
+      for (final runner in manager.runs.values.toList()) {
+        runner.cancel();
+      }
+      component.subagentController?.removeListener(_refresh);
+    }
     _chatService.onToolExecutionCompleted = null;
     _chatService.dispose();
     _sessionController.dispose();

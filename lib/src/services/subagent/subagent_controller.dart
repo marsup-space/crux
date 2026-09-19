@@ -4,6 +4,7 @@ import 'package:nocterm/nocterm.dart';
 
 import '../../models/subagent.dart';
 import 'subagent_config_store.dart';
+import 'subagent_manager.dart' show SubagentControllerLike;
 
 /// The live subagent-mode toggles + model-pool configuration.
 ///
@@ -16,14 +17,15 @@ import 'subagent_config_store.dart';
 /// about runs or the roster. M2's runner/tool wiring reads [toggles] and
 /// [pools] from here; this class stays the single source of truth for
 /// "is subagent mode on, and which models may agents run on".
-class SubagentController extends ChangeNotifier {
+class SubagentController extends ChangeNotifier
+    implements SubagentControllerLike {
   final SubagentConfigStore configStore;
   final String? startupWarning;
 
   SubagentRuntimeToggles _toggles;
   final SubagentConfig _pools;
 
-    // Private factory-shape constructor: `create` is the only public
+  // Private factory-shape constructor: `create` is the only public
   // entry (it does the async config read + fallback handling).
   // Positional formals — named parameters cannot start with `_`.
   SubagentController._(
@@ -60,10 +62,14 @@ class SubagentController extends ChangeNotifier {
 
   SubagentRuntimeToggles get toggles => _toggles;
   SubagentConfig get pools => _pools;
+  @override
   bool get workersOn => _toggles.workersOn;
+  @override
   bool get expertsOn => _toggles.expertsOn;
+  @override
   bool get anyOn => _toggles.anyOn;
 
+  @override
   SubagentModelConfig poolFor(SubagentRole role) => _pools.forRole(role);
 
   /// Flip one of the two independent switches. Returns a result with a
