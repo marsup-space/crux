@@ -67,6 +67,25 @@ void main() {
       expect(expert.name, 'aries'); // first zodiac id
     });
 
+    test('parallel hires do not lose the name-allocation race', () async {
+      // Regression: two `hire_agent` calls in one parallel tool batch
+      // both read the same table snapshot in `allocateName`, picked
+      // the same free name, and the loser's INSERT died on the UNIQUE
+      // constraint — surfacing as a session-ending `stream_error`
+      // (SqliteException 2067). The unique constraint must arbitrate:
+      // the loser re-allocates and retries instead of throwing.
+      final agents = await Future.wait([
+        for (var i = 0; i < 4; i++)
+          store.hire(role: SubagentRole.worker, model: 'zhipu/glm-5.3'),
+      ]);
+      final names = {for (final a in agents) a.name};
+      expect(names.length, agents.length, reason: 'names must be unique');
+      for (final agent in agents) {
+        final row = await store.byName(agent.name);
+        expect(row, isNotNull, reason: '${agent.name} must be persisted');
+      }
+    });
+
     test('busy → ready lifecycle + restart self-healing', () async {
       final agent = await store.hire(
         role: SubagentRole.worker,

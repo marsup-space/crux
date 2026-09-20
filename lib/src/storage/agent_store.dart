@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+import 'package:sqlite3/sqlite3.dart' show SqliteException;
 
 import '../models/subagent.dart';
 import '../utils/worker_constellations.dart';
@@ -76,31 +77,60 @@ class AgentStore {
   /// The model binding is permanent for the agent's lifetime (see the
   /// table docs): callers must have already resolved the model through
   /// the pool + concurrency + budget rules.
+  ///
+  /// `allocateName` reads the table then inserts — a check-then-act
+  /// window. Two hires racing in the same process (the chat executor
+  /// runs one round's tool calls in parallel via `Future.wait`) or in
+  /// two processes can pick the same name; the loser's INSERT fails
+  /// on the UNIQUE constraint. That failure is the *arbiter* the
+  /// `allocateName` docs promise: catch it, re-read the table (the
+  /// winner's row is now committed), and retry with the next free
+  /// name. Bounded so a pathological table can't loop forever.
   Future<db.Agent> hire({
     required SubagentRole role,
     required String model,
     String domain = 'general',
     int? createdBySessionId,
   }) async {
-    final name = await allocateName(role);
-    final now = DateTime.now().millisecondsSinceEpoch;
-    await _db
-        .into(_db.agents)
-        .insert(
-          db.AgentsCompanion.insert(
-            name: name,
-            role: role.name,
-            model: model,
-            domain: Value(domain),
-            createdBySessionId: Value(createdBySessionId),
-            // Hiring *is* a use: seed the "last used by" stamp so the
-            // chat agent bar shows the chip from the first moment.
-            lastUsedBySessionId: Value(createdBySessionId),
-            createdAt: now,
-            lastActiveAt: now,
-          ),
-        );
-    return (await byName(name))!;
+    const maxAttempts = 8;
+    Object? lastError;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      final name = await allocateName(role);
+      final now = DateTime.now().millisecondsSinceEpoch;
+      try {
+        await _db
+            .into(_db.agents)
+            .insert(
+              db.AgentsCompanion.insert(
+                name: name,
+                role: role.name,
+                model: model,
+                domain: Value(domain),
+                createdBySessionId: Value(createdBySessionId),
+                // Hiring *is* a use: seed the "last used by" stamp so
+                // the chat agent bar shows the chip from the first
+                // moment.
+                lastUsedBySessionId: Value(createdBySessionId),
+                createdAt: now,
+                lastActiveAt: now,
+              ),
+            );
+        return (await byName(name))!;
+      } on SqliteException catch (e) {
+        // 2067 = SQLITE_CONSTRAINT_UNIQUE (extended code 2067).
+        // Only the name collision is retryable here; anything else
+        // (NOT NULL, FK, disk I/O) must surface.
+        if (e.extendedResultCode != 2067) rethrow;
+        lastError = e;
+        // Small cooperative yield so a same-process racer commits its
+        // winning row before we re-read the table.
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    }
+    throw StateError(
+      'agent name allocation lost the uniqueness race $maxAttempts times: '
+      '$lastError',
+    );
   }
 
   /// Delete one roster row by name. The caller (config fullpane /

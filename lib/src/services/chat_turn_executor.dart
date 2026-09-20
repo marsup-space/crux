@@ -1606,7 +1606,24 @@ class ChatTurnExecutor {
                     } catch (_) {}
                   },
                 );
-                final result = await toolExecutor.executeTool(call, ctx);
+                ToolResult result;
+                try {
+                  result = await toolExecutor.executeTool(call, ctx);
+                } catch (e, st) {
+                  // Isolate the blast radius: one tool throwing inside
+                  // a parallel batch must NOT kill the whole round
+                  // (which would drop its siblings' results and end
+                  // the turn as a stream_error). Convert to an error
+                  // ToolResult so the model sees the failure and can
+                  // react, while the other calls in this batch still
+                  // land. Known symptom this fixes: two parallel
+                  // `hire_agent` calls racing on a unique name — the
+                  // loser used to abort the entire round.
+                  result = ToolResult.error(
+                    'Tool crashed: ${call.name} threw an unhandled '
+                    'exception: $e\n$st',
+                  );
+                }
                 final onCompleted = onToolExecutionCompleted;
                 if (onCompleted != null) {
                   try {
