@@ -19,7 +19,10 @@ class _Toggles implements SubagentControllerLike {
   final bool workers;
   final bool experts;
 
-  const _Toggles({this.workers = true, this.experts = true});
+  const _Toggles({
+    this.workers = true,
+    this.experts = true,
+  });
 
   @override
   bool get workersOn => workers;
@@ -165,13 +168,15 @@ void main() {
     });
 
     test('check on a ready agent returns the roster summary', () async {
+      final scope = Directory.current.path;
       final hired = await store.hire(
+        projectPath: scope,
         role: SubagentRole.expert,
         model: 'zhipu/glm-5.3',
         domain: 'auth',
       );
-      await store.markBusy(hired.name, sessionId: 1, intention: 'first look');
-      await store.markReady(hired.name);
+      await store.markBusy(scope, hired.name, sessionId: 1, intention: 'first look');
+      await store.markReady(scope, hired.name);
 
       final manager = managerWith(const _Toggles());
       final result = await manager.check(hired.name);
@@ -265,8 +270,19 @@ void main() {
     });
 
     test('find_agents lists the roster with role glyphs', () async {
-      await store.hire(role: SubagentRole.worker, model: 'a/b', domain: 'db');
-      await store.hire(role: SubagentRole.expert, model: 'a/b', domain: 'auth');
+      final scope = Directory.current.path;
+      await store.hire(
+        projectPath: scope,
+        role: SubagentRole.worker,
+        model: 'a/b',
+        domain: 'db',
+      );
+      await store.hire(
+        projectPath: scope,
+        role: SubagentRole.expert,
+        model: 'a/b',
+        domain: 'auth',
+      );
       final manager = SubagentManager(
         store: store,
         providerService: providers,

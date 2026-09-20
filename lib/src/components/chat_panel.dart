@@ -1732,7 +1732,10 @@ class _ChatPanelState extends State<ChatPanel> {
           availableModels: _configuredModelOptions(),
           loadRoster: _loadSubagentRoster,
           deleteAgent: (name) async {
-            await _store.agentStore.deleteByName(name);
+            await _store.agentStore.deleteByName(
+              Directory.current.path,
+              name,
+            );
             _scheduleRosterRefresh();
           },
           onClose: _closeFullpane,
@@ -2177,9 +2180,11 @@ class _ChatPanelState extends State<ChatPanel> {
 
   /// Roster rows for the home `subagent-pool` box and the config
   /// fullpane: the agents table joined with the live busy flags from
-  /// the run manager.
+  /// the run manager. Scoped to this workspace (v37) — other
+  /// projects' agents are invisible here.
   Future<List<SubagentRosterEntry>> _loadSubagentRoster() async {
-    final rows = await _store.agentStore.listAll();
+    final projectPath = Directory.current.path;
+    final rows = await _store.agentStore.listAll(projectPath);
     final busyNames = _subagentManager?.runs.keys.toSet() ?? const <String>{};
     return [
       for (final row in rows)

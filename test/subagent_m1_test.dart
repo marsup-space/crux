@@ -53,6 +53,7 @@ void main() {
 
     test('hire allocates pool names in order', () async {
       final first = await store.hire(
+        projectPath: '/w',
         role: SubagentRole.worker,
         model: 'zhipu/glm-5.3',
       );
@@ -61,6 +62,7 @@ void main() {
       expect(first.status, 'ready');
 
       final expert = await store.hire(
+        projectPath: '/w',
         role: SubagentRole.expert,
         model: 'zhipu/glm-5.3',
       );
@@ -69,17 +71,18 @@ void main() {
 
     test('busy → ready lifecycle + restart self-healing', () async {
       final agent = await store.hire(
+        projectPath: '/w',
         role: SubagentRole.worker,
         model: 'zhipu/glm-5.3',
       );
-      await store.markBusy(agent.name, sessionId: 7, intention: 'fix race');
-      final busy = await store.byName(agent.name);
+      await store.markBusy('/w', agent.name, sessionId: 7, intention: 'fix race');
+      final busy = await store.byName('/w', agent.name);
       expect(busy!.status, 'busy');
       expect(busy.lastIntention, 'fix race');
       expect(busy.runOwnerSessionId, 7);
 
-      await store.markReady(agent.name);
-      final ready = await store.byName(agent.name);
+      await store.markReady('/w', agent.name);
+      final ready = await store.byName('/w', agent.name);
       expect(ready!.status, 'ready');
       expect(ready.runOwnerSessionId, isNull);
       // Intention survives for the "(previous task)" tooltip line.
@@ -87,23 +90,25 @@ void main() {
 
       // Crash-orphan self-healing: a busy row left over from a dead
       // process resets on next startup.
-      await store.markBusy(agent.name, sessionId: 9, intention: 'again');
+      await store.markBusy('/w', agent.name, sessionId: 9, intention: 'again');
       await store.resetAllToReady();
-      final healed = await store.byName(agent.name);
+      final healed = await store.byName('/w', agent.name);
       expect(healed!.status, 'ready');
     });
 
     test('distillation write path', () async {
       final agent = await store.hire(
+        projectPath: '/w',
         role: SubagentRole.expert,
         model: 'zhipu/glm-5.3',
       );
       await store.writeDistilled(
+        projectPath: '/w',
         name: agent.name,
         knowledge: 'token refresh must single-flight',
         worklog: 'fixed race in refresh()',
       );
-      final reloaded = await store.byName(agent.name);
+      final reloaded = await store.byName('/w', agent.name);
       expect(reloaded!.knowledge, 'token refresh must single-flight');
       expect(reloaded.worklog, 'fixed race in refresh()');
     });
@@ -111,7 +116,11 @@ void main() {
     test('pool exhaustion cycles with numeric suffixes', () async {
       final names = <String>{};
       for (var i = 0; i < 14; i++) {
-        final agent = await store.hire(role: SubagentRole.expert, model: 'm');
+        final agent = await store.hire(
+          projectPath: '/w',
+          role: SubagentRole.expert,
+          model: 'm',
+        );
         expect(
           names.add(agent.name),
           isTrue,
@@ -119,9 +128,55 @@ void main() {
         );
       }
       // The 13th hire must be the first suffixed name.
-      final all = await store.listByRole(SubagentRole.expert);
+      final all = await store.listByRole('/w', SubagentRole.expert);
       expect(all.length, 14);
       expect(all.map((a) => a.name), contains('aries-2'));
+    });
+
+    test('rosters are workspace-scoped: names isolate per project', () async {
+      // Same constellation id can exist in two workspaces, and each
+      // workspace's allocation ignores the other's taken names.
+      final a1 = await store.hire(
+        projectPath: '/proj-a',
+        role: SubagentRole.worker,
+        model: 'm',
+      );
+      final a2 = await store.hire(
+        projectPath: '/proj-b',
+        role: SubagentRole.worker,
+        model: 'm',
+      );
+      expect(a1.name, 'andromeda');
+      expect(a2.name, 'andromeda'); // same first-free name in its own scope
+      expect(a1.name, a2.name); // (project_path, name) disambiguates
+
+      // Each workspace sees only its own row.
+      expect((await store.listAll('/proj-a')).map((a) => a.name), [
+        'andromeda',
+      ]);
+      expect((await store.listAll('/proj-b')).map((a) => a.name), [
+        'andromeda',
+      ]);
+      expect(await store.listAll('/proj-c'), isEmpty);
+
+      // byName is scoped: proj-a's row is invisible from proj-b's
+      // scope by the same name... it IS visible under its own scope
+      // only.
+      expect((await store.byName('/proj-a', 'andromeda'))!.projectPath,
+          '/proj-a');
+      expect((await store.byName('/proj-b', 'andromeda'))!.projectPath,
+          '/proj-b');
+
+      // Status flips stay scoped: marking proj-a's agent busy must
+      // not touch proj-b's row of the same name.
+      await store.markBusy('/proj-a', 'andromeda', sessionId: 1, intention: 'x');
+      expect((await store.byName('/proj-a', 'andromeda'))!.status, 'busy');
+      expect((await store.byName('/proj-b', 'andromeda'))!.status, 'ready');
+
+      // Deletes are scoped too.
+      await store.deleteByName('/proj-a', 'andromeda');
+      expect(await store.byName('/proj-a', 'andromeda'), isNull);
+      expect(await store.byName('/proj-b', 'andromeda'), isNotNull);
     });
   });
 

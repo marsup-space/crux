@@ -170,8 +170,22 @@ class CruxDatabase extends _$CruxDatabase {
   ///         keeps its chip after the run ends. Backfilled from
   ///         `createdBySessionId` so existing rows keep the old
   ///         semantics. The home roster stays a global view.
+  ///   v37 – workspace-scoped the agents roster: added
+  ///         `agents.projectPath` and changed the identity key from
+  ///         `UNIQUE(name)` to the composite primary key
+  ///         `(project_path, name)`. Each workspace now sees only its
+  ///         own agents (find_agents, the config fullpane, the home
+  ///         pool box) and allocates constellation names within its
+  ///         own scope — the same id (`orion`) can exist in different
+  ///         projects. SQLite cannot alter a primary key in place, so
+  ///         the migration rebuilds the table; existing rows are
+  ///         backfilled with the `project_path` of the session that
+  ///         hired them (`''` when that session is unknown — these
+  ///         stay visible in no workspace and are effectively
+  ///         retired, which is the safe default: leaking them into
+  ///         every project is the bug being fixed).
   @override
-  int get schemaVersion => 36;
+  int get schemaVersion => 37;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -592,6 +606,33 @@ CREATE TABLE IF NOT EXISTS project_notes (
             'UPDATE agents SET last_used_by_session_id = created_by_session_id',
           );
         }
+      }
+      if (from < 37) {
+        // Workspace-scope the roster (see the v37 schema-history
+        // note): the identity key changes from UNIQUE(name) to the
+        // composite (project_path, name) primary key. SQLite cannot
+        // ALTER a primary key in place, so rebuild the table via
+        // TableMigration (same shape as the v13 fileReadState PK
+        // change): drift creates the new-shape table, copies the
+        // shared columns across — `project_path` lands with its ''
+        // default — then drops and renames. The rebuild is a no-op
+        // shape-wise for a database that already created the table
+        // at the current schema via the `from < 33` branch above.
+        //
+        // Afterwards, backfill each row with the `project_path` of
+        // the session that hired it. Rows with no resolvable hiring
+        // session keep '' — they predate session tracking entirely,
+        // so attributing them to any workspace would be a guess;
+        // '' matches no workspace query, which retires them (the
+        // safe direction: leaking them into every project is the
+        // cross-workspace bug this migration fixes).
+        // ignore: experimental_member_use
+        await m.alterTable(TableMigration(agents));
+        await m.database.customStatement('''
+UPDATE agents SET project_path = COALESCE(
+  (SELECT s.project_path FROM sessions s
+   WHERE s.id = agents.created_by_session_id), '')
+''');
       }
     },
   );

@@ -8,6 +8,18 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+- **Workspace-scoped subagent roster** — the `agents` table gains a
+  `project_path` column (drift v37) and its identity key changes from
+  `UNIQUE(name)` to the composite `(project_path, name)`. Each workspace now
+  sees only its own agents (`find_agents`, the subagent config fullpane, the
+  home `subagent-pool` box) and allocates constellation names within its own
+  scope — hiring `orion` in one project no longer occupies the name in
+  another. Existing rows are backfilled with the `project_path` of the
+  session that hired them; rows with no resolvable hiring session are
+  retired (`''` matches no workspace), which is the safe direction — the
+  cross-workspace leak they would otherwise represent is the bug being
+  fixed.
+
 ## [1.1.0] - 2026-09-19
 
 fae62ca2

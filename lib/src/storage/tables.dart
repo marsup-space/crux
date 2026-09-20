@@ -276,6 +276,12 @@ class ShellMonitorLogs extends Table {
 /// no run exists, so every row simply reads as `ready` again — the
 /// v1 "stuck busy after restart" failure mode cannot occur.
 ///
+/// Rosters are workspace-scoped (v37): every query filters on
+/// [projectPath], so each project sees (and allocates constellation
+/// names within) its own agent set. The unique constraint is the
+/// composite `(project_path, name)` — the same constellation id may
+/// exist in different workspaces.
+///
 /// `busy` is the in-memory run flag mirrored here for cross-session
 /// visibility (another Crux instance's find_agents reads the table).
 /// In practice each process owns its runs; the column exists so the
@@ -283,9 +289,15 @@ class ShellMonitorLogs extends Table {
 /// rows are self-healing: a `busy` row with no live heartbeat owner
 /// is treated as `ready` by readers.
 class Agents extends Table {
+  /// Workspace this agent belongs to (v37). Matches
+  /// `sessions.project_path` of the session that hired it; `''` for
+  /// rows whose hiring session is unknown (legacy pre-v37 rows).
+  TextColumn get projectPath => text().withDefault(const Constant(''))();
+
   /// Stable constellation id, e.g. `orion` / `libra` / `orion-2`.
-  /// The UI renders a localized display name from this id.
-  TextColumn get name => text().unique()();
+  /// The UI renders a localized display name from this id. Unique
+  /// within a workspace (see [projectPath]).
+  TextColumn get name => text()();
 
   /// `worker` or `expert`.
   TextColumn get role => text()();
@@ -344,4 +356,7 @@ class Agents extends Table {
 
   IntColumn get createdAt => integer()();
   IntColumn get lastActiveAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {projectPath, name};
 }

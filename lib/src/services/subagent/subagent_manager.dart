@@ -46,6 +46,15 @@ class SubagentManager {
   final String workingDirectory;
   final String userLanguage;
 
+  /// The workspace scope for every roster operation (v37): hires,
+  /// lookups, name allocation and status flips all filter on this.
+  /// Equals [workingDirectory] — the process workspace root, which is
+  /// also where the runs execute. One manager serves one workspace,
+  /// so the in-memory `_runs` / `_queues` maps stay name-keyed; the
+  /// cross-workspace uniqueness lives in the store's composite
+  /// `(project_path, name)` key.
+  String get projectPath => workingDirectory;
+
   /// Upper bound for the one-shot coding-plan probe when no snapshot exists
   /// yet. Must exceed the slowest provider's usage-endpoint timeout (Codex's
   /// legacy `/wham/usage` allows 10s — see `codex_provider.dart`), otherwise
@@ -220,6 +229,7 @@ class SubagentManager {
           'saturated / out of budget. Configure it in config.toml.';
     }
     final profile = await store.hire(
+      projectPath: projectPath,
       role: role,
       model: model,
       domain: domain,
@@ -245,6 +255,7 @@ class SubagentManager {
       model = await _pickModelForHire(role, excludingCurrent: false) ?? model;
     }
     final forked = await store.hire(
+      projectPath: projectPath,
       role: role,
       model: model,
       domain: source.domain,
@@ -252,12 +263,13 @@ class SubagentManager {
     );
     if (source.knowledge.isNotEmpty || source.worklog.isNotEmpty) {
       await store.writeDistilled(
+        projectPath: projectPath,
         name: forked.name,
         knowledge: source.knowledge,
         worklog: source.worklog,
       );
     }
-    final fresh = (await store.byName(forked.name))!;
+    final fresh = (await store.byName(projectPath, forked.name))!;
     await _startRun(fresh, intention, message, sessionId);
     return 'agent://${source.name} was busy — forked to agent://${forked.name} '
         '(same domain knowledge, model $model) and dispatched the task.';
@@ -273,7 +285,7 @@ class SubagentManager {
     }
     runner.cancel();
     _queues.remove(agentName);
-    await store.markReady(agentName);
+    await store.markReady(projectPath, agentName);
     onRunsChanged?.call();
     return 'Cancelled agent://$agentName'
         '${reason == null ? '' : ' (reason: $reason)'}. '
@@ -289,7 +301,7 @@ class SubagentManager {
       return 'agent://$agentName — ${s.status} at round ${s.round}'
           '${s.lastTool == null ? '' : ', last tool: ${s.lastTool}'}';
     }
-    final profile = await store.byName(agentName);
+    final profile = await store.byName(projectPath, agentName);
     if (profile == null) return 'Unknown agent "$agentName".';
     return 'agent://$agentName — ready. Domain: ${profile.domain}, '
         'model: ${profile.model}, last intention: '
@@ -299,7 +311,7 @@ class SubagentManager {
   // ── Internals ────────────────────────────────────────────────
 
   Future<db.Agent?> _profileOrError(String agentName) =>
-      store.byName(agentName);
+      store.byName(projectPath, agentName);
 
   Future<void> _startRun(
     db.Agent profile,
@@ -308,6 +320,7 @@ class SubagentManager {
     int sessionId,
   ) async {
     await store.markBusy(
+      projectPath,
       profile.name,
       sessionId: sessionId,
       intention: intention,
@@ -327,6 +340,7 @@ class SubagentManager {
       userLanguage: userLanguage,
       contextCapacity: _contextCapacityFor(profile.model),
       onDistilled: (name, products) => store.writeDistilled(
+        projectPath: projectPath,
         name: name,
         knowledge: products.knowledge,
         worklog: products.worklog,
@@ -345,10 +359,10 @@ class SubagentManager {
     String report,
   ) async {
     _runs.remove(profile.name);
-    await store.markReady(profile.name);
+    await store.markReady(projectPath, profile.name);
     onRunsChanged?.call();
 
-    final fresh = await store.byName(profile.name);
+    final fresh = await store.byName(projectPath, profile.name);
     final envelope = subagentReportEnvelope(
       agentName: profile.name,
       role: _roleOf(profile),
@@ -364,7 +378,7 @@ class SubagentManager {
     if (queue != null && queue.isNotEmpty) {
       final next = queue.removeAt(0);
       if (queue.isEmpty) _queues.remove(profile.name);
-      final current = await store.byName(profile.name);
+      final current = await store.byName(projectPath, profile.name);
       if (current != null) {
         await _startRun(
           current,

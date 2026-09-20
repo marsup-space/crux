@@ -4798,6 +4798,18 @@ class $AgentsTable extends Agents with TableInfo<$AgentsTable, Agent> {
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
   $AgentsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _projectPathMeta = const VerificationMeta(
+    'projectPath',
+  );
+  @override
+  late final GeneratedColumn<String> projectPath = GeneratedColumn<String>(
+    'project_path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
   late final GeneratedColumn<String> name = GeneratedColumn<String>(
@@ -4806,7 +4818,6 @@ class $AgentsTable extends Agents with TableInfo<$AgentsTable, Agent> {
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
   );
   static const VerificationMeta _roleMeta = const VerificationMeta('role');
   @override
@@ -4937,6 +4948,7 @@ class $AgentsTable extends Agents with TableInfo<$AgentsTable, Agent> {
   );
   @override
   List<GeneratedColumn> get $columns => [
+    projectPath,
     name,
     role,
     domain,
@@ -4963,6 +4975,15 @@ class $AgentsTable extends Agents with TableInfo<$AgentsTable, Agent> {
   }) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
+    if (data.containsKey('project_path')) {
+      context.handle(
+        _projectPathMeta,
+        projectPath.isAcceptableOrUnknown(
+          data['project_path']!,
+          _projectPathMeta,
+        ),
+      );
+    }
     if (data.containsKey('name')) {
       context.handle(
         _nameMeta,
@@ -5070,11 +5091,15 @@ class $AgentsTable extends Agents with TableInfo<$AgentsTable, Agent> {
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => const {};
+  Set<GeneratedColumn> get $primaryKey => {projectPath, name};
   @override
   Agent map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return Agent(
+      projectPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}project_path'],
+      )!,
       name: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}name'],
@@ -5137,8 +5162,14 @@ class $AgentsTable extends Agents with TableInfo<$AgentsTable, Agent> {
 }
 
 class Agent extends DataClass implements Insertable<Agent> {
+  /// Workspace this agent belongs to (v37). Matches
+  /// `sessions.project_path` of the session that hired it; `''` for
+  /// rows whose hiring session is unknown (legacy pre-v37 rows).
+  final String projectPath;
+
   /// Stable constellation id, e.g. `orion` / `libra` / `orion-2`.
-  /// The UI renders a localized display name from this id.
+  /// The UI renders a localized display name from this id. Unique
+  /// within a workspace (see [projectPath]).
   final String name;
 
   /// `worker` or `expert`.
@@ -5198,6 +5229,7 @@ class Agent extends DataClass implements Insertable<Agent> {
   final int createdAt;
   final int lastActiveAt;
   const Agent({
+    required this.projectPath,
     required this.name,
     required this.role,
     required this.domain,
@@ -5215,6 +5247,7 @@ class Agent extends DataClass implements Insertable<Agent> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    map['project_path'] = Variable<String>(projectPath);
     map['name'] = Variable<String>(name);
     map['role'] = Variable<String>(role);
     map['domain'] = Variable<String>(domain);
@@ -5239,6 +5272,7 @@ class Agent extends DataClass implements Insertable<Agent> {
 
   AgentsCompanion toCompanion(bool nullToAbsent) {
     return AgentsCompanion(
+      projectPath: Value(projectPath),
       name: Value(name),
       role: Value(role),
       domain: Value(domain),
@@ -5267,6 +5301,7 @@ class Agent extends DataClass implements Insertable<Agent> {
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return Agent(
+      projectPath: serializer.fromJson<String>(json['projectPath']),
       name: serializer.fromJson<String>(json['name']),
       role: serializer.fromJson<String>(json['role']),
       domain: serializer.fromJson<String>(json['domain']),
@@ -5288,6 +5323,7 @@ class Agent extends DataClass implements Insertable<Agent> {
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
+      'projectPath': serializer.toJson<String>(projectPath),
       'name': serializer.toJson<String>(name),
       'role': serializer.toJson<String>(role),
       'domain': serializer.toJson<String>(domain),
@@ -5305,6 +5341,7 @@ class Agent extends DataClass implements Insertable<Agent> {
   }
 
   Agent copyWith({
+    String? projectPath,
     String? name,
     String? role,
     String? domain,
@@ -5319,6 +5356,7 @@ class Agent extends DataClass implements Insertable<Agent> {
     int? createdAt,
     int? lastActiveAt,
   }) => Agent(
+    projectPath: projectPath ?? this.projectPath,
     name: name ?? this.name,
     role: role ?? this.role,
     domain: domain ?? this.domain,
@@ -5341,6 +5379,9 @@ class Agent extends DataClass implements Insertable<Agent> {
   );
   Agent copyWithCompanion(AgentsCompanion data) {
     return Agent(
+      projectPath: data.projectPath.present
+          ? data.projectPath.value
+          : this.projectPath,
       name: data.name.present ? data.name.value : this.name,
       role: data.role.present ? data.role.value : this.role,
       domain: data.domain.present ? data.domain.value : this.domain,
@@ -5370,6 +5411,7 @@ class Agent extends DataClass implements Insertable<Agent> {
   @override
   String toString() {
     return (StringBuffer('Agent(')
+          ..write('projectPath: $projectPath, ')
           ..write('name: $name, ')
           ..write('role: $role, ')
           ..write('domain: $domain, ')
@@ -5389,6 +5431,7 @@ class Agent extends DataClass implements Insertable<Agent> {
 
   @override
   int get hashCode => Object.hash(
+    projectPath,
     name,
     role,
     domain,
@@ -5407,6 +5450,7 @@ class Agent extends DataClass implements Insertable<Agent> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is Agent &&
+          other.projectPath == this.projectPath &&
           other.name == this.name &&
           other.role == this.role &&
           other.domain == this.domain &&
@@ -5423,6 +5467,7 @@ class Agent extends DataClass implements Insertable<Agent> {
 }
 
 class AgentsCompanion extends UpdateCompanion<Agent> {
+  final Value<String> projectPath;
   final Value<String> name;
   final Value<String> role;
   final Value<String> domain;
@@ -5438,6 +5483,7 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
   final Value<int> lastActiveAt;
   final Value<int> rowid;
   const AgentsCompanion({
+    this.projectPath = const Value.absent(),
     this.name = const Value.absent(),
     this.role = const Value.absent(),
     this.domain = const Value.absent(),
@@ -5454,6 +5500,7 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
     this.rowid = const Value.absent(),
   });
   AgentsCompanion.insert({
+    this.projectPath = const Value.absent(),
     required String name,
     required String role,
     this.domain = const Value.absent(),
@@ -5474,6 +5521,7 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
        createdAt = Value(createdAt),
        lastActiveAt = Value(lastActiveAt);
   static Insertable<Agent> custom({
+    Expression<String>? projectPath,
     Expression<String>? name,
     Expression<String>? role,
     Expression<String>? domain,
@@ -5490,6 +5538,7 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
+      if (projectPath != null) 'project_path': projectPath,
       if (name != null) 'name': name,
       if (role != null) 'role': role,
       if (domain != null) 'domain': domain,
@@ -5510,6 +5559,7 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
   }
 
   AgentsCompanion copyWith({
+    Value<String>? projectPath,
     Value<String>? name,
     Value<String>? role,
     Value<String>? domain,
@@ -5526,6 +5576,7 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
     Value<int>? rowid,
   }) {
     return AgentsCompanion(
+      projectPath: projectPath ?? this.projectPath,
       name: name ?? this.name,
       role: role ?? this.role,
       domain: domain ?? this.domain,
@@ -5546,6 +5597,9 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    if (projectPath.present) {
+      map['project_path'] = Variable<String>(projectPath.value);
+    }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
     }
@@ -5594,6 +5648,7 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
   @override
   String toString() {
     return (StringBuffer('AgentsCompanion(')
+          ..write('projectPath: $projectPath, ')
           ..write('name: $name, ')
           ..write('role: $role, ')
           ..write('domain: $domain, ')
@@ -5687,64 +5742,66 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
   ]);
 }
 
-typedef $$SessionsTableCreateCompanionBuilder = SessionsCompanion Function({
-  Value<int> id,
-  Value<String> slug,
-  Value<String> title,
-  Value<String> model,
-  required SessionStatus status,
-  Value<String> agent,
-  Value<int?> parentId,
-  Value<String> projectPath,
-  Value<int> tokensIn,
-  Value<int> tokensOut,
-  Value<int> contextTokens,
-  Value<double> ttftMs,
-  Value<double> tokPerSec,
-  Value<int> promptCacheHitTokens,
-  Value<String> thinkingMode,
-  Value<String?> reasoningEffort,
-  Value<double?> temperatureOverride,
-  Value<String?> runningOwnerId,
-  Value<int?> runningHeartbeatAt,
-  Value<String?> kind,
-  Value<bool?> subagentWorkersOn,
-  Value<bool?> subagentExpertsOn,
-  required int createdAt,
-  required int updatedAt,
-  Value<int?> archivedAt,
-  Value<int?> pinnedAt,
-  Value<String?> systemPrompt,
-});
-typedef $$SessionsTableUpdateCompanionBuilder = SessionsCompanion Function({
-  Value<int> id,
-  Value<String> slug,
-  Value<String> title,
-  Value<String> model,
-  Value<SessionStatus> status,
-  Value<String> agent,
-  Value<int?> parentId,
-  Value<String> projectPath,
-  Value<int> tokensIn,
-  Value<int> tokensOut,
-  Value<int> contextTokens,
-  Value<double> ttftMs,
-  Value<double> tokPerSec,
-  Value<int> promptCacheHitTokens,
-  Value<String> thinkingMode,
-  Value<String?> reasoningEffort,
-  Value<double?> temperatureOverride,
-  Value<String?> runningOwnerId,
-  Value<int?> runningHeartbeatAt,
-  Value<String?> kind,
-  Value<bool?> subagentWorkersOn,
-  Value<bool?> subagentExpertsOn,
-  Value<int> createdAt,
-  Value<int> updatedAt,
-  Value<int?> archivedAt,
-  Value<int?> pinnedAt,
-  Value<String?> systemPrompt,
-});
+typedef $$SessionsTableCreateCompanionBuilder =
+    SessionsCompanion Function({
+      Value<int> id,
+      Value<String> slug,
+      Value<String> title,
+      Value<String> model,
+      required SessionStatus status,
+      Value<String> agent,
+      Value<int?> parentId,
+      Value<String> projectPath,
+      Value<int> tokensIn,
+      Value<int> tokensOut,
+      Value<int> contextTokens,
+      Value<double> ttftMs,
+      Value<double> tokPerSec,
+      Value<int> promptCacheHitTokens,
+      Value<String> thinkingMode,
+      Value<String?> reasoningEffort,
+      Value<double?> temperatureOverride,
+      Value<String?> runningOwnerId,
+      Value<int?> runningHeartbeatAt,
+      Value<String?> kind,
+      Value<bool?> subagentWorkersOn,
+      Value<bool?> subagentExpertsOn,
+      required int createdAt,
+      required int updatedAt,
+      Value<int?> archivedAt,
+      Value<int?> pinnedAt,
+      Value<String?> systemPrompt,
+    });
+typedef $$SessionsTableUpdateCompanionBuilder =
+    SessionsCompanion Function({
+      Value<int> id,
+      Value<String> slug,
+      Value<String> title,
+      Value<String> model,
+      Value<SessionStatus> status,
+      Value<String> agent,
+      Value<int?> parentId,
+      Value<String> projectPath,
+      Value<int> tokensIn,
+      Value<int> tokensOut,
+      Value<int> contextTokens,
+      Value<double> ttftMs,
+      Value<double> tokPerSec,
+      Value<int> promptCacheHitTokens,
+      Value<String> thinkingMode,
+      Value<String?> reasoningEffort,
+      Value<double?> temperatureOverride,
+      Value<String?> runningOwnerId,
+      Value<int?> runningHeartbeatAt,
+      Value<String?> kind,
+      Value<bool?> subagentWorkersOn,
+      Value<bool?> subagentExpertsOn,
+      Value<int> createdAt,
+      Value<int> updatedAt,
+      Value<int?> archivedAt,
+      Value<int?> pinnedAt,
+      Value<String?> systemPrompt,
+    });
 
 final class $$SessionsTableReferences
     extends BaseReferences<_$CruxDatabase, $SessionsTable, Session> {
@@ -6817,52 +6874,54 @@ typedef $$SessionsTableProcessedTableManager =
         bool shellMonitorLogsRefs,
       })
     >;
-typedef $$MessagesTableCreateCompanionBuilder = MessagesCompanion Function({
-  Value<int> id,
-  required int sessionId,
-  required String role,
-  Value<String> content,
-  Value<String> reasoningContent,
-  Value<String> reasoningSignature,
-  Value<int> reasoningTokens,
-  Value<int> thinkingDurationMs,
-  Value<String?> reasoningEffort,
-  Value<String> model,
-  Value<int> tokensIn,
-  Value<int> tokensOut,
-  Value<String> toolCalls,
-  Value<String> toolCallId,
-  Value<String> tldr,
-  Value<String?> error,
-  Value<int?> parentMsgId,
-  Value<String> images,
-  Value<int> parallelCount,
-  Value<String> meta,
-  required int createdAt,
-});
-typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
-  Value<int> id,
-  Value<int> sessionId,
-  Value<String> role,
-  Value<String> content,
-  Value<String> reasoningContent,
-  Value<String> reasoningSignature,
-  Value<int> reasoningTokens,
-  Value<int> thinkingDurationMs,
-  Value<String?> reasoningEffort,
-  Value<String> model,
-  Value<int> tokensIn,
-  Value<int> tokensOut,
-  Value<String> toolCalls,
-  Value<String> toolCallId,
-  Value<String> tldr,
-  Value<String?> error,
-  Value<int?> parentMsgId,
-  Value<String> images,
-  Value<int> parallelCount,
-  Value<String> meta,
-  Value<int> createdAt,
-});
+typedef $$MessagesTableCreateCompanionBuilder =
+    MessagesCompanion Function({
+      Value<int> id,
+      required int sessionId,
+      required String role,
+      Value<String> content,
+      Value<String> reasoningContent,
+      Value<String> reasoningSignature,
+      Value<int> reasoningTokens,
+      Value<int> thinkingDurationMs,
+      Value<String?> reasoningEffort,
+      Value<String> model,
+      Value<int> tokensIn,
+      Value<int> tokensOut,
+      Value<String> toolCalls,
+      Value<String> toolCallId,
+      Value<String> tldr,
+      Value<String?> error,
+      Value<int?> parentMsgId,
+      Value<String> images,
+      Value<int> parallelCount,
+      Value<String> meta,
+      required int createdAt,
+    });
+typedef $$MessagesTableUpdateCompanionBuilder =
+    MessagesCompanion Function({
+      Value<int> id,
+      Value<int> sessionId,
+      Value<String> role,
+      Value<String> content,
+      Value<String> reasoningContent,
+      Value<String> reasoningSignature,
+      Value<int> reasoningTokens,
+      Value<int> thinkingDurationMs,
+      Value<String?> reasoningEffort,
+      Value<String> model,
+      Value<int> tokensIn,
+      Value<int> tokensOut,
+      Value<String> toolCalls,
+      Value<String> toolCallId,
+      Value<String> tldr,
+      Value<String?> error,
+      Value<int?> parentMsgId,
+      Value<String> images,
+      Value<int> parallelCount,
+      Value<String> meta,
+      Value<int> createdAt,
+    });
 
 final class $$MessagesTableReferences
     extends BaseReferences<_$CruxDatabase, $MessagesTable, Message> {
@@ -7477,15 +7536,17 @@ class $$MessagesTableTableManager
                     >
                   >(state) {
                     if (sessionId) {
-                      state = state.withJoin(
-                        currentTable: table,
-                        currentColumn: table.sessionId,
-                        referencedTable: $$MessagesTableReferences
-                            ._sessionIdTable(db),
-                        referencedColumn: $$MessagesTableReferences
-                            ._sessionIdTable(db)
-                            .id,
-                      ) as T;
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.sessionId,
+                                referencedTable: $$MessagesTableReferences
+                                    ._sessionIdTable(db),
+                                referencedColumn: $$MessagesTableReferences
+                                    ._sessionIdTable(db)
+                                    .id,
+                              )
+                              as T;
                     }
 
                     return state;
@@ -7525,22 +7586,24 @@ typedef $$MessagesTableProcessedTableManager =
       Message,
       PrefetchHooks Function({bool sessionId, bool partsRefs})
     >;
-typedef $$PartsTableCreateCompanionBuilder = PartsCompanion Function({
-  Value<int> id,
-  required int messageId,
-  required int sessionId,
-  required String type,
-  Value<String> data,
-  required int createdAt,
-});
-typedef $$PartsTableUpdateCompanionBuilder = PartsCompanion Function({
-  Value<int> id,
-  Value<int> messageId,
-  Value<int> sessionId,
-  Value<String> type,
-  Value<String> data,
-  Value<int> createdAt,
-});
+typedef $$PartsTableCreateCompanionBuilder =
+    PartsCompanion Function({
+      Value<int> id,
+      required int messageId,
+      required int sessionId,
+      required String type,
+      Value<String> data,
+      required int createdAt,
+    });
+typedef $$PartsTableUpdateCompanionBuilder =
+    PartsCompanion Function({
+      Value<int> id,
+      Value<int> messageId,
+      Value<int> sessionId,
+      Value<String> type,
+      Value<String> data,
+      Value<int> createdAt,
+    });
 
 final class $$PartsTableReferences
     extends BaseReferences<_$CruxDatabase, $PartsTable, Part> {
@@ -7885,28 +7948,30 @@ class $$PartsTableTableManager
                     >
                   >(state) {
                     if (messageId) {
-                      state = state.withJoin(
-                        currentTable: table,
-                        currentColumn: table.messageId,
-                        referencedTable: $$PartsTableReferences._messageIdTable(
-                          db,
-                        ),
-                        referencedColumn: $$PartsTableReferences
-                            ._messageIdTable(db)
-                            .id,
-                      ) as T;
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.messageId,
+                                referencedTable: $$PartsTableReferences
+                                    ._messageIdTable(db),
+                                referencedColumn: $$PartsTableReferences
+                                    ._messageIdTable(db)
+                                    .id,
+                              )
+                              as T;
                     }
                     if (sessionId) {
-                      state = state.withJoin(
-                        currentTable: table,
-                        currentColumn: table.sessionId,
-                        referencedTable: $$PartsTableReferences._sessionIdTable(
-                          db,
-                        ),
-                        referencedColumn: $$PartsTableReferences
-                            ._sessionIdTable(db)
-                            .id,
-                      ) as T;
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.sessionId,
+                                referencedTable: $$PartsTableReferences
+                                    ._sessionIdTable(db),
+                                referencedColumn: $$PartsTableReferences
+                                    ._sessionIdTable(db)
+                                    .id,
+                              )
+                              as T;
                     }
 
                     return state;
@@ -8182,15 +8247,17 @@ class $$FileReadStateTableTableManager
                     >
                   >(state) {
                     if (sessionId) {
-                      state = state.withJoin(
-                        currentTable: table,
-                        currentColumn: table.sessionId,
-                        referencedTable: $$FileReadStateTableReferences
-                            ._sessionIdTable(db),
-                        referencedColumn: $$FileReadStateTableReferences
-                            ._sessionIdTable(db)
-                            .id,
-                      ) as T;
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.sessionId,
+                                referencedTable: $$FileReadStateTableReferences
+                                    ._sessionIdTable(db),
+                                referencedColumn: $$FileReadStateTableReferences
+                                    ._sessionIdTable(db)
+                                    .id,
+                              )
+                              as T;
                     }
 
                     return state;
@@ -8491,15 +8558,18 @@ class $$FileLastWriterTableTableManager
                     >
                   >(state) {
                     if (writerSessionId) {
-                      state = state.withJoin(
-                        currentTable: table,
-                        currentColumn: table.writerSessionId,
-                        referencedTable: $$FileLastWriterTableReferences
-                            ._writerSessionIdTable(db),
-                        referencedColumn: $$FileLastWriterTableReferences
-                            ._writerSessionIdTable(db)
-                            .id,
-                      ) as T;
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.writerSessionId,
+                                referencedTable: $$FileLastWriterTableReferences
+                                    ._writerSessionIdTable(db),
+                                referencedColumn:
+                                    $$FileLastWriterTableReferences
+                                        ._writerSessionIdTable(db)
+                                        .id,
+                              )
+                              as T;
                     }
 
                     return state;
@@ -8996,15 +9066,19 @@ class $$ShellMonitorLogsTableTableManager
                     >
                   >(state) {
                     if (sessionId) {
-                      state = state.withJoin(
-                        currentTable: table,
-                        currentColumn: table.sessionId,
-                        referencedTable: $$ShellMonitorLogsTableReferences
-                            ._sessionIdTable(db),
-                        referencedColumn: $$ShellMonitorLogsTableReferences
-                            ._sessionIdTable(db)
-                            .id,
-                      ) as T;
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.sessionId,
+                                referencedTable:
+                                    $$ShellMonitorLogsTableReferences
+                                        ._sessionIdTable(db),
+                                referencedColumn:
+                                    $$ShellMonitorLogsTableReferences
+                                        ._sessionIdTable(db)
+                                        .id,
+                              )
+                              as T;
                     }
 
                     return state;
@@ -9196,38 +9270,42 @@ typedef $$ProjectNotesTableProcessedTableManager =
       ProjectNote,
       PrefetchHooks Function()
     >;
-typedef $$AgentsTableCreateCompanionBuilder = AgentsCompanion Function({
-  required String name,
-  required String role,
-  Value<String> domain,
-  required String model,
-  Value<String> status,
-  Value<String> knowledge,
-  Value<String> worklog,
-  Value<String> lastIntention,
-  Value<int?> runOwnerSessionId,
-  Value<int?> createdBySessionId,
-  Value<int?> lastUsedBySessionId,
-  required int createdAt,
-  required int lastActiveAt,
-  Value<int> rowid,
-});
-typedef $$AgentsTableUpdateCompanionBuilder = AgentsCompanion Function({
-  Value<String> name,
-  Value<String> role,
-  Value<String> domain,
-  Value<String> model,
-  Value<String> status,
-  Value<String> knowledge,
-  Value<String> worklog,
-  Value<String> lastIntention,
-  Value<int?> runOwnerSessionId,
-  Value<int?> createdBySessionId,
-  Value<int?> lastUsedBySessionId,
-  Value<int> createdAt,
-  Value<int> lastActiveAt,
-  Value<int> rowid,
-});
+typedef $$AgentsTableCreateCompanionBuilder =
+    AgentsCompanion Function({
+      Value<String> projectPath,
+      required String name,
+      required String role,
+      Value<String> domain,
+      required String model,
+      Value<String> status,
+      Value<String> knowledge,
+      Value<String> worklog,
+      Value<String> lastIntention,
+      Value<int?> runOwnerSessionId,
+      Value<int?> createdBySessionId,
+      Value<int?> lastUsedBySessionId,
+      required int createdAt,
+      required int lastActiveAt,
+      Value<int> rowid,
+    });
+typedef $$AgentsTableUpdateCompanionBuilder =
+    AgentsCompanion Function({
+      Value<String> projectPath,
+      Value<String> name,
+      Value<String> role,
+      Value<String> domain,
+      Value<String> model,
+      Value<String> status,
+      Value<String> knowledge,
+      Value<String> worklog,
+      Value<String> lastIntention,
+      Value<int?> runOwnerSessionId,
+      Value<int?> createdBySessionId,
+      Value<int?> lastUsedBySessionId,
+      Value<int> createdAt,
+      Value<int> lastActiveAt,
+      Value<int> rowid,
+    });
 
 class $$AgentsTableFilterComposer
     extends Composer<_$CruxDatabase, $AgentsTable> {
@@ -9238,6 +9316,11 @@ class $$AgentsTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnFilters<String> get projectPath => $composableBuilder(
+    column: $table.projectPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get name => $composableBuilder(
     column: $table.name,
     builder: (column) => ColumnFilters(column),
@@ -9313,6 +9396,11 @@ class $$AgentsTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnOrderings<String> get projectPath => $composableBuilder(
+    column: $table.projectPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get name => $composableBuilder(
     column: $table.name,
     builder: (column) => ColumnOrderings(column),
@@ -9388,6 +9476,11 @@ class $$AgentsTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  GeneratedColumn<String> get projectPath => $composableBuilder(
+    column: $table.projectPath,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
 
@@ -9466,6 +9559,7 @@ class $$AgentsTableTableManager
               $$AgentsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
               ({
+                Value<String> projectPath = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<String> role = const Value.absent(),
                 Value<String> domain = const Value.absent(),
@@ -9481,6 +9575,7 @@ class $$AgentsTableTableManager
                 Value<int> lastActiveAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => AgentsCompanion(
+                projectPath: projectPath,
                 name: name,
                 role: role,
                 domain: domain,
@@ -9498,6 +9593,7 @@ class $$AgentsTableTableManager
               ),
           createCompanionCallback:
               ({
+                Value<String> projectPath = const Value.absent(),
                 required String name,
                 required String role,
                 Value<String> domain = const Value.absent(),
@@ -9513,6 +9609,7 @@ class $$AgentsTableTableManager
                 required int lastActiveAt,
                 Value<int> rowid = const Value.absent(),
               }) => AgentsCompanion.insert(
+                projectPath: projectPath,
                 name: name,
                 role: role,
                 domain: domain,

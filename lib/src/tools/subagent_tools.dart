@@ -72,7 +72,9 @@ class FindAgentsTool extends SubagentToolBase {
   String get description =>
       'Find subagents on the roster. Returns EVERY agent (busy and ready) '
       'by default — you are looking for who knows a domain, not who is '
-      'free. Optionally filter by role. `query` fuzzy-matches name, '
+      'free. The roster is scoped to this workspace: agents hired in '
+      'other projects are not visible (and do not occupy names here). '
+      'Optionally filter by role. `query` fuzzy-matches name, '
       'domain, and the current/last task intention. Each row shows: '
       'name (agent://<id>), role (worker ✎ / expert ✦), domain, model, '
       'status, and the current (busy) or last (ready) intention. '
@@ -106,7 +108,7 @@ class FindAgentsTool extends SubagentToolBase {
     final query = (args['query'] as String?)?.trim() ?? '';
     final role = (args['role'] as String?) ?? 'all';
 
-    final all = await manager.store.listAll();
+    final all = await manager.store.listAll(manager.projectPath);
     final filtered = [
       for (final agent in all)
         if (role == 'all' ||

@@ -13,6 +13,13 @@ import 'database.dart' as db;
 /// started them and never touch this table beyond flipping `status` and
 /// `run_owner_session_id`.
 ///
+/// Rosters are workspace-scoped (v37): every method takes a
+/// [projectPath] scope and filters on it, so each workspace sees only
+/// its own agents, and constellation names are allocated within the
+/// scope — the same id (`orion`) can exist in different workspaces.
+/// Callers pass the workspace root (the session's `projectPath`, which
+/// for workspace sessions is `Directory.current.path`).
+///
 /// A single instance is shared app-wide (same lifetime as the database
 /// connection — see [SessionStore.agentStore]).
 class AgentStore {
@@ -20,40 +27,48 @@ class AgentStore {
 
   AgentStore(this._db);
 
-  /// All roster rows, ordered by recency of activity.
-  Future<List<db.Agent>> listAll() {
+  /// All roster rows in [projectPath], ordered by recency of activity.
+  Future<List<db.Agent>> listAll(String projectPath) {
     final query = _db.select(_db.agents)
+      ..where((a) => a.projectPath.equals(projectPath))
       ..orderBy([(a) => OrderingTerm.desc(a.lastActiveAt)]);
     return query.get();
   }
 
-  /// All roster rows for one role.
-  Future<List<db.Agent>> listByRole(SubagentRole role) {
+  /// All roster rows for one role, within [projectPath].
+  Future<List<db.Agent>> listByRole(
+    String projectPath,
+    SubagentRole role,
+  ) {
     final query = _db.select(_db.agents)
+      ..where((a) => a.projectPath.equals(projectPath))
       ..where((a) => a.role.equals(role.name))
       ..orderBy([(a) => OrderingTerm.desc(a.lastActiveAt)]);
     return query.get();
   }
 
-  /// Look up one agent by its persisted constellation id (`orion`).
-  Future<db.Agent?> byName(String name) {
+  /// Look up one agent by its persisted constellation id (`orion`)
+  /// within [projectPath]. The composite key is (projectPath, name),
+  /// so a name alone is ambiguous across workspaces.
+  Future<db.Agent?> byName(String projectPath, String name) {
     final query = _db.select(_db.agents)
+      ..where((a) => a.projectPath.equals(projectPath))
       ..where((a) => a.name.equals(name.trim().toLowerCase()));
     return query.getSingleOrNull();
   }
 
-  /// Allocate the next free constellation name for [role], skipping ids
-  /// already present in the table. When the pool cycles, appends a
-  /// numeric suffix (`orion-2`, `orion-3`, …) deterministic over the
-  /// existing rows, so two processes allocating in the same table
-  /// converge on the same candidate set (the unique constraint is the
-  /// final arbiter).
-  Future<String> allocateName(SubagentRole role) async {
+  /// Allocate the next free constellation name for [role] within
+  /// [projectPath], skipping ids already taken in that workspace.
+  /// When the pool cycles, appends a numeric suffix (`orion-2`,
+  /// `orion-3`, …) deterministic over the existing rows, so two
+  /// processes allocating in the same table converge on the same
+  /// candidate set (the unique constraint is the final arbiter).
+  Future<String> allocateName(String projectPath, SubagentRole role) async {
     final pool = role == SubagentRole.worker
         ? kWorkerConstellations
         : kExpertConstellations;
     final taken = {
-      for (final row in await _db.select(_db.agents).get()) row.name,
+      for (final row in await listAll(projectPath)) row.name,
     };
     // Unsuffixed ids first, in pool order.
     for (final constellation in pool) {
@@ -77,17 +92,19 @@ class AgentStore {
   /// table docs): callers must have already resolved the model through
   /// the pool + concurrency + budget rules.
   Future<db.Agent> hire({
+    required String projectPath,
     required SubagentRole role,
     required String model,
     String domain = 'general',
     int? createdBySessionId,
   }) async {
-    final name = await allocateName(role);
+    final name = await allocateName(projectPath, role);
     final now = DateTime.now().millisecondsSinceEpoch;
     await _db
         .into(_db.agents)
         .insert(
           db.AgentsCompanion.insert(
+            projectPath: Value(projectPath),
             name: name,
             role: role.name,
             model: model,
@@ -100,17 +117,18 @@ class AgentStore {
             lastActiveAt: now,
           ),
         );
-    return (await byName(name))!;
+    return (await byName(projectPath, name))!;
   }
 
-  /// Delete one roster row by name. The caller (config fullpane /
-  /// manager) is responsible for refusing deletes of busy agents —
-  /// this store layer only removes the identity and its distilled
-  /// memory.
-  Future<void> deleteByName(String name) async {
+  /// Delete one roster row by name within [projectPath]. The caller
+  /// (config fullpane / manager) is responsible for refusing deletes
+  /// of busy agents — this store layer only removes the identity and
+  /// its distilled memory.
+  Future<void> deleteByName(String projectPath, String name) async {
     await (_db.delete(
       _db.agents,
-    )..where((a) => a.name.equals(name.trim().toLowerCase()))).go();
+    )..where((a) => a.projectPath.equals(projectPath))
+     ..where((a) => a.name.equals(name.trim().toLowerCase()))).go();
   }
 
   /// Mark [name] busy under [sessionId] and record the dispatched
@@ -118,12 +136,16 @@ class AgentStore {
   /// a use, regardless of who hired the agent. No-op when the agent does
   /// not exist.
   Future<void> markBusy(
+    String projectPath,
     String name, {
     required int sessionId,
     required String intention,
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
-    await (_db.update(_db.agents)..where((a) => a.name.equals(name))).write(
+    await (_db.update(_db.agents)
+          ..where((a) => a.projectPath.equals(projectPath))
+          ..where((a) => a.name.equals(name)))
+        .write(
       db.AgentsCompanion(
         status: Value('busy'),
         lastIntention: Value(intention),
@@ -137,9 +159,15 @@ class AgentStore {
   /// Mark [name] ready again. Clears the run owner and stamps activity,
   /// but deliberately keeps `lastUsedBySessionId` (the bar needs it to
   /// still show the chip once the run ends).
-  Future<void> markReady(String name) async {
+  Future<void> markReady(
+    String projectPath,
+    String name,
+  ) async {
     final now = DateTime.now().millisecondsSinceEpoch;
-    await (_db.update(_db.agents)..where((a) => a.name.equals(name))).write(
+    await (_db.update(_db.agents)
+          ..where((a) => a.projectPath.equals(projectPath))
+          ..where((a) => a.name.equals(name)))
+        .write(
       db.AgentsCompanion(
         status: Value('ready'),
         runOwnerSessionId: Value(null),
@@ -151,12 +179,16 @@ class AgentStore {
   /// Overwrite the distilled memory fields (the distillation pipeline's
   /// write path) and stamp activity.
   Future<void> writeDistilled({
+    required String projectPath,
     required String name,
     required String knowledge,
     required String worklog,
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
-    await (_db.update(_db.agents)..where((a) => a.name.equals(name))).write(
+    await (_db.update(_db.agents)
+          ..where((a) => a.projectPath.equals(projectPath))
+          ..where((a) => a.name.equals(name)))
+        .write(
       db.AgentsCompanion(
         knowledge: Value(knowledge),
         worklog: Value(worklog),
@@ -169,6 +201,8 @@ class AgentStore {
   /// Called once at startup: no run survived the process, so no agent
   /// can still be busy. The `lastIntention` stays (it feeds the
   /// "previous task" tooltip line), only the liveness flags clear.
+  /// Not project-scoped: a busy row is busy regardless of workspace,
+  /// and no run survived THIS process.
   Future<void> resetAllToReady() async {
     await (_db.update(_db.agents)..where((a) => a.status.equals('busy'))).write(
       db.AgentsCompanion(
