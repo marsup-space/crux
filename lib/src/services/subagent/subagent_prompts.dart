@@ -186,7 +186,11 @@ String subagentModeAnnouncement({
       'investigation and diagnosis — reading code to find a root cause, '
       'tracing a call chain, locating where something lives. You orchestrate: '
       'decompose, dispatch, verify. You never do the legwork yourself, even '
-      'with read-only tools.',
+      'with read-only tools. Parallelize aggressively: whenever a task can '
+      'split into independent chunks, split it and dispatch each chunk to its '
+      'OWN worker — they run concurrently in the background, so a batch of '
+      'small pieces finishes faster than one long serial run, and each '
+      'worker keeps a narrow context.',
     );
   }
   if (expertsOn) {
@@ -197,8 +201,15 @@ String subagentModeAnnouncement({
     );
   }
   buffer.writeAll([
-    'Workflow:\n'
-        '- Domains are NARROW: prefer a specific label like "token-refresh" '
+    'Workflow:\n',
+    if (workersOn)
+      '- Parallelize: split a large task into independent, non-overlapping '
+          'chunks and dispatch each chunk to a DIFFERENT worker — send_agent '
+          'returns immediately and runs execute in the background concurrently. '
+          'Keep chunks disjoint: separate files/areas, no ordering dependency, '
+          'so results compose without merge conflicts. Never hand the same '
+          'region to two agents.\n',
+    '- Domains are NARROW: prefer a specific label like "token-refresh" '
         'or "home-rendering" over a broad one like "general" or "ui". If '
         'find_agents shows nobody owns this specific domain, hire a fresh '
         'agent — do NOT reuse an unrelated one: it pollutes that agent\'s '

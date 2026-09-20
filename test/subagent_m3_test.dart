@@ -18,6 +18,8 @@ void main() {
       expect(text, contains('send_agent'));
       expect(text, contains('find_agents'));
       expect(text, contains('report granularity'));
+      expect(text, contains('Parallelize'));
+      expect(text, contains('DIFFERENT worker'));
       expect(text, isNot(contains('Expert consultation')));
     });
 
@@ -25,6 +27,7 @@ void main() {
       final text = subagentModeAnnouncement(workersOn: false, expertsOn: true);
       expect(text, contains('Expert consultation is ON'));
       expect(text, isNot(contains('Worker dispatch is ON')));
+      expect(text, isNot(contains('Parallelize')));
     });
 
     test('both on: middle mode names both', () {
