@@ -98,6 +98,8 @@ class _TogglesOn implements SubagentControllerLike {
   @override
   bool get anyOn => true;
   @override
+  int? get roundLimit => 40;
+  @override
   SubagentModelConfig poolFor(SubagentRole role) =>
       const SubagentConfig().forRole(role);
 }

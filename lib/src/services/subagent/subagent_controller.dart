@@ -169,6 +169,12 @@ class SubagentController extends ChangeNotifier
   @override
   bool get anyOn => toggles.anyOn;
 
+  /// The global agent-run round limit (null = unlimited). Cached with
+  /// the model pools at create / [reloadPools] time, so a config
+  /// fullpane save takes effect on the next dispatch.
+  @override
+  int? get roundLimit => _pools.maxRounds;
+
   @override
   SubagentModelConfig poolFor(SubagentRole role) => _pools.forRole(role);
 

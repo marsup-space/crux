@@ -30,6 +30,8 @@ import 'subagent_prompts.dart';
 ///
 /// Round cap: a run that needs more than [maxRounds] LLM rounds is
 /// stopped and told to report what it has (the report says so).
+/// `null` means no cap — the run only ends when the model answers
+/// without tool calls, fails, or is cancelled.
 class SubagentRunner {
   final String agentName;
   final db.Agent profile;
@@ -50,7 +52,10 @@ class SubagentRunner {
   /// Streaming-status callback for check_agent / UI chips.
   final void Function(SubagentRunStatus status)? onStatus;
 
-  final int maxRounds;
+  /// Maximum LLM rounds before the run is stopped and told to report.
+  /// Null = unlimited (the run ends only on a terminal answer, an
+  /// error, or cancel).
+  final int? maxRounds;
   final String userLanguage;
   final String workingDirectory;
   final int sessionId;
@@ -137,6 +142,9 @@ class SubagentRunner {
       return;
     }
     final (provider, apiKey, modelId) = resolved;
+    // Local copy so the nullable round cap promotes in the comparisons
+    // below (a public field never promotes).
+    final cap = maxRounds;
 
     // Build the opening context: system prompt (identity + distilled
     // memory + assignment) followed by the dispatching message.
@@ -160,7 +168,7 @@ class SubagentRunner {
     var roundReport = '';
     var fullEvents = 0;
 
-    while (_round < maxRounds && !_cancelled) {
+    while ((cap == null || _round < cap) && !_cancelled) {
       // ── Three-stage context gate (plan §上下文与蒸馏) ──────────
       // Estimate the running history against a working fraction of
       // the model's window (the tool definitions and the response
@@ -305,11 +313,11 @@ class SubagentRunner {
       );
       return;
     }
-    if (_round >= maxRounds) {
+    if (cap != null && _round >= cap) {
       _finish(
         'completed',
         '${roundReport.isEmpty ? '(no final text)' : roundReport}\n\n'
-            '[Stopped at the $maxRounds-round cap. If more work is needed, '
+            '[Stopped at the $cap-round cap. If more work is needed, '
             're-dispatch with send_agent.]',
       );
       return;

@@ -338,6 +338,7 @@ class SubagentManager {
       sessionId: sessionId,
       workingDirectory: workingDirectory,
       userLanguage: userLanguage,
+      maxRounds: toggles.roundLimit,
       contextCapacity: _contextCapacityFor(profile.model),
       onDistilled: (name, products) => store.writeDistilled(
         projectPath: projectPath,
@@ -481,6 +482,10 @@ abstract class SubagentControllerLike {
   bool get workersOn;
   bool get expertsOn;
   bool get anyOn;
+
+  /// The global agent-run round limit (null = unlimited). Read live at
+  /// each dispatch so a config change applies without a restart.
+  int? get roundLimit;
   SubagentModelConfig poolFor(SubagentRole role);
 }
 

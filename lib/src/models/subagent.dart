@@ -148,9 +148,17 @@ class SubagentConfig {
   final SubagentModelConfig workers;
   final SubagentModelConfig experts;
 
+  /// Agent-run round limit: how many LLM rounds one subagent run may
+  /// take before it is stopped and told to report what it has.
+  /// `null` means no cap (∞ unlimited). Defaults to 40 when the
+  /// config omits the key; persisted as `max_rounds` in the
+  /// `[subagent]` section.
+  final int? maxRounds;
+
   const SubagentConfig({
     this.workers = const SubagentModelConfig(),
     this.experts = const SubagentModelConfig(),
+    this.maxRounds = 40,
   });
 
   SubagentModelConfig forRole(SubagentRole role) => switch (role) {
@@ -161,17 +169,20 @@ class SubagentConfig {
   SubagentConfig copyWith({
     SubagentModelConfig? workers,
     SubagentModelConfig? experts,
+    int? maxRounds,
   }) => SubagentConfig(
     workers: workers ?? this.workers,
     experts: experts ?? this.experts,
+    maxRounds: maxRounds ?? this.maxRounds,
   );
 
   @override
   bool operator ==(Object other) =>
       other is SubagentConfig &&
       other.workers == workers &&
-      other.experts == experts;
+      other.experts == experts &&
+      other.maxRounds == maxRounds;
 
   @override
-  int get hashCode => Object.hash(workers, experts);
+  int get hashCode => Object.hash(workers, experts, maxRounds);
 }

@@ -11,6 +11,7 @@ import 'ui/button.dart';
 import 'ui/fullpane.dart';
 import 'ui/hoverable.dart';
 import 'ui/multi_button.dart';
+import 'ui/round_limit_slider.dart';
 
 /// The subagent configuration fullpane — opened from the home
 /// `subagent-pool` box (Enter) or the `subagent-config` plugin's
@@ -26,6 +27,8 @@ import 'ui/multi_button.dart';
 ///   │ │ [+ add model]      │  │ [+ add model]    │  │
 ///   │ └────────────────────┘  └──────────────────┘  │
 ///   ├───────────────────────────────────────────────┤
+///   │ Round limit  ──draggable bar 32..100── ∞ 40轮 │
+///   ├───────────────────────────────────────────────┤
 ///   │ Roster — one hoverable row per agent, `delete` segment │
 ///   └───────────────────────────────────────────────┘
 ///
@@ -34,7 +37,8 @@ import 'ui/multi_button.dart';
 /// subagent_experts_on) with their own always-mounted home in the agent
 /// bar above the toolbar (`SubagentBar`) and in the home
 /// `subagent-pool` box. This pane owns only the global model pools — the
-/// one thing that is genuinely config.toml — plus the roster.
+/// one thing that is genuinely config.toml — the agent round limit, and
+/// the roster.
 ///
 /// Pool edits are copy-on-edit: the in-editor lists diverge from the
 /// persisted config until `Ctrl+S` / the Save button, so a
@@ -89,6 +93,10 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
   /// Keyboard cursor row inside the picker (mouse clicks bypass it).
   int _pickRow = 0;
 
+  /// The in-editor agent round limit (`null` = unlimited). Copy-on-edit
+  /// like the pools: Save persists it to `[subagent] max_rounds`.
+  int? _roundLimit;
+
   bool _dirty = false;
   bool _savedFlash = false;
   List<SubagentRosterEntry> _roster = const [];
@@ -107,6 +115,7 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
     setState(() {
       _pools[SubagentRole.worker] = [...config.workers.models];
       _pools[SubagentRole.expert] = [...config.experts.models];
+      _roundLimit = config.maxRounds;
       _dirty = false;
     });
     await _reloadRoster();
@@ -123,6 +132,7 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
       SubagentConfig(
         workers: SubagentModelConfig(models: _pools[SubagentRole.worker]!),
         experts: SubagentModelConfig(models: _pools[SubagentRole.expert]!),
+        maxRounds: _roundLimit,
       ),
     );
     // The manager's hire path reads pools through the controller's
@@ -165,6 +175,16 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
     if (next < 1 || next > 64) return;
     setState(() {
       list[index] = SubagentModelEntry(model: entry.model, concurrency: next);
+      _dirty = true;
+    });
+  }
+
+  /// Slider callback: `null` = unlimited, otherwise clamp to 32..100.
+  void _setRoundLimit(int? value) {
+    final next = value?.clamp(32, 100);
+    if (next == _roundLimit) return;
+    setState(() {
+      _roundLimit = next;
       _dirty = true;
     });
   }
@@ -236,6 +256,8 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
                   ? _poolsRow(theme, s)
                   : _pickerPanel(theme, s),
               Divider(color: theme.outline, height: 1),
+              _roundLimitSection(theme, s),
+              Divider(color: theme.outline, height: 1),
               _rosterSection(theme, s),
             ],
           ),
@@ -302,6 +324,50 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
             glyph: '✦',
             title: s.t('subagent.bar.experts'),
           ),
+        ),
+      ],
+    );
+  }
+
+  /// The agent-run round-limit control: a labeled draggable bar
+  /// ([RoundLimitSlider]) over the 32..100 range plus the `∞`
+  /// unlimited end state. Copy-on-edit like the pools — the current
+  /// value reads live in the label while dragging.
+  Component _roundLimitSection(CruxThemeData theme, Strings s) {
+    final value = _roundLimit;
+    final valueLabel = value == null
+        ? s.t('subagent.config.unlimited')
+        : s.t('subagent.config.rounds', {'n': '$value'});
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Text(
+              s.t('subagent.config.roundLimit'),
+              style: TextStyle(
+                color: theme.onSurfaceDim,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              valueLabel,
+              style: TextStyle(
+                color: theme.accent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        RoundLimitSlider(
+          value: value,
+          onChanged: _setRoundLimit,
+        ),
+        Text(
+          s.t('subagent.config.roundLimitHint'),
+          style: TextStyle(color: theme.onSurfaceDim),
         ),
       ],
     );

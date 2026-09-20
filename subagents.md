@@ -128,6 +128,7 @@ models = [
 一段简短使用指南（crux 系统提示格式），内容要点：
 
 - 你现在处于 worker/expert subagent 模式；动手的活（edit/write/bash 类）**必须** send_agent 派给 worker，自己只做拆解、派发、验收
+- **大任务先拆**：拆成多个独立、可并行的子任务，分别派给**不同** worker 并发执行（send_agent 即时返回、后台并发跑；子任务之间保持不重叠、无顺序依赖，结果可直接拼装）
 - 拿不准方案/需要把关时 hire 或 send 一个 expert 请教
 - find_agents 先看有谁；check_agent 问进度；cancel_agent 刹车
 - 派活时 message 里写清：任务边界、验收标准、**报告颗粒度**
@@ -197,7 +198,7 @@ models = [
 - [x] 模型分配：池序 + 并发 + 额度检查；hire 绑定死、fork 优先继承源模型（满载/耗尽才 fallback）
 - [x] 5 工具实现（`subagent_tools.dart`）：find（fuzzy 六级 + ✎/✦ 角色 glyph）/ hire / send（queue+fork）/ check（busy 快照 / ready 零调用档案摘要）/ cancel——send/hire **即时返回**，run 后台执行；模式 off 时五工具统一重定向提示（零 cache 失效）
 - [x] 报告送回：系统信封事件（`[Crux system note — subagent report]` 模板，from/intention/status/report/next 五段），经 sendTurn 注入主会话唤醒主 agent；wire 层空 user 行闸门双保险
-- [x] 轮次上限（40 轮，超限报告并提示 re-dispatch）+ agentBubble meta 全程打点（spawn/send/read/cancel）
+- [x] 轮次上限（默认 40 轮；`[subagent] max_rounds` 可配置 32–100 或 `"unlimited"`（无限），配置 fullpane 提供拖拽条调节，超限报告并提示 re-dispatch）+ agentBubble meta 全程打点（spawn/send/read/cancel）
 
 ### M3 — 模式行为 ✅
 

@@ -449,6 +449,11 @@ const Map<String, String> _en = {
   'subagent.config.noModels':
       'no configured models — run /provider <name> <key> first',
   'subagent.config.pickHint': '↑↓ select · Enter add · Esc cancel',
+  'subagent.config.roundLimit': 'Round limit',
+  'subagent.config.rounds': '{n} rounds',
+  'subagent.config.unlimited': '∞ unlimited',
+  'subagent.config.roundLimitHint':
+      'drag to set · 32–100 rounds, ∞ = no cap',
   'subagent.plugin.configure': 'configure',
   'chat.bubble.you': 'You',
   'chat.bubble.crux': 'Crux',
@@ -1199,6 +1204,10 @@ const Map<String, String> _zh = {
   'subagent.config.pickModel': '选择模型（仅已配置的提供商）',
   'subagent.config.noModels': '没有已配置的模型——先运行 /provider <名称> <密钥>',
   'subagent.config.pickHint': '↑↓ 选择 · 回车添加 · Esc 取消',
+  'subagent.config.roundLimit': '轮次上限',
+  'subagent.config.rounds': '{n} 轮',
+  'subagent.config.unlimited': '∞ 无限',
+  'subagent.config.roundLimitHint': '拖动设置 · 32–100 轮，∞ = 不设上限',
   'subagent.plugin.configure': '配置',
   'chat.bubble.you': '你',
   'chat.bubble.crux': 'Crux',

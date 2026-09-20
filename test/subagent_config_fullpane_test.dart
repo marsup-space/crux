@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:crux/src/components/subagent_config_fullpane.dart';
+import 'package:crux/src/models/subagent.dart';
 import 'package:crux/src/services/subagent/subagent_config_store.dart';
 import 'package:crux/src/services/subagent/subagent_controller.dart';
 import 'package:crux/src/theme/crux_theme.dart';
@@ -131,7 +132,7 @@ void main() {
         ],
       );
 
-      final ts = tester.terminalState;
+      var ts = tester.terminalState;
 
       // Pool rows: consecutive model entries sit on adjacent rows.
       final first = ts.findText('zhipu/glm-4.5 ×2').single;
@@ -151,6 +152,131 @@ void main() {
       expect(rosterSecond.y - rosterFirst.y, 1);
     }, size: const Size(100, 40));
   });
+
+  group('round limit', () {
+    test('absent max_rounds renders the 40 default and the ∞ end state', () async {
+      await testNocterm('subagent round limit default', (tester) async {
+        await _mount(tester, file);
+        final text = tester.terminalState.getText();
+
+        expect(text, contains('Round limit'));
+        expect(text, contains('40 rounds'));
+        expect(text, contains('drag to set'));
+        // The slider row carries both the `├` min stop and the `∞` end
+        // state (the label row's `∞ unlimited` has no `├` beside it).
+        final inf = _sliderInf(tester.terminalState);
+        final left = _sliderLeft(tester.terminalState, inf);
+        expect(inf.x - left.x, greaterThan(60)); // a wide draggable track
+      }, size: const Size(100, 40));
+    });
+
+    test('dragging sets values live, marks unsaved, and save persists', () async {
+      await testNocterm('subagent round limit drag', (tester) async {
+        await _mount(tester, file);
+        var ts = tester.terminalState;
+        final inf = _sliderInf(ts);
+        final left = _sliderLeft(ts, inf);
+        final width = inf.x - left.x + 1; // includes the ∞ cell
+
+        // Midpoint of the finite range 32..100 → 66 rounds.
+        final midCell = (width - 2) ~/ 2;
+        await _dragSlider(tester, left.x + midCell, inf.y, left.x + midCell);
+        ts = tester.terminalState;
+        expect(ts.getText(), contains('66 rounds'));
+        expect(ts.getText(), contains('unsaved'));
+
+        // Far right of the finite range → 100 rounds.
+        await _dragSlider(tester, left.x + midCell, inf.y, inf.x - 1);
+        ts = tester.terminalState;
+        expect(ts.getText(), contains('100 rounds'));
+
+        // Onto the ∞ cell → unlimited.
+        await _dragSlider(tester, inf.x - 1, inf.y, inf.x);
+        ts = tester.terminalState;
+        expect(ts.getText(), contains('∞ unlimited'));
+
+        // Save persists `max_rounds = "unlimited"`.
+        final save = ts.findText('Save').reduce((a, b) => a.y < b.y ? a : b);
+        await tester.tap(save.x + 1, save.y);
+        await _pumpAsync(tester);
+
+        final store = SubagentConfigStore(file);
+        expect((await store.readPools()).maxRounds, isNull);
+        expect(file.readAsStringSync(), contains("max_rounds = 'unlimited'"));
+      }, size: const Size(100, 40));
+    });
+  });
+
+  group('max_rounds config round trip', () {
+    test('absent → 40 default; out-of-range clamps to 32..100', () async {
+      await file.writeAsString('''
+[subagent]
+max_rounds = 999
+''');
+      final store = SubagentConfigStore(file);
+      expect((await store.readPools()).maxRounds, 100);
+
+      await file.writeAsString('''
+[subagent]
+max_rounds = 5
+''');
+      expect((await store.readPools()).maxRounds, 32);
+
+      await file.writeAsString('''
+[subagent]
+''');
+      expect((await store.readPools()).maxRounds, 40);
+    });
+
+    test('"unlimited" reads as null; writes persist int / "unlimited"', () async {
+      await file.writeAsString('''
+[subagent]
+max_rounds = "unlimited"
+''');
+      final store = SubagentConfigStore(file);
+      expect((await store.readPools()).maxRounds, isNull);
+
+      await store.writePools(const SubagentConfig(maxRounds: 40));
+      expect(file.readAsStringSync(), contains('max_rounds = 40'));
+      expect((await store.readPools()).maxRounds, 40);
+
+      await store.writePools(const SubagentConfig(maxRounds: null));
+      // The TOML serializer writes strings single-quoted.
+      expect(file.readAsStringSync(), contains("max_rounds = 'unlimited'"));
+      expect((await store.readPools()).maxRounds, isNull);
+    });
+  });
+}
+
+/// The `∞` glyph on the slider row — the only row that has both a `├`
+/// track stop and an `∞` (the value label's `∞ unlimited` never sits on
+/// the track).
+TextMatch _sliderInf(TerminalState ts) => ts.findText('∞').firstWhere(
+  (m) => ts.findText('├').any((t) => t.y == m.y),
+  orElse: () => throw StateError('slider ∞ cell not found'),
+);
+
+/// The `├` min stop on the slider row (same row as [inf]).
+TextMatch _sliderLeft(TerminalState ts, TextMatch inf) =>
+    ts.findText('├').firstWhere(
+      (t) => t.y == inf.y,
+      orElse: () => throw StateError('slider ├ stop not found'),
+    );
+
+/// Press on the track, let the tracker flush the parked press, then
+/// move (still held) to the target cell and release — a real drag.
+Future<void> _dragSlider(dynamic tester, int x0, int y, int x1) async {
+  await tester.press(x0, y);
+  // The tracker parks the first left press for 50ms; wait it out so the
+  // press is delivered before the move.
+  await Future<void>.delayed(const Duration(milliseconds: 60));
+  await tester.pump();
+  await tester.sendMouseEvent(
+    MouseEvent(button: MouseButton.left, x: x1, y: y, pressed: true),
+  );
+  await tester.pump();
+  await tester.release(x1, y);
+  await _pumpAsync(tester);
 }
 
 Future<void> _mount(

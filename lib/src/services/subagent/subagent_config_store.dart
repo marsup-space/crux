@@ -17,6 +17,7 @@ import '../../models/subagent.dart';
 /// [subagent]
 /// workers_on = false
 /// experts_on = false
+/// max_rounds = 40            # agent-run round cap, 32..100, or "unlimited"
 ///
 /// [subagent.workers]
 /// models = [
@@ -69,16 +70,29 @@ class SubagentConfigStore {
       experts: section.containsKey('experts')
           ? experts
           : _parseRole(section['advisor']),
+      maxRounds: _parseRoundLimit(section['max_rounds']),
     );
   }
 
   Future<void> writePools(SubagentConfig config) => _writeSection((section) {
     section['workers'] = _writeRole(config.workers);
     section['experts'] = _writeRole(config.experts);
+    // `null` means unlimited; persist it as a string so an int type
+    // cannot be mistaken for a round count.
+    section['max_rounds'] = config.maxRounds ?? 'unlimited';
     // Drop the legacy v1 key if present so it cannot shadow the new one
     // on a later read.
     section.remove('advisor');
   });
+
+  /// Parses the `max_rounds` value: an int clamped to 32..100, the
+  /// string `"unlimited"` (any case) → null (no cap), anything else
+  /// (absent included) → the 40-round default.
+  int? _parseRoundLimit(Object? value) {
+    if (value is int) return value.clamp(32, 100).toInt();
+    if (value is String && value.toLowerCase() == 'unlimited') return null;
+    return 40;
+  }
 
   SubagentModelConfig _parseRole(Object? value) {
     if (value is! Map) return const SubagentModelConfig();
