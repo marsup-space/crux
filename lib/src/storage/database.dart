@@ -184,8 +184,15 @@ class CruxDatabase extends _$CruxDatabase {
   ///         stay visible in no workspace and are effectively
   ///         retired, which is the safe default: leaking them into
   ///         every project is the bug being fixed).
+  ///   v38 – added `agents.reasoningEffort` (nullable TEXT): the
+  ///         per-agent reasoning effort override, cycled from the
+  ///         config fullpane's roster rows. NULL = never set: the
+  ///         run sends no `reasoning_effort` and the provider's
+  ///         server default applies (the pre-v38 behavior). Read at
+  ///         each dispatch, so a change applies from the agent's next
+  ///         run; a live run keeps the value it started with.
   @override
-  int get schemaVersion => 37;
+  int get schemaVersion => 38;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -633,6 +640,21 @@ UPDATE agents SET project_path = COALESCE(
   (SELECT s.project_path FROM sessions s
    WHERE s.id = agents.created_by_session_id), '')
 ''');
+      }
+      if (from < 38) {
+        // Idempotency guard mirrors v34–v36: a database created via
+        // onCreate at the CURRENT schema already has the column.
+        final hasEffort = await m.database
+            .customSelect(
+              "SELECT 1 FROM pragma_table_info('agents') "
+              "WHERE name = 'reasoning_effort' LIMIT 1",
+            )
+            .get();
+        if (hasEffort.isEmpty) {
+          await m.database.customStatement(
+            'ALTER TABLE agents ADD COLUMN reasoning_effort TEXT',
+          );
+        }
       }
     },
   );

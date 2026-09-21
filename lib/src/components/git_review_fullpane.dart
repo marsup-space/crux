@@ -57,6 +57,8 @@ class GitReviewFullpane extends StatefulComponent {
   final VoidCallback? onCommitted;
   final CommitMessageGenerator? generateCommitMessage;
   final GitCommitDraft? initialDraft;
+  final String? agentNote;
+  final GitCommitApproval initialApproval;
   final Strings strings;
 
   const GitReviewFullpane({
@@ -67,6 +69,8 @@ class GitReviewFullpane extends StatefulComponent {
     this.onCommitted,
     this.generateCommitMessage,
     this.initialDraft,
+    this.agentNote,
+    this.initialApproval = GitCommitApproval.both,
     this.strings = kEnglishStrings,
   });
 
@@ -749,6 +753,8 @@ class _GitReviewFullpaneState extends State<GitReviewFullpane> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _toolbar(theme, snapshot, constraints.maxWidth),
+        if ((component.agentNote ?? '').trim().isNotEmpty)
+          _agentNoteBanner(theme),
         if (_error != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 1),
@@ -782,6 +788,38 @@ class _GitReviewFullpaneState extends State<GitReviewFullpane> {
                 ),
         ),
       ],
+    );
+  }
+
+  Component _agentNoteBanner(CruxThemeData theme) {
+    final note = component.agentNote!.trim();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 1),
+      child: Container(
+        decoration: BoxDecoration(color: theme.surfaceVariant),
+        padding: const EdgeInsets.symmetric(horizontal: 1),
+        child: RichText(
+          softWrap: true,
+          text: TextSpan(
+            children: [
+              TextSpan(
+                text: '💬 ${component.strings.t('chat.gitReview.agentNote')}: ',
+                style: TextStyle(
+                  color: theme.accent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              TextSpan(
+                text: note,
+                style: TextStyle(
+                  color: theme.foreground,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -983,6 +1021,9 @@ class _GitReviewFullpaneState extends State<GitReviewFullpane> {
     final stagedCount = _snapshot?.stagedCount ?? 0;
     final canCommit =
         stagedCount > 0 && _commitTitle.trim().isNotEmpty && !_committing;
+    final allowsCommit =
+        component.initialApproval != GitCommitApproval.commitPush;
+    final allowsPush = component.initialApproval != GitCommitApproval.commit;
     final draft = GitCommitDraft(
       title: _commitTitle,
       description: _commitDescription,
@@ -1092,26 +1133,28 @@ class _GitReviewFullpaneState extends State<GitReviewFullpane> {
                   style: TextStyle(color: theme.onSurfaceDim),
                 ),
               ),
-              Button(
-                label: _committing
-                    ? component.strings.t('chat.gitReview.committing')
-                    : component.strings.t('chat.gitReview.commit'),
-                onPressed: canCommit
-                    ? () => unawaited(_commit(push: false))
-                    : null,
-                color: canCommit ? theme.foreground : theme.onSurfaceDim,
-              ),
-              const SizedBox(width: 1),
-              Button(
-                label: _committing
-                    ? component.strings.t('chat.gitReview.committing')
-                    : component.strings.t('chat.gitReview.commitAndPush'),
-                onPressed: canCommit
-                    ? () => unawaited(_commit(push: true))
-                    : null,
-                color: canCommit ? theme.selectedText : theme.onSurfaceDim,
-                bgColor: canCommit ? theme.accent : theme.surfaceVariant,
-              ),
+              if (allowsCommit)
+                Button(
+                  label: _committing
+                      ? component.strings.t('chat.gitReview.committing')
+                      : component.strings.t('chat.gitReview.commit'),
+                  onPressed: canCommit
+                      ? () => unawaited(_commit(push: false))
+                      : null,
+                  color: canCommit ? theme.foreground : theme.onSurfaceDim,
+                ),
+              if (allowsCommit && allowsPush) const SizedBox(width: 1),
+              if (allowsPush)
+                Button(
+                  label: _committing
+                      ? component.strings.t('chat.gitReview.committing')
+                      : component.strings.t('chat.gitReview.commitAndPush'),
+                  onPressed: canCommit
+                      ? () => unawaited(_commit(push: true))
+                      : null,
+                  color: canCommit ? theme.selectedText : theme.onSurfaceDim,
+                  bgColor: canCommit ? theme.accent : theme.surfaceVariant,
+                ),
             ],
           ),
         ],

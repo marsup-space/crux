@@ -255,9 +255,119 @@ max_rounds = "unlimited"
       },
     );
   });
-}
+  group('roster reasoning effort cycle', () {
+    const presets = [('off', 'off'), ('low', 'low'), ('normal', 'normal'),
+      ('high', 'high'), ('max', 'max')];
 
-/// The `∞` glyph on the slider row — the only row that has both a `├`
+    /// Hover the first roster row so its MultiButton morphs into
+    /// segments, then return the terminal state.
+    Future<void> hoverRosterRow(dynamic tester) async {
+      final row = tester.terminalState.findText('db').single;
+      await tester.sendMouseEvent(
+        MouseEvent(
+          button: MouseButton.left,
+          x: row.x,
+          y: row.y,
+          pressed: false,
+        ),
+      );
+      await _pumpAsync(tester);
+    }
+
+    test('cycle segment renders the NEXT effort; label shows current',
+        () async {
+      await testNocterm('subagent effort cycle render', (tester) async {
+        await _mount(
+          tester,
+          file,
+          roster: const [
+            SubagentRosterEntry(
+              name: 'apus',
+              role: 'worker',
+              domain: 'db',
+              model: 'zhipu/glm-4.5',
+              intention: 'smoke',
+              busy: false,
+              reasoningEffort: 'high',
+            ),
+          ],
+          effortOptionsFor: (_) => presets,
+        );
+        // Idle label carries the current value suffix.
+        expect(tester.terminalState.getText(), contains('✶high'));
+        // Hover: the segment offers the next preset (max).
+        await hoverRosterRow(tester);
+        expect(tester.terminalState.getText(), contains('✶max'));
+      }, size: const Size(100, 40));
+    });
+
+    test('null effort: no suffix; segment offers the first preset',
+        () async {
+      await testNocterm('subagent effort cycle default', (tester) async {
+        await _mount(
+          tester,
+          file,
+          roster: const [
+            SubagentRosterEntry(
+              name: 'apus',
+              role: 'worker',
+              domain: 'db',
+              model: 'zhipu/glm-4.5',
+              intention: 'smoke',
+              busy: false,
+            ),
+          ],
+          effortOptionsFor: (_) => presets,
+        );
+        await hoverRosterRow(tester);
+        // No current-override suffix in the idle label (server
+        // default); the segment offers the first preset (off).
+        final idle = tester.terminalState.getText();
+        expect(idle, isNot(contains('· ✶')));
+        expect(idle, contains('✶off'));
+      }, size: const Size(100, 40));
+    });
+
+    test('clicking the segment cycles and persists via the callback',
+        () async {
+      await testNocterm('subagent effort cycle click', (tester) async {
+        String? saved;
+        await _mount(
+          tester,
+          file,
+          roster: const [
+            SubagentRosterEntry(
+              name: 'apus',
+              role: 'worker',
+              domain: 'db',
+              model: 'zhipu/glm-4.5',
+              intention: 'smoke',
+              busy: false,
+              reasoningEffort: 'high',
+            ),
+          ],
+          effortOptionsFor: (_) => presets,
+          setReasoningEffort: (name, effort) async => saved = effort,
+        );
+        await hoverRosterRow(tester);
+        final seg = tester.terminalState.findText('✶max').single;
+        await tester.tap(seg.x + 1, seg.y);
+        await _pumpAsync(tester);
+        expect(saved, 'max');
+      }, size: const Size(100, 40));
+    });
+
+    test('no options resolver → no cycle segment (plain delete row)',
+        () async {
+      await testNocterm('subagent effort cycle absent', (tester) async {
+        await _mount(tester, file);
+        await hoverRosterRow(tester);
+        expect(tester.terminalState.getText(), contains('delete'));
+        expect(tester.terminalState.findText('✶'), isEmpty);
+      }, size: const Size(100, 40));
+    });
+  });
+}
 /// track stop and an `∞` (the value label's `∞ unlimited` never sits on
 /// the track).
 TextMatch _sliderInf(TerminalState ts) => ts
@@ -295,6 +405,8 @@ Future<void> _mount(
   dynamic tester,
   File file, {
   List<SubagentRosterEntry>? roster,
+  List<(String, String)>? Function(String)? effortOptionsFor,
+  Future<void> Function(String name, String? effort)? setReasoningEffort,
 }) async {
   final controller = await SubagentController.create(
     configStore: SubagentConfigStore(file),
@@ -322,6 +434,8 @@ Future<void> _mount(
                 ),
               ],
           deleteAgent: (name) async {},
+          effortOptionsFor: effortOptionsFor,
+          setReasoningEffort: setReasoningEffort,
           onClose: () {},
         ),
       ),

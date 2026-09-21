@@ -4893,6 +4893,17 @@ class $AgentsTable extends Agents with TableInfo<$AgentsTable, Agent> {
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
+  static const VerificationMeta _reasoningEffortMeta = const VerificationMeta(
+    'reasoningEffort',
+  );
+  @override
+  late final GeneratedColumn<String> reasoningEffort = GeneratedColumn<String>(
+    'reasoning_effort',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _runOwnerSessionIdMeta = const VerificationMeta(
     'runOwnerSessionId',
   );
@@ -4957,6 +4968,7 @@ class $AgentsTable extends Agents with TableInfo<$AgentsTable, Agent> {
     knowledge,
     worklog,
     lastIntention,
+    reasoningEffort,
     runOwnerSessionId,
     createdBySessionId,
     lastUsedBySessionId,
@@ -5038,6 +5050,15 @@ class $AgentsTable extends Agents with TableInfo<$AgentsTable, Agent> {
         lastIntention.isAcceptableOrUnknown(
           data['last_intention']!,
           _lastIntentionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('reasoning_effort')) {
+      context.handle(
+        _reasoningEffortMeta,
+        reasoningEffort.isAcceptableOrUnknown(
+          data['reasoning_effort']!,
+          _reasoningEffortMeta,
         ),
       );
     }
@@ -5132,6 +5153,10 @@ class $AgentsTable extends Agents with TableInfo<$AgentsTable, Agent> {
         DriftSqlType.string,
         data['${effectivePrefix}last_intention'],
       )!,
+      reasoningEffort: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reasoning_effort'],
+      ),
       runOwnerSessionId: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}run_owner_session_id'],
@@ -5201,6 +5226,14 @@ class Agent extends DataClass implements Insertable<Agent> {
   /// the chip tooltip and find_agents result rows.
   final String lastIntention;
 
+  /// Per-agent reasoning effort override (`off`/`low`/`normal`/`high`/
+  /// `max`, one of the bound model's reasoning presets). NULL = never
+  /// set: the run sends no `reasoning_effort` and the server default
+  /// applies (the pre-v38 behavior). Read at each dispatch, so a
+  /// change applies from the agent's next run; a live run keeps the
+  /// value it started with.
+  final String? reasoningEffort;
+
   /// Session that owns the live run, when `status = busy`. Readers
   /// treat a `busy` row whose owning session is not live as `ready`
   /// (crash-orphan self-healing).
@@ -5238,6 +5271,7 @@ class Agent extends DataClass implements Insertable<Agent> {
     required this.knowledge,
     required this.worklog,
     required this.lastIntention,
+    this.reasoningEffort,
     this.runOwnerSessionId,
     this.createdBySessionId,
     this.lastUsedBySessionId,
@@ -5256,6 +5290,9 @@ class Agent extends DataClass implements Insertable<Agent> {
     map['knowledge'] = Variable<String>(knowledge);
     map['worklog'] = Variable<String>(worklog);
     map['last_intention'] = Variable<String>(lastIntention);
+    if (!nullToAbsent || reasoningEffort != null) {
+      map['reasoning_effort'] = Variable<String>(reasoningEffort);
+    }
     if (!nullToAbsent || runOwnerSessionId != null) {
       map['run_owner_session_id'] = Variable<int>(runOwnerSessionId);
     }
@@ -5281,6 +5318,9 @@ class Agent extends DataClass implements Insertable<Agent> {
       knowledge: Value(knowledge),
       worklog: Value(worklog),
       lastIntention: Value(lastIntention),
+      reasoningEffort: reasoningEffort == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reasoningEffort),
       runOwnerSessionId: runOwnerSessionId == null && nullToAbsent
           ? const Value.absent()
           : Value(runOwnerSessionId),
@@ -5310,6 +5350,7 @@ class Agent extends DataClass implements Insertable<Agent> {
       knowledge: serializer.fromJson<String>(json['knowledge']),
       worklog: serializer.fromJson<String>(json['worklog']),
       lastIntention: serializer.fromJson<String>(json['lastIntention']),
+      reasoningEffort: serializer.fromJson<String?>(json['reasoningEffort']),
       runOwnerSessionId: serializer.fromJson<int?>(json['runOwnerSessionId']),
       createdBySessionId: serializer.fromJson<int?>(json['createdBySessionId']),
       lastUsedBySessionId: serializer.fromJson<int?>(
@@ -5332,6 +5373,7 @@ class Agent extends DataClass implements Insertable<Agent> {
       'knowledge': serializer.toJson<String>(knowledge),
       'worklog': serializer.toJson<String>(worklog),
       'lastIntention': serializer.toJson<String>(lastIntention),
+      'reasoningEffort': serializer.toJson<String?>(reasoningEffort),
       'runOwnerSessionId': serializer.toJson<int?>(runOwnerSessionId),
       'createdBySessionId': serializer.toJson<int?>(createdBySessionId),
       'lastUsedBySessionId': serializer.toJson<int?>(lastUsedBySessionId),
@@ -5350,6 +5392,7 @@ class Agent extends DataClass implements Insertable<Agent> {
     String? knowledge,
     String? worklog,
     String? lastIntention,
+    Value<String?> reasoningEffort = const Value.absent(),
     Value<int?> runOwnerSessionId = const Value.absent(),
     Value<int?> createdBySessionId = const Value.absent(),
     Value<int?> lastUsedBySessionId = const Value.absent(),
@@ -5365,6 +5408,9 @@ class Agent extends DataClass implements Insertable<Agent> {
     knowledge: knowledge ?? this.knowledge,
     worklog: worklog ?? this.worklog,
     lastIntention: lastIntention ?? this.lastIntention,
+    reasoningEffort: reasoningEffort.present
+        ? reasoningEffort.value
+        : this.reasoningEffort,
     runOwnerSessionId: runOwnerSessionId.present
         ? runOwnerSessionId.value
         : this.runOwnerSessionId,
@@ -5392,6 +5438,9 @@ class Agent extends DataClass implements Insertable<Agent> {
       lastIntention: data.lastIntention.present
           ? data.lastIntention.value
           : this.lastIntention,
+      reasoningEffort: data.reasoningEffort.present
+          ? data.reasoningEffort.value
+          : this.reasoningEffort,
       runOwnerSessionId: data.runOwnerSessionId.present
           ? data.runOwnerSessionId.value
           : this.runOwnerSessionId,
@@ -5420,6 +5469,7 @@ class Agent extends DataClass implements Insertable<Agent> {
           ..write('knowledge: $knowledge, ')
           ..write('worklog: $worklog, ')
           ..write('lastIntention: $lastIntention, ')
+          ..write('reasoningEffort: $reasoningEffort, ')
           ..write('runOwnerSessionId: $runOwnerSessionId, ')
           ..write('createdBySessionId: $createdBySessionId, ')
           ..write('lastUsedBySessionId: $lastUsedBySessionId, ')
@@ -5440,6 +5490,7 @@ class Agent extends DataClass implements Insertable<Agent> {
     knowledge,
     worklog,
     lastIntention,
+    reasoningEffort,
     runOwnerSessionId,
     createdBySessionId,
     lastUsedBySessionId,
@@ -5459,6 +5510,7 @@ class Agent extends DataClass implements Insertable<Agent> {
           other.knowledge == this.knowledge &&
           other.worklog == this.worklog &&
           other.lastIntention == this.lastIntention &&
+          other.reasoningEffort == this.reasoningEffort &&
           other.runOwnerSessionId == this.runOwnerSessionId &&
           other.createdBySessionId == this.createdBySessionId &&
           other.lastUsedBySessionId == this.lastUsedBySessionId &&
@@ -5476,6 +5528,7 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
   final Value<String> knowledge;
   final Value<String> worklog;
   final Value<String> lastIntention;
+  final Value<String?> reasoningEffort;
   final Value<int?> runOwnerSessionId;
   final Value<int?> createdBySessionId;
   final Value<int?> lastUsedBySessionId;
@@ -5492,6 +5545,7 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
     this.knowledge = const Value.absent(),
     this.worklog = const Value.absent(),
     this.lastIntention = const Value.absent(),
+    this.reasoningEffort = const Value.absent(),
     this.runOwnerSessionId = const Value.absent(),
     this.createdBySessionId = const Value.absent(),
     this.lastUsedBySessionId = const Value.absent(),
@@ -5509,6 +5563,7 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
     this.knowledge = const Value.absent(),
     this.worklog = const Value.absent(),
     this.lastIntention = const Value.absent(),
+    this.reasoningEffort = const Value.absent(),
     this.runOwnerSessionId = const Value.absent(),
     this.createdBySessionId = const Value.absent(),
     this.lastUsedBySessionId = const Value.absent(),
@@ -5530,6 +5585,7 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
     Expression<String>? knowledge,
     Expression<String>? worklog,
     Expression<String>? lastIntention,
+    Expression<String>? reasoningEffort,
     Expression<int>? runOwnerSessionId,
     Expression<int>? createdBySessionId,
     Expression<int>? lastUsedBySessionId,
@@ -5547,6 +5603,7 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
       if (knowledge != null) 'knowledge': knowledge,
       if (worklog != null) 'worklog': worklog,
       if (lastIntention != null) 'last_intention': lastIntention,
+      if (reasoningEffort != null) 'reasoning_effort': reasoningEffort,
       if (runOwnerSessionId != null) 'run_owner_session_id': runOwnerSessionId,
       if (createdBySessionId != null)
         'created_by_session_id': createdBySessionId,
@@ -5568,6 +5625,7 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
     Value<String>? knowledge,
     Value<String>? worklog,
     Value<String>? lastIntention,
+    Value<String?>? reasoningEffort,
     Value<int?>? runOwnerSessionId,
     Value<int?>? createdBySessionId,
     Value<int?>? lastUsedBySessionId,
@@ -5585,6 +5643,7 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
       knowledge: knowledge ?? this.knowledge,
       worklog: worklog ?? this.worklog,
       lastIntention: lastIntention ?? this.lastIntention,
+      reasoningEffort: reasoningEffort ?? this.reasoningEffort,
       runOwnerSessionId: runOwnerSessionId ?? this.runOwnerSessionId,
       createdBySessionId: createdBySessionId ?? this.createdBySessionId,
       lastUsedBySessionId: lastUsedBySessionId ?? this.lastUsedBySessionId,
@@ -5624,6 +5683,9 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
     if (lastIntention.present) {
       map['last_intention'] = Variable<String>(lastIntention.value);
     }
+    if (reasoningEffort.present) {
+      map['reasoning_effort'] = Variable<String>(reasoningEffort.value);
+    }
     if (runOwnerSessionId.present) {
       map['run_owner_session_id'] = Variable<int>(runOwnerSessionId.value);
     }
@@ -5657,6 +5719,7 @@ class AgentsCompanion extends UpdateCompanion<Agent> {
           ..write('knowledge: $knowledge, ')
           ..write('worklog: $worklog, ')
           ..write('lastIntention: $lastIntention, ')
+          ..write('reasoningEffort: $reasoningEffort, ')
           ..write('runOwnerSessionId: $runOwnerSessionId, ')
           ..write('createdBySessionId: $createdBySessionId, ')
           ..write('lastUsedBySessionId: $lastUsedBySessionId, ')
@@ -5742,64 +5805,66 @@ abstract class _$CruxDatabase extends GeneratedDatabase {
   ]);
 }
 
-typedef $$SessionsTableCreateCompanionBuilder = SessionsCompanion Function({
-  Value<int> id,
-  Value<String> slug,
-  Value<String> title,
-  Value<String> model,
-  required SessionStatus status,
-  Value<String> agent,
-  Value<int?> parentId,
-  Value<String> projectPath,
-  Value<int> tokensIn,
-  Value<int> tokensOut,
-  Value<int> contextTokens,
-  Value<double> ttftMs,
-  Value<double> tokPerSec,
-  Value<int> promptCacheHitTokens,
-  Value<String> thinkingMode,
-  Value<String?> reasoningEffort,
-  Value<double?> temperatureOverride,
-  Value<String?> runningOwnerId,
-  Value<int?> runningHeartbeatAt,
-  Value<String?> kind,
-  Value<bool?> subagentWorkersOn,
-  Value<bool?> subagentExpertsOn,
-  required int createdAt,
-  required int updatedAt,
-  Value<int?> archivedAt,
-  Value<int?> pinnedAt,
-  Value<String?> systemPrompt,
-});
-typedef $$SessionsTableUpdateCompanionBuilder = SessionsCompanion Function({
-  Value<int> id,
-  Value<String> slug,
-  Value<String> title,
-  Value<String> model,
-  Value<SessionStatus> status,
-  Value<String> agent,
-  Value<int?> parentId,
-  Value<String> projectPath,
-  Value<int> tokensIn,
-  Value<int> tokensOut,
-  Value<int> contextTokens,
-  Value<double> ttftMs,
-  Value<double> tokPerSec,
-  Value<int> promptCacheHitTokens,
-  Value<String> thinkingMode,
-  Value<String?> reasoningEffort,
-  Value<double?> temperatureOverride,
-  Value<String?> runningOwnerId,
-  Value<int?> runningHeartbeatAt,
-  Value<String?> kind,
-  Value<bool?> subagentWorkersOn,
-  Value<bool?> subagentExpertsOn,
-  Value<int> createdAt,
-  Value<int> updatedAt,
-  Value<int?> archivedAt,
-  Value<int?> pinnedAt,
-  Value<String?> systemPrompt,
-});
+typedef $$SessionsTableCreateCompanionBuilder =
+    SessionsCompanion Function({
+      Value<int> id,
+      Value<String> slug,
+      Value<String> title,
+      Value<String> model,
+      required SessionStatus status,
+      Value<String> agent,
+      Value<int?> parentId,
+      Value<String> projectPath,
+      Value<int> tokensIn,
+      Value<int> tokensOut,
+      Value<int> contextTokens,
+      Value<double> ttftMs,
+      Value<double> tokPerSec,
+      Value<int> promptCacheHitTokens,
+      Value<String> thinkingMode,
+      Value<String?> reasoningEffort,
+      Value<double?> temperatureOverride,
+      Value<String?> runningOwnerId,
+      Value<int?> runningHeartbeatAt,
+      Value<String?> kind,
+      Value<bool?> subagentWorkersOn,
+      Value<bool?> subagentExpertsOn,
+      required int createdAt,
+      required int updatedAt,
+      Value<int?> archivedAt,
+      Value<int?> pinnedAt,
+      Value<String?> systemPrompt,
+    });
+typedef $$SessionsTableUpdateCompanionBuilder =
+    SessionsCompanion Function({
+      Value<int> id,
+      Value<String> slug,
+      Value<String> title,
+      Value<String> model,
+      Value<SessionStatus> status,
+      Value<String> agent,
+      Value<int?> parentId,
+      Value<String> projectPath,
+      Value<int> tokensIn,
+      Value<int> tokensOut,
+      Value<int> contextTokens,
+      Value<double> ttftMs,
+      Value<double> tokPerSec,
+      Value<int> promptCacheHitTokens,
+      Value<String> thinkingMode,
+      Value<String?> reasoningEffort,
+      Value<double?> temperatureOverride,
+      Value<String?> runningOwnerId,
+      Value<int?> runningHeartbeatAt,
+      Value<String?> kind,
+      Value<bool?> subagentWorkersOn,
+      Value<bool?> subagentExpertsOn,
+      Value<int> createdAt,
+      Value<int> updatedAt,
+      Value<int?> archivedAt,
+      Value<int?> pinnedAt,
+      Value<String?> systemPrompt,
+    });
 
 final class $$SessionsTableReferences
     extends BaseReferences<_$CruxDatabase, $SessionsTable, Session> {
@@ -6872,52 +6937,54 @@ typedef $$SessionsTableProcessedTableManager =
         bool shellMonitorLogsRefs,
       })
     >;
-typedef $$MessagesTableCreateCompanionBuilder = MessagesCompanion Function({
-  Value<int> id,
-  required int sessionId,
-  required String role,
-  Value<String> content,
-  Value<String> reasoningContent,
-  Value<String> reasoningSignature,
-  Value<int> reasoningTokens,
-  Value<int> thinkingDurationMs,
-  Value<String?> reasoningEffort,
-  Value<String> model,
-  Value<int> tokensIn,
-  Value<int> tokensOut,
-  Value<String> toolCalls,
-  Value<String> toolCallId,
-  Value<String> tldr,
-  Value<String?> error,
-  Value<int?> parentMsgId,
-  Value<String> images,
-  Value<int> parallelCount,
-  Value<String> meta,
-  required int createdAt,
-});
-typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
-  Value<int> id,
-  Value<int> sessionId,
-  Value<String> role,
-  Value<String> content,
-  Value<String> reasoningContent,
-  Value<String> reasoningSignature,
-  Value<int> reasoningTokens,
-  Value<int> thinkingDurationMs,
-  Value<String?> reasoningEffort,
-  Value<String> model,
-  Value<int> tokensIn,
-  Value<int> tokensOut,
-  Value<String> toolCalls,
-  Value<String> toolCallId,
-  Value<String> tldr,
-  Value<String?> error,
-  Value<int?> parentMsgId,
-  Value<String> images,
-  Value<int> parallelCount,
-  Value<String> meta,
-  Value<int> createdAt,
-});
+typedef $$MessagesTableCreateCompanionBuilder =
+    MessagesCompanion Function({
+      Value<int> id,
+      required int sessionId,
+      required String role,
+      Value<String> content,
+      Value<String> reasoningContent,
+      Value<String> reasoningSignature,
+      Value<int> reasoningTokens,
+      Value<int> thinkingDurationMs,
+      Value<String?> reasoningEffort,
+      Value<String> model,
+      Value<int> tokensIn,
+      Value<int> tokensOut,
+      Value<String> toolCalls,
+      Value<String> toolCallId,
+      Value<String> tldr,
+      Value<String?> error,
+      Value<int?> parentMsgId,
+      Value<String> images,
+      Value<int> parallelCount,
+      Value<String> meta,
+      required int createdAt,
+    });
+typedef $$MessagesTableUpdateCompanionBuilder =
+    MessagesCompanion Function({
+      Value<int> id,
+      Value<int> sessionId,
+      Value<String> role,
+      Value<String> content,
+      Value<String> reasoningContent,
+      Value<String> reasoningSignature,
+      Value<int> reasoningTokens,
+      Value<int> thinkingDurationMs,
+      Value<String?> reasoningEffort,
+      Value<String> model,
+      Value<int> tokensIn,
+      Value<int> tokensOut,
+      Value<String> toolCalls,
+      Value<String> toolCallId,
+      Value<String> tldr,
+      Value<String?> error,
+      Value<int?> parentMsgId,
+      Value<String> images,
+      Value<int> parallelCount,
+      Value<String> meta,
+      Value<int> createdAt,
+    });
 
 final class $$MessagesTableReferences
     extends BaseReferences<_$CruxDatabase, $MessagesTable, Message> {
@@ -7532,15 +7599,17 @@ class $$MessagesTableTableManager
                     >
                   >(state) {
                     if (sessionId) {
-                      state = state.withJoin(
-                        currentTable: table,
-                        currentColumn: table.sessionId,
-                        referencedTable: $$MessagesTableReferences
-                            ._sessionIdTable(db),
-                        referencedColumn: $$MessagesTableReferences
-                            ._sessionIdTable(db)
-                            .id,
-                      ) as T;
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.sessionId,
+                                referencedTable: $$MessagesTableReferences
+                                    ._sessionIdTable(db),
+                                referencedColumn: $$MessagesTableReferences
+                                    ._sessionIdTable(db)
+                                    .id,
+                              )
+                              as T;
                     }
 
                     return state;
@@ -7580,22 +7649,24 @@ typedef $$MessagesTableProcessedTableManager =
       Message,
       PrefetchHooks Function({bool sessionId, bool partsRefs})
     >;
-typedef $$PartsTableCreateCompanionBuilder = PartsCompanion Function({
-  Value<int> id,
-  required int messageId,
-  required int sessionId,
-  required String type,
-  Value<String> data,
-  required int createdAt,
-});
-typedef $$PartsTableUpdateCompanionBuilder = PartsCompanion Function({
-  Value<int> id,
-  Value<int> messageId,
-  Value<int> sessionId,
-  Value<String> type,
-  Value<String> data,
-  Value<int> createdAt,
-});
+typedef $$PartsTableCreateCompanionBuilder =
+    PartsCompanion Function({
+      Value<int> id,
+      required int messageId,
+      required int sessionId,
+      required String type,
+      Value<String> data,
+      required int createdAt,
+    });
+typedef $$PartsTableUpdateCompanionBuilder =
+    PartsCompanion Function({
+      Value<int> id,
+      Value<int> messageId,
+      Value<int> sessionId,
+      Value<String> type,
+      Value<String> data,
+      Value<int> createdAt,
+    });
 
 final class $$PartsTableReferences
     extends BaseReferences<_$CruxDatabase, $PartsTable, Part> {
@@ -7940,28 +8011,30 @@ class $$PartsTableTableManager
                     >
                   >(state) {
                     if (messageId) {
-                      state = state.withJoin(
-                        currentTable: table,
-                        currentColumn: table.messageId,
-                        referencedTable: $$PartsTableReferences._messageIdTable(
-                          db,
-                        ),
-                        referencedColumn: $$PartsTableReferences
-                            ._messageIdTable(db)
-                            .id,
-                      ) as T;
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.messageId,
+                                referencedTable: $$PartsTableReferences
+                                    ._messageIdTable(db),
+                                referencedColumn: $$PartsTableReferences
+                                    ._messageIdTable(db)
+                                    .id,
+                              )
+                              as T;
                     }
                     if (sessionId) {
-                      state = state.withJoin(
-                        currentTable: table,
-                        currentColumn: table.sessionId,
-                        referencedTable: $$PartsTableReferences._sessionIdTable(
-                          db,
-                        ),
-                        referencedColumn: $$PartsTableReferences
-                            ._sessionIdTable(db)
-                            .id,
-                      ) as T;
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.sessionId,
+                                referencedTable: $$PartsTableReferences
+                                    ._sessionIdTable(db),
+                                referencedColumn: $$PartsTableReferences
+                                    ._sessionIdTable(db)
+                                    .id,
+                              )
+                              as T;
                     }
 
                     return state;
@@ -8237,15 +8310,17 @@ class $$FileReadStateTableTableManager
                     >
                   >(state) {
                     if (sessionId) {
-                      state = state.withJoin(
-                        currentTable: table,
-                        currentColumn: table.sessionId,
-                        referencedTable: $$FileReadStateTableReferences
-                            ._sessionIdTable(db),
-                        referencedColumn: $$FileReadStateTableReferences
-                            ._sessionIdTable(db)
-                            .id,
-                      ) as T;
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.sessionId,
+                                referencedTable: $$FileReadStateTableReferences
+                                    ._sessionIdTable(db),
+                                referencedColumn: $$FileReadStateTableReferences
+                                    ._sessionIdTable(db)
+                                    .id,
+                              )
+                              as T;
                     }
 
                     return state;
@@ -8546,15 +8621,18 @@ class $$FileLastWriterTableTableManager
                     >
                   >(state) {
                     if (writerSessionId) {
-                      state = state.withJoin(
-                        currentTable: table,
-                        currentColumn: table.writerSessionId,
-                        referencedTable: $$FileLastWriterTableReferences
-                            ._writerSessionIdTable(db),
-                        referencedColumn: $$FileLastWriterTableReferences
-                            ._writerSessionIdTable(db)
-                            .id,
-                      ) as T;
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.writerSessionId,
+                                referencedTable: $$FileLastWriterTableReferences
+                                    ._writerSessionIdTable(db),
+                                referencedColumn:
+                                    $$FileLastWriterTableReferences
+                                        ._writerSessionIdTable(db)
+                                        .id,
+                              )
+                              as T;
                     }
 
                     return state;
@@ -9051,15 +9129,19 @@ class $$ShellMonitorLogsTableTableManager
                     >
                   >(state) {
                     if (sessionId) {
-                      state = state.withJoin(
-                        currentTable: table,
-                        currentColumn: table.sessionId,
-                        referencedTable: $$ShellMonitorLogsTableReferences
-                            ._sessionIdTable(db),
-                        referencedColumn: $$ShellMonitorLogsTableReferences
-                            ._sessionIdTable(db)
-                            .id,
-                      ) as T;
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.sessionId,
+                                referencedTable:
+                                    $$ShellMonitorLogsTableReferences
+                                        ._sessionIdTable(db),
+                                referencedColumn:
+                                    $$ShellMonitorLogsTableReferences
+                                        ._sessionIdTable(db)
+                                        .id,
+                              )
+                              as T;
                     }
 
                     return state;
@@ -9251,40 +9333,44 @@ typedef $$ProjectNotesTableProcessedTableManager =
       ProjectNote,
       PrefetchHooks Function()
     >;
-typedef $$AgentsTableCreateCompanionBuilder = AgentsCompanion Function({
-  Value<String> projectPath,
-  required String name,
-  required String role,
-  Value<String> domain,
-  required String model,
-  Value<String> status,
-  Value<String> knowledge,
-  Value<String> worklog,
-  Value<String> lastIntention,
-  Value<int?> runOwnerSessionId,
-  Value<int?> createdBySessionId,
-  Value<int?> lastUsedBySessionId,
-  required int createdAt,
-  required int lastActiveAt,
-  Value<int> rowid,
-});
-typedef $$AgentsTableUpdateCompanionBuilder = AgentsCompanion Function({
-  Value<String> projectPath,
-  Value<String> name,
-  Value<String> role,
-  Value<String> domain,
-  Value<String> model,
-  Value<String> status,
-  Value<String> knowledge,
-  Value<String> worklog,
-  Value<String> lastIntention,
-  Value<int?> runOwnerSessionId,
-  Value<int?> createdBySessionId,
-  Value<int?> lastUsedBySessionId,
-  Value<int> createdAt,
-  Value<int> lastActiveAt,
-  Value<int> rowid,
-});
+typedef $$AgentsTableCreateCompanionBuilder =
+    AgentsCompanion Function({
+      Value<String> projectPath,
+      required String name,
+      required String role,
+      Value<String> domain,
+      required String model,
+      Value<String> status,
+      Value<String> knowledge,
+      Value<String> worklog,
+      Value<String> lastIntention,
+      Value<String?> reasoningEffort,
+      Value<int?> runOwnerSessionId,
+      Value<int?> createdBySessionId,
+      Value<int?> lastUsedBySessionId,
+      required int createdAt,
+      required int lastActiveAt,
+      Value<int> rowid,
+    });
+typedef $$AgentsTableUpdateCompanionBuilder =
+    AgentsCompanion Function({
+      Value<String> projectPath,
+      Value<String> name,
+      Value<String> role,
+      Value<String> domain,
+      Value<String> model,
+      Value<String> status,
+      Value<String> knowledge,
+      Value<String> worklog,
+      Value<String> lastIntention,
+      Value<String?> reasoningEffort,
+      Value<int?> runOwnerSessionId,
+      Value<int?> createdBySessionId,
+      Value<int?> lastUsedBySessionId,
+      Value<int> createdAt,
+      Value<int> lastActiveAt,
+      Value<int> rowid,
+    });
 
 class $$AgentsTableFilterComposer
     extends Composer<_$CruxDatabase, $AgentsTable> {
@@ -9337,6 +9423,11 @@ class $$AgentsTableFilterComposer
 
   ColumnFilters<String> get lastIntention => $composableBuilder(
     column: $table.lastIntention,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reasoningEffort => $composableBuilder(
+    column: $table.reasoningEffort,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -9420,6 +9511,11 @@ class $$AgentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get reasoningEffort => $composableBuilder(
+    column: $table.reasoningEffort,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get runOwnerSessionId => $composableBuilder(
     column: $table.runOwnerSessionId,
     builder: (column) => ColumnOrderings(column),
@@ -9486,6 +9582,11 @@ class $$AgentsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get reasoningEffort => $composableBuilder(
+    column: $table.reasoningEffort,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<int> get runOwnerSessionId => $composableBuilder(
     column: $table.runOwnerSessionId,
     builder: (column) => column,
@@ -9547,6 +9648,7 @@ class $$AgentsTableTableManager
                 Value<String> knowledge = const Value.absent(),
                 Value<String> worklog = const Value.absent(),
                 Value<String> lastIntention = const Value.absent(),
+                Value<String?> reasoningEffort = const Value.absent(),
                 Value<int?> runOwnerSessionId = const Value.absent(),
                 Value<int?> createdBySessionId = const Value.absent(),
                 Value<int?> lastUsedBySessionId = const Value.absent(),
@@ -9563,6 +9665,7 @@ class $$AgentsTableTableManager
                 knowledge: knowledge,
                 worklog: worklog,
                 lastIntention: lastIntention,
+                reasoningEffort: reasoningEffort,
                 runOwnerSessionId: runOwnerSessionId,
                 createdBySessionId: createdBySessionId,
                 lastUsedBySessionId: lastUsedBySessionId,
@@ -9581,6 +9684,7 @@ class $$AgentsTableTableManager
                 Value<String> knowledge = const Value.absent(),
                 Value<String> worklog = const Value.absent(),
                 Value<String> lastIntention = const Value.absent(),
+                Value<String?> reasoningEffort = const Value.absent(),
                 Value<int?> runOwnerSessionId = const Value.absent(),
                 Value<int?> createdBySessionId = const Value.absent(),
                 Value<int?> lastUsedBySessionId = const Value.absent(),
@@ -9597,6 +9701,7 @@ class $$AgentsTableTableManager
                 knowledge: knowledge,
                 worklog: worklog,
                 lastIntention: lastIntention,
+                reasoningEffort: reasoningEffort,
                 runOwnerSessionId: runOwnerSessionId,
                 createdBySessionId: createdBySessionId,
                 lastUsedBySessionId: lastUsedBySessionId,

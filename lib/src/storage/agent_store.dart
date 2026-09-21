@@ -223,6 +223,26 @@ class AgentStore {
         );
   }
 
+  /// Overwrite the agent's reasoning effort override (null = back to
+  /// the provider's server default). Read at each dispatch; no-op
+  /// when the agent does not exist.
+  Future<void> setReasoningEffort(
+    String projectPath,
+    String name,
+    String? effort,
+  ) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await (_db.update(_db.agents)
+          ..where((a) => a.projectPath.equals(projectPath))
+          ..where((a) => a.name.equals(name)))
+        .write(
+          db.AgentsCompanion(
+            reasoningEffort: Value(effort),
+            lastActiveAt: Value(now),
+          ),
+        );
+  }
+
   /// Reset every `busy` row to `ready` — the restart self-healing path.
   /// Called once at startup: no run survived the process, so no agent
   /// can still be busy. The `lastIntention` stays (it feeds the

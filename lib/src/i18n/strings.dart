@@ -589,6 +589,7 @@ const Map<String, String> _en = {
   'chat.gitReview.commit': 'Commit',
   'chat.gitReview.commitAndPush': 'Commit + Push',
   'chat.gitReview.committing': 'Working…',
+  'chat.gitReview.agentNote': 'Agent note',
 
   // ── Tool detail pane ──
   'chat.tool.pretty': 'Pretty',
@@ -1340,6 +1341,7 @@ const Map<String, String> _zh = {
   'chat.gitReview.commit': '提交',
   'chat.gitReview.commitAndPush': '提交并推送',
   'chat.gitReview.committing': '正在执行…',
+  'chat.gitReview.agentNote': 'Agent 说明',
 
   // ── Tool detail pane ──
   'chat.tool.pretty': '美观',

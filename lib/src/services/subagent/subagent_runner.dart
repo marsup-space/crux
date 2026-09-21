@@ -154,6 +154,16 @@ class SubagentRunner {
       return;
     }
     final (provider, apiKey, modelId) = resolved;
+    // Per-agent reasoning effort override (v38): `off` disables
+    // thinking entirely; null (never set) keeps the pre-v38 wire
+    // shape — no `reasoning_effort` key, server default applies.
+    // Read once per run: a mid-run flip in the config fullpane
+    // applies from the NEXT dispatch, never the live one.
+    final effort = profile.reasoningEffort;
+    final thinkingMode = effort == 'off' ? 'disabled' : 'enabled';
+    final reasoningEffort = effort == null || effort == 'off'
+        ? null
+        : effort;
     // Local copy so the nullable round cap promotes in the comparisons
     // below (a public field never promotes).
     final cap = maxRounds;
@@ -229,7 +239,8 @@ class SubagentRunner {
           apiKey: apiKey,
           modelId: modelId,
           messages: history,
-          thinkingMode: 'enabled',
+          thinkingMode: thinkingMode,
+          reasoningEffort: reasoningEffort,
           tools: _toolsDefinition(),
           userId: 'subagent-$agentName',
           cancelToken: _cancelToken(),
@@ -331,6 +342,8 @@ class SubagentRunner {
         history,
         systemText,
         cap,
+        thinkingMode: thinkingMode,
+        reasoningEffort: reasoningEffort,
       );
       _finish(
         interim == null ? 'round_cap_no_report' : 'round_cap',
@@ -379,8 +392,10 @@ class SubagentRunner {
     String modelId,
     List<Map<String, dynamic>> history,
     String lastProse,
-    int cap,
-  ) async {
+    int cap, {
+    String thinkingMode = 'enabled',
+    String? reasoningEffort,
+  }) async {
     final notice = kSubagentRoundCapStopNotice(cap);
     final lastAssistantText = lastProse.trim().isNotEmpty
         ? lastProse.trim()
@@ -399,7 +414,8 @@ class SubagentRunner {
           apiKey: apiKey,
           modelId: modelId,
           messages: history,
-          thinkingMode: 'enabled',
+          thinkingMode: thinkingMode,
+          reasoningEffort: reasoningEffort,
           tools: _toolsDefinition(), // Same list: cache-friendly.
           userId: 'subagent-$agentName',
           cancelToken: _cancelToken(),

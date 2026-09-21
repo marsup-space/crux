@@ -108,8 +108,10 @@ void main() {
       expect(out, contains('only the files that belong to the task'));
       expect(out, contains('commit title and description are user-visible'));
       expect(out, contains('same language required for your reply'));
-      expect(out, contains('let the user choose **Commit**'));
-      expect(out, contains('never include unrelated or conflicted files'));
+      expect(out, contains('optional `note` argument is also user-visible'));
+      expect(out, contains('Use `approval` to constrain the buttons'));
+      expect(out, contains('Omit it (default `both`) to let'));
+      expect(out, contains('unrelated or conflicted files'));
     });
 
     test('keeps shell output scoped to the next decision', () {

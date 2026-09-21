@@ -6,11 +6,15 @@ class GitCommitReviewRequest {
   final String projectPath;
   final GitCommitDraft draft;
   final List<String> stagedPaths;
+  final String? note;
+  final GitCommitApproval approval;
 
   const GitCommitReviewRequest({
     required this.projectPath,
     required this.draft,
     required this.stagedPaths,
+    this.note,
+    this.approval = GitCommitApproval.both,
   });
 }
 
@@ -30,7 +34,9 @@ class GitPrepareCommitTool extends ToolDef {
 
   @override
   String get description =>
-      'Prepare a Git commit for human approval. Stages ONLY the explicitly '
+      'Prepare a Git commit for human approval. An optional note is shown on '
+      'the review screen, and approval controls which buttons are offered: '
+      'commit, commit-push, or both (default). Stages ONLY the explicitly '
       'listed changed files, records a proposed commit title and detailed '
       'description, and opens the staged-changes review screen. The user can '
       'inspect the exact diff and then click Commit or Commit + Push. This '
@@ -66,6 +72,23 @@ class GitPrepareCommitTool extends ToolDef {
             'Detailed commit body explaining the important changes and why, '
             'in the current Crux reply language.',
       },
+      'note': {
+        'type': 'string',
+        'description':
+            'Optional one-line note displayed prominently on the review '
+            'screen. The pane covers the chat, so use it to give the user '
+            'context they need to decide (what was verified, why these '
+            'files belong together). In the current Crux reply language.',
+      },
+      'approval': {
+        'type': 'string',
+        'enum': ['commit', 'commit-push', 'both'],
+        'description':
+            'Which approval buttons the review screen offers: "commit" = '
+            'Commit only, "commit-push" = Commit + Push only, "both" '
+            '(default) = let the user choose. Constrain only when the '
+            'user asked for one specific action.',
+      },
     },
   };
 
@@ -85,6 +108,33 @@ class GitPrepareCommitTool extends ToolDef {
     }
     if (description is! String) {
       return ToolResult.error('A commit description is required.');
+    }
+
+    var approval = GitCommitApproval.both;
+    final rawApproval = args['approval'];
+    if (rawApproval != null) {
+      if (rawApproval is! String) {
+        return ToolResult.error(
+          'approval must be one of: commit, commit-push, both.',
+        );
+      }
+      final parsedApproval = GitCommitApproval.fromName(rawApproval);
+      if (parsedApproval == null) {
+        return ToolResult.error(
+          'approval must be one of: commit, commit-push, both.',
+        );
+      }
+      approval = parsedApproval;
+    }
+
+    String? note;
+    final rawNote = args['note'];
+    if (rawNote != null) {
+      if (rawNote is! String) {
+        return ToolResult.error('note must be a string.');
+      }
+      note = rawNote.trim();
+      if (note.isEmpty) note = null;
     }
 
     final requestedPaths = <String>[];
@@ -129,6 +179,8 @@ class GitPrepareCommitTool extends ToolDef {
         projectPath: ctx.workingDirectory,
         draft: draft,
         stagedPaths: List<String>.unmodifiable(requestedPaths),
+        note: note,
+        approval: approval,
       ),
     );
 
@@ -142,6 +194,7 @@ class GitPrepareCommitTool extends ToolDef {
         'stagedPaths': requestedPaths,
         'title': draft.title,
         'description': draft.description,
+        'approval': approval.name,
         'awaitingHumanApproval': true,
       },
     );

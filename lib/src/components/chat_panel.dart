@@ -1761,6 +1761,15 @@ class _ChatPanelState extends State<ChatPanel> {
             await _store.agentStore.deleteByName(Directory.current.path, name);
             _scheduleRosterRefresh();
           },
+          effortOptionsFor: _subagentEffortOptions,
+          setReasoningEffort: (name, effort) async {
+            await _store.agentStore.setReasoningEffort(
+              Directory.current.path,
+              name,
+              effort,
+            );
+            _scheduleRosterRefresh();
+          },
           onClose: _closeFullpane,
           strings: _strings,
         );
@@ -1770,6 +1779,9 @@ class _ChatPanelState extends State<ChatPanel> {
       return GitReviewFullpane(
         backend: GitReviewService(projectPath: Directory.current.path),
         initialDraft: _gitCommitReviewRequest?.draft,
+        agentNote: _gitCommitReviewRequest?.note,
+        initialApproval:
+            _gitCommitReviewRequest?.approval ?? GitCommitApproval.both,
         onClose: _closeFullpane,
         onIndexChanged: () => unawaited(_gitStatusService.refresh()),
         onCommitted: () => unawaited(_gitStatusService.refresh()),
@@ -2217,9 +2229,37 @@ class _ChatPanelState extends State<ChatPanel> {
           model: row.model,
           intention: row.lastIntention,
           busy: busyNames.contains(row.name),
+          reasoningEffort: row.reasoningEffort,
           createdBySessionId: row.createdBySessionId,
           lastUsedBySessionId: row.lastUsedBySessionId,
         ),
+    ];
+  }
+
+  /// Reasoning-effort cycle options for one subagent's bound model —
+  /// the same preset resolution as the toolbar's `✶` cycle button
+  /// (`_cycleThinkingLevel`): provider class base presets, then
+  /// provider- and model-level TOML label overrides. Null when the
+  /// model has no presets (effort cycling hidden for that row).
+  List<(String, String)>? _subagentEffortOptions(String compositeModelKey) {
+    if (!_providerServiceReady) return null;
+    final slashIdx = compositeModelKey.indexOf('/');
+    if (slashIdx <= 0) return null;
+    final providerName = compositeModelKey.substring(0, slashIdx);
+    final modelId = compositeModelKey.substring(slashIdx + 1);
+    final llm = _providerService.llmProviderByName(providerName);
+    final provider = _providerService.providerByName(providerName);
+    final modelConfig = provider?.modelById(modelId);
+    final presets =
+        llm?.reasoningPresetsFor(
+          modelId,
+          providerLabels: provider?.reasoningLabels ?? const {},
+          modelLabels: modelConfig?.reasoningLabels ?? const {},
+        ) ??
+        const [];
+    if (presets.isEmpty) return null;
+    return [
+      for (final preset in presets) (preset.internalValue, preset.displayLabel),
     ];
   }
 

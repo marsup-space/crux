@@ -329,6 +329,14 @@ class Agents extends Table {
   /// the chip tooltip and find_agents result rows.
   TextColumn get lastIntention => text().withDefault(const Constant(''))();
 
+  /// Per-agent reasoning effort override (`off`/`low`/`normal`/`high`/
+  /// `max`, one of the bound model's reasoning presets). NULL = never
+  /// set: the run sends no `reasoning_effort` and the server default
+  /// applies (the pre-v38 behavior). Read at each dispatch, so a
+  /// change applies from the agent's next run; a live run keeps the
+  /// value it started with.
+  TextColumn get reasoningEffort => text().nullable()();
+
   /// Session that owns the live run, when `status = busy`. Readers
   /// treat a `busy` row whose owning session is not live as `ready`
   /// (crash-orphan self-healing).

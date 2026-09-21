@@ -8,6 +8,40 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+### Features
+
+- **Per-agent reasoning effort for subagents** — the agents table gains a
+  `reasoning_effort` column (drift v38, nullable). Each roster row in the
+  subagent config fullpane grows a `✶<next>` cycle segment (hover reveals
+  it next to `delete`), cycling through the bound model's reasoning presets
+  — the same preset resolution (provider base + TOML label overrides) as
+  the toolbar's `✶` cycle button — plus a wrap-around back to `default`
+  (null: no `reasoning_effort` on the wire, the provider's server default;
+  `off` maps to thinking disabled). The current override shows as a `✶high`
+  suffix in the row label. Read at each dispatch, so a change applies from
+  the agent's next run; a live run keeps the value it started with.
+
+- **prepare_commit: note + approval** — optional `note` displays a prominent
+  banner at the top of the review pane, because the pane covers the chat and
+  the user cannot see the agent message; optional `approval` (`commit`,
+  `commit-push`, or `both`, the default) renders only the corresponding final
+  approval button or buttons.
+
+### Fixes
+
+- **Home subagent box showed English constellation names under a zh locale**
+  — the `subagent-pool` box rendered the persisted constellation id
+  (`antlia`) directly, skipping the `WorkerNameLocalizer` every other
+  subagent surface (agent bar, chat chips, config fullpane) renders through;
+  a zh home now shows `✎ 唧筒座`, and unknown legacy names still pass
+  through unchanged.
+
+- **Git review cursor jumping** — opening the fullpane could leave the physical
+  cursor visibly jumping across the screen with differential rendering when an
+  unfocused dormant TextField (the file search box) remained in the focused
+  subtree and IME cursor positioning became a no-op; the cursor is now hidden
+  in that state.
+
 ## [1.1.4] - 2026-09-21
 
 05c2a5c4

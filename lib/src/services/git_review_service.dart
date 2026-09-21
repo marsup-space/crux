@@ -124,6 +124,26 @@ class GitCommitDraft {
       : '${title.trim()}\n\n${description.trim()}';
 }
 
+/// Which final actions the commit review screen offers.
+enum GitCommitApproval {
+  /// Commit only — no push button.
+  commit,
+
+  /// Commit + Push only — no plain commit button.
+  commitPush,
+
+  /// Both buttons; the user chooses. Default.
+  both;
+
+  /// Parses the tool argument value; null for unknown input.
+  static GitCommitApproval? fromName(String name) => switch (name) {
+    'commit' => commit,
+    'commit-push' => commitPush,
+    'both' => both,
+    _ => null,
+  };
+}
+
 class GitCommitOutcome {
   final String commitHash;
   final bool pushed;

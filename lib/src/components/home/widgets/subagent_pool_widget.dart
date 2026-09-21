@@ -2,6 +2,7 @@ import 'package:nocterm/nocterm.dart';
 
 import '../../../services/a2ui/surface_builder.dart';
 import '../../../services/subagent/subagent_config_store.dart';
+import '../../../services/subagent/worker_name_localizer.dart';
 import '../home_surface.dart';
 import '../home_widgets.dart';
 
@@ -65,6 +66,10 @@ class SubagentPoolHomeWidget extends HomeWidget {
   }) {
     final roster = ctx.subagentRoster?.call() ?? const <SubagentRosterEntry>[];
     final strings = ctx.strings;
+    // Localized constellation display names (`✎ 天燕座`), the same
+    // table the agent bar / chat chips / config fullpane render
+    // through. Unknown legacy names pass through unchanged.
+    final localizer = const WorkerNameLocalizer();
 
     final ids = <String>[];
     final surface = SurfaceBuilder(surfaceId: 'home.subagent.pool')
@@ -85,7 +90,11 @@ class SubagentPoolHomeWidget extends HomeWidget {
         rowIds.add(rowId);
         surface
           ..row(rowId, [nameId, domainId, modelId, statusId], gap: 1)
-          ..text(nameId, '${entry.role == 'expert' ? '✦' : '✎'} ${entry.name}')
+          ..text(
+            nameId,
+            '${entry.role == 'expert' ? '✦' : '✎'} '
+            '${localizer.display(entry.name, strings.locale)}',
+          )
           ..badge(domainId, text: entry.domain)
           ..badge(modelId, text: _shortModel(entry.model))
           ..badge(

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:crux/src/services/git_review_service.dart';
 import 'package:crux/src/tools/git_prepare_commit_tool.dart';
 import 'package:crux/src/tools/tool_def.dart';
 import 'package:path/path.dart' as p;
@@ -46,6 +47,64 @@ void main() {
     expect(_git(dir.path, ['diff', '--cached', '--name-only']), 'keep.txt\n');
     expect(_git(dir.path, ['diff', '--name-only']), 'other.txt\n');
     expect(_git(dir.path, ['rev-list', '--count', 'HEAD']), '1\n');
+  });
+
+  test(
+    'passes note and approval through to the opened review request',
+    () async {
+      File(p.join(dir.path, 'keep.txt')).writeAsStringSync('after\n');
+      GitCommitReviewRequest? opened;
+      final tool = GitPrepareCommitTool(
+        onPrepared: (request) => opened = request,
+      );
+
+      final result = await tool.execute({
+        'files': ['keep.txt'],
+        'title': 'feat: review context',
+        'description': '',
+        'note': 'Verified: dart analyze',
+        'approval': 'commit',
+      }, _context(dir.path));
+
+      expect(result.title, 'Commit ready for review');
+      expect(opened?.note, 'Verified: dart analyze');
+      expect(opened?.approval, GitCommitApproval.commit);
+      expect(result.metadata['approval'], 'commit');
+    },
+  );
+
+  test('rejects invalid approval before staging or opening review', () async {
+    File(p.join(dir.path, 'keep.txt')).writeAsStringSync('after\n');
+    var opened = false;
+    final tool = GitPrepareCommitTool(onPrepared: (_) => opened = true);
+
+    final result = await tool.execute({
+      'files': ['keep.txt'],
+      'title': 'feat: impossible approval',
+      'description': '',
+      'approval': 'ship-it',
+    }, _context(dir.path));
+
+    expect(result.title, 'Error');
+    expect(opened, isFalse);
+    expect(_git(dir.path, ['diff', '--cached', '--name-only']), isEmpty);
+    expect(_git(dir.path, ['rev-list', '--count', 'HEAD']), '1\n');
+  });
+
+  test('defaults omitted approval to both', () async {
+    File(p.join(dir.path, 'keep.txt')).writeAsStringSync('after\n');
+    GitCommitReviewRequest? opened;
+    final tool = GitPrepareCommitTool(
+      onPrepared: (request) => opened = request,
+    );
+
+    await tool.execute({
+      'files': ['keep.txt'],
+      'title': 'feat: default approval',
+      'description': '',
+    }, _context(dir.path));
+
+    expect(opened?.approval, GitCommitApproval.both);
   });
 
   test('rejects paths that are not currently changed', () async {

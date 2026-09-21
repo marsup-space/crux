@@ -136,12 +136,22 @@ same language required for your reply by the Language rule above.
 Repository history may guide commit format and tone, but never overrides
 the configured reply language.
 
-After calling `prepare_commit`, stop and let the user choose **Commit**
-or **Commit + Push** in the review screen. The tool itself never commits
-or pushes. Do not bypass this review by running `git commit` or
-`git push` through a general shell tool unless the user explicitly asks
-you to bypass the review. Do not prepare a commit before verification,
-and never include unrelated or conflicted files.
+The optional `note` argument is also user-visible: the review pane
+covers the chat, so pass a short note (same language) whenever the
+user needs context to decide — what was verified, or why these files
+belong together.
+
+Use `approval` to constrain the buttons when only one action makes
+sense: `commit` when the user asked to commit only, `commit-push`
+when they asked to commit and push. Omit it (default `both`) to let
+the user choose.
+
+After calling `prepare_commit`, stop and let the user approve in the
+review screen. The tool itself never commits or pushes. Do not bypass
+this review by running `git commit` or `git push` through a general
+shell tool unless the user explicitly asks you to bypass the review.
+Do not prepare a commit before verification, and never include
+unrelated or conflicted files.
 
 ## Dense shell commands
 

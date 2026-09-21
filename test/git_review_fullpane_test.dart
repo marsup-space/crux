@@ -320,6 +320,66 @@ void main() {
     },
   );
 
+  test(
+    'agent note persists outside tabs and commit approval hides push',
+    () async {
+      final backend = _FakeGitReviewBackend();
+      await testNocterm('git review note and commit approval', (tester) async {
+        await _mount(
+          tester,
+          backend,
+          agentNote: 'Verified: dart analyze + dart test all green',
+          approval: GitCommitApproval.commit,
+          initialDraft: const GitCommitDraft(
+            title: 'feat: reviewed handoff',
+            description: '',
+          ),
+        );
+        expect(
+          tester.terminalState.getText(),
+          contains('Verified: dart analyze + dart test all green'),
+        );
+        expect(
+          tester.terminalState.getText(),
+          isNot(contains('Commit + Push')),
+        );
+
+        final selectedFile = tester.terminalState
+            .findText('example.dart')
+            .single;
+        await tester.tap(selectedFile.x + 1, selectedFile.y);
+        await _pumpAsync(tester);
+        expect(tester.terminalState.getText(), contains('Staged changes'));
+        expect(
+          tester.terminalState.getText(),
+          contains('Verified: dart analyze + dart test all green'),
+        );
+      }, size: const Size(120, 34));
+    },
+  );
+
+  test('commit-push approval renders no plain commit button', () async {
+    final backend = _FakeGitReviewBackend();
+    await testNocterm('git review commit-push approval', (tester) async {
+      await _mount(
+        tester,
+        backend,
+        approval: GitCommitApproval.commitPush,
+        initialDraft: const GitCommitDraft(
+          title: 'fix: push reviewed change',
+          description: '',
+        ),
+      );
+      final push = tester.terminalState.findText('Commit + Push').single;
+      expect(
+        tester.terminalState
+            .findText('Commit')
+            .where((match) => match.y == push.y && match.x < push.x),
+        isEmpty,
+      );
+    }, size: const Size(120, 34));
+  });
+
   test('Commit + Push requests an ordinary push after commit', () async {
     final backend = _FakeGitReviewBackend();
     await testNocterm('commit and push approval', (tester) async {
@@ -347,6 +407,8 @@ Future<void> _mount(
   CommitMessageGenerator? generator,
   Strings strings = kEnglishStrings,
   GitCommitDraft? initialDraft,
+  String? agentNote,
+  GitCommitApproval approval = GitCommitApproval.both,
   VoidCallback? onClose,
   double width = 120,
   double height = 34,
@@ -362,6 +424,8 @@ Future<void> _mount(
           onClose: onClose ?? () {},
           generateCommitMessage: generator,
           initialDraft: initialDraft,
+          agentNote: agentNote,
+          initialApproval: approval,
           strings: strings,
         ),
       ),
