@@ -506,6 +506,8 @@ class _ChatPanelState extends State<ChatPanel> {
           model: runner.profile.model,
           assignmentSummary: runner.intention,
           assignmentIntent: runner.intention,
+          roundProgress: runner.snapshot().round,
+          roundLimit: runner.maxRounds,
           lastActive: DateTime.now(),
         ),
       );

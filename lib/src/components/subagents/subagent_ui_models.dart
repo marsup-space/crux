@@ -76,6 +76,14 @@ class SubagentUiEntry {
   /// dispatched; the tooltip hides the line rather than inventing one.
   final String? assignmentIntent;
 
+  /// The current run's round progress for the bar chip (`12/40`).
+  /// [roundProgress] is the runner's live round counter; [roundLimit]
+  /// is the configured cap, null meaning unlimited (then the chip
+  /// shows the bare count `12`). Both null when the entry is not an
+  /// in-flight run (ready roster rows) — the chip renders no counter.
+  final int? roundProgress;
+  final int? roundLimit;
+
   /// Null when the active model's context-window metadata is unavailable, or
   /// when this Worker has no live Assignment. The UI must show unavailable
   /// rather than derive a value from durable transcript character counts.
@@ -102,6 +110,8 @@ class SubagentUiEntry {
     required this.assignmentSummary,
     required this.lastActive,
     this.assignmentIntent,
+    this.roundProgress,
+    this.roundLimit,
     this.contextUsage,
     this.latestReport,
     this.committedTranscript = const [],

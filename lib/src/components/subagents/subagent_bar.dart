@@ -63,6 +63,9 @@ class _SubagentBarState extends State<SubagentBar> {
     final theme = CruxTheme.of(context);
     final strings = component.strings;
 
+    // The switch state is color-only: on = success green, off = dim
+    // (hover lifts toward foreground). No `on`/`off` suffix — the
+    // colored word reads at the same glance and saves the columns.
     Component toggleCell(String label, bool value, VoidCallback? onTap) =>
         Hoverable(
           onTap: onTap,
@@ -70,19 +73,12 @@ class _SubagentBarState extends State<SubagentBar> {
             final color = value
                 ? theme.success
                 : (isHovered ? theme.foreground : theme.onSurfaceDim);
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(label, style: TextStyle(color: theme.onSurfaceDim)),
-                const SizedBox(width: 1),
-                Text(
-                  value ? 'on' : 'off',
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: value ? FontWeight.bold : null,
-                  ),
-                ),
-              ],
+            return Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontWeight: value ? FontWeight.bold : null,
+              ),
             );
           },
         );
@@ -149,9 +145,25 @@ class _SubagentBarState extends State<SubagentBar> {
     );
   }
 
-  String _agentLabel(SubagentUiEntry agent) =>
-      '${terminalSymbol(agent.role == SubagentRole.expert ? '✦' : '✎', agent.role == SubagentRole.expert ? '*' : '>')} '
-      '${agent.name}';
+  String _agentLabel(SubagentUiEntry agent) {
+    final glyph = terminalSymbol(
+      agent.role == SubagentRole.expert ? '✦' : '✎',
+      agent.role == SubagentRole.expert ? '*' : '>',
+    );
+    final counter = _roundCounter(agent);
+    return '$glyph ${agent.name}'
+        '${counter == null ? '' : ' $counter'}';
+  }
+
+  /// Round counter suffix for an in-flight chip: `12/40` against a
+  /// cap, bare `12` when unlimited, nothing when the entry carries no
+  /// live round data (ready rows, legacy projections).
+  String? _roundCounter(SubagentUiEntry agent) {
+    final progress = agent.roundProgress;
+    if (progress == null) return null;
+    final limit = agent.roundLimit;
+    return limit == null ? '$progress' : '$progress/$limit';
+  }
 
   String _agentHint(SubagentUiEntry agent) {
     final s = component.strings;
