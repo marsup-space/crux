@@ -52,6 +52,10 @@ class SubagentRunner {
   /// Streaming-status callback for check_agent / UI chips.
   final void Function(SubagentRunStatus status)? onStatus;
 
+  /// Aggregate provider-reported usage for the whole run. Invoked exactly
+  /// once, when the run finishes; both values include every LLM exchange.
+  final void Function(int tokensIn, int tokensOut)? onUsage;
+
   /// Maximum LLM rounds before the run is stopped and told to report.
   /// Null = unlimited (the run ends only on a terminal answer, an
   /// error, or cancel).
@@ -94,6 +98,7 @@ class SubagentRunner {
     required this.sessionId,
     required this.workingDirectory,
     this.onStatus,
+    this.onUsage,
     this.clientOverride,
     this.maxRounds = 40,
     this.userLanguage = 'English',
@@ -115,6 +120,8 @@ class SubagentRunner {
 
   int _round = 0;
   String? _lastTool;
+  int _tokensIn = 0;
+  int _tokensOut = 0;
 
   /// Start the background run. Returns immediately; progress and the
   /// final report arrive via [onStatus] / [onDone].
@@ -233,6 +240,7 @@ class SubagentRunner {
             return;
           }
           chunks.add(chunk);
+          _recordUsage(chunk);
         }, cancelOnError: true);
         await _sub!.asFuture().catchError((Object e) {});
       } catch (e) {
@@ -401,6 +409,7 @@ class SubagentRunner {
             return;
           }
           chunks.add(chunk);
+          _recordUsage(chunk);
         }, cancelOnError: true);
         await _sub!.asFuture().catchError((Object e) {});
       } catch (e) {
@@ -546,6 +555,7 @@ class SubagentRunner {
       await for (final chunk in stream) {
         if (chunk.error != null) return null;
         chunks.add(chunk);
+        _recordUsage(chunk);
       }
     } catch (_) {
       return null;
@@ -567,6 +577,11 @@ class SubagentRunner {
     return (provider, apiKey, modelId);
   }
 
+  void _recordUsage(LlmChunk chunk) {
+    _tokensIn += chunk.promptTokens ?? 0;
+    _tokensOut += chunk.completionTokens ?? 0;
+  }
+
   static String _textOf(List<LlmChunk> chunks) {
     final buffer = StringBuffer();
     for (final chunk in chunks) {
@@ -579,6 +594,7 @@ class SubagentRunner {
     if (_finished) return;
     _finished = true;
     _client.dispose();
+    onUsage?.call(_tokensIn, _tokensOut);
     onDone(status, report.trim());
   }
 }

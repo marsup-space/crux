@@ -41,6 +41,15 @@ class SubagentManager {
   /// Called whenever a run's live status changes (chip refresh).
   final void Function()? onRunsChanged;
 
+  /// Forwards one completed run's aggregate provider usage to the host.
+  final void Function(
+    int tokensIn,
+    int tokensOut,
+    db.Agent agent,
+    int sessionId,
+  )?
+  onUsage;
+
   final Map<String, SubagentRunner> _runs = {};
   final Map<String, List<_QueuedDispatch>> _queues = {};
   final String workingDirectory;
@@ -72,6 +81,7 @@ class SubagentManager {
     required this.workingDirectory,
     this.onReportEnvelope,
     this.onRunsChanged,
+    this.onUsage,
     this.userLanguage = 'English',
     this.budgetProbeTimeout = const Duration(seconds: 12),
   });
@@ -347,6 +357,8 @@ class SubagentManager {
         worklog: products.worklog,
       ),
       onStatus: (_) => onRunsChanged?.call(),
+      onUsage: (tokensIn, tokensOut) =>
+          onUsage?.call(tokensIn, tokensOut, profile, sessionId),
       onDone: (status, report) => _onRunDone(profile, status, report),
     );
     _runs[profile.name] = runner;

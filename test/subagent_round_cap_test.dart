@@ -108,6 +108,7 @@ void main() {
   Future<(String, String)> run({
     required _ScriptedClient client,
     int maxRounds = 2,
+    List<(int tokensIn, int tokensOut)>? usages,
   }) async {
     final profile = await store.hire(
       role: SubagentRole.worker,
@@ -125,6 +126,7 @@ void main() {
       toolExecutor: ToolExecutor(ToolRegistry()..register(_EchoTool())),
       tools: [_EchoTool()],
       onDone: (status, report) => done.complete((status, report)),
+      onUsage: (tokensIn, tokensOut) => usages?.add((tokensIn, tokensOut)),
       sessionId: 1,
       workingDirectory: tmpDir.path,
       clientOverride: client,
@@ -133,6 +135,31 @@ void main() {
     await runner.start();
     return done.future.timeout(const Duration(seconds: 5));
   }
+
+  test('sums provider usage across rounds and reports it once', () async {
+    final usages = <(int tokensIn, int tokensOut)>[];
+    final client = _ScriptedClient([
+      const [
+        LlmChunk(
+          toolUse: ToolUseChunk(
+            callId: 'c1', name: 'echo', index: 0, inputDelta: '{}',
+          ),
+        ),
+        LlmChunk(promptTokens: 100, completionTokens: 20),
+        LlmChunk(finishReason: 'tool_use'),
+      ],
+      const [
+        LlmChunk(textDelta: 'Done.'),
+        LlmChunk(promptTokens: 30, completionTokens: 7),
+        LlmChunk(finishReason: 'stop'),
+      ],
+    ]);
+
+    final result = await run(client: client, maxRounds: 3, usages: usages);
+
+    expect(result.$1, 'completed');
+    expect(usages, [(130, 27)]);
+  });
 
   test('round cap interrupts and collects an interim report', () async {
     final client = _ScriptedClient([

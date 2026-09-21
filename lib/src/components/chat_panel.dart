@@ -408,7 +408,30 @@ class _ChatPanelState extends State<ChatPanel> {
     'git_prepare_commit',
   };
 
+      /// Persist a completed subagent run's aggregate usage as an invisible
+  /// accounting row. Empty `user` content stays out of the model wire context;
+  /// MessageStore's existing daily aggregates consume its model and tokens.
+  void _onSubagentUsage(
+    int tokensIn,
+    int tokensOut,
+    db.Agent agent,
+    int sessionId,
+  ) {
+    if (tokensIn == 0 && tokensOut == 0) return;
+    unawaited(
+      _store.messageStore.addMessage(
+        sessionId,
+        role: 'user',
+        content: '',
+        model: agent.model,
+        tokensIn: tokensIn,
+        tokensOut: tokensOut,
+      ),
+    );
+  }
+
   /// Subagent reports arrive here as formatted envelopes. Two sinks:
+
   ///
   /// 1. **UI row** — persisted immediately as a `role: 'user'` row with
   ///    empty content + an `agentBubble` meta blob (kind `report`). The
@@ -696,6 +719,7 @@ class _ChatPanelState extends State<ChatPanel> {
         toggles: subagentController,
         workingDirectory: Directory.current.path,
         onReportEnvelope: _onSubagentReportEnvelope,
+        onUsage: _onSubagentUsage,
         onRunsChanged: () {
           _refresh();
           _scheduleRosterRefresh();

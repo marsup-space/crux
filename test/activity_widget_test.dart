@@ -201,6 +201,25 @@ void main() {
       expect(totals[key(yesterday)], 1500);
     });
 
+    test('aggregates an empty user accounting row', () async {
+      final session = await store.create(title: 'subagent', projectPath: '/p');
+      await store.messageStore.addMessage(
+        session.id,
+        role: 'user',
+        content: '',
+        model: 'test/subagent',
+        tokensIn: 73,
+        tokensOut: 27,
+      );
+
+      final totals = await store.messageStore.dailyTokenTotals(
+        sinceDaysAgo: 1,
+        projectPath: '/p',
+      );
+
+      expect(totals.values.single, 100);
+    });
+
     test('filters by project path', () async {
       final today = DateTime.now();
       await sessionWithMessage(
