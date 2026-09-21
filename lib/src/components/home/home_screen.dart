@@ -241,14 +241,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ActivityHomeWidget(),
       SkillsHomeWidget(skills: _cachedSkills),
       NotesHomeWidget(service: ctx.notesService, openNotes: ctx.openNotes),
-      // Subagent pool box: switches + roster at a glance; Enter opens
-      // the config fullpane. Conditional on mode/roster via
-      // visibleWhen, so a fresh install's grid stays clean.
-      if (ctx.subagentController case final subagentController?)
-        SubagentPoolHomeWidget(
-          controller: subagentController,
-          openConfig: ctx.openSubagentConfig ?? component.onExit,
-        ),
+      // Subagent pool box: workspace roster at a glance; Enter opens
+      // the config fullpane. Hidden until the roster has agents, so a
+      // fresh install's grid stays clean.
+      SubagentPoolHomeWidget(
+        openConfig: ctx.openSubagentConfig ?? component.onExit,
+      ),
       RecentSessionsHomeWidget(
         sessions: ctx.sessions,
         currentSessionId: ctx.currentSessionId,

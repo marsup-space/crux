@@ -11,7 +11,6 @@ import '../../services/plugin.dart';
 import '../../services/skills/skill.dart';
 import '../../services/subagent/subagent_config_store.dart'
     show SubagentRosterEntry;
-import '../../services/subagent/subagent_controller.dart';
 import '../plugin_content.dart';
 import '../polling_coordinator.dart';
 
@@ -166,18 +165,13 @@ class HomeContext {
 
   /// The subagent roster rows (agents table + live busy flags), read
   /// on each home build. Feeds the `subagent-pool` box. Null (tests /
-  /// previews) means "no store wired" — the box shows switches only.
+  /// previews) means "no store wired" — the box stays hidden.
   final List<SubagentRosterEntry> Function()? subagentRoster;
 
   /// Open the subagent-config fullpane (the `subagent-pool` box's
   /// activation, and the config plugin's `screen` action). Null in
   /// tests/previews with no fullpane host.
   final VoidCallback? openSubagentConfig;
-
-  /// The live subagent-mode controller, driving the `subagent-pool`
-  /// box's switches and its ChangeNotifier-driven rebuilds. Null
-  /// (tests / previews) → the box is not registered at all.
-  final SubagentController? subagentController;
 
   const HomeContext({
     required this.runCommand,
@@ -208,7 +202,6 @@ class HomeContext {
     this.pluginHost,
     this.subagentRoster,
     this.openSubagentConfig,
-    this.subagentController,
   });
 
   /// Convenience for the `subagent-pool` box's visibility gate: any
@@ -251,10 +244,9 @@ class HomeContext {
       connectedUsageProviders = _noConnectedUsage,
       plugins = null,
       pluginHost = null,
-      subagentRoster = null,
-      openSubagentConfig = null,
-      subagentController = null;
-}
+            subagentRoster = null,
+      openSubagentConfig = null;
+  }
 
 /// One pluggable dashboard box.
 ///

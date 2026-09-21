@@ -2073,7 +2073,6 @@ class _ChatPanelState extends State<ChatPanel> {
       openSubagentConfig: component.subagentController == null
           ? null
           : _openSubagentConfigFullpane,
-      subagentController: component.subagentController,
       // Coding-plan box: hand it every connected usage provider (not just
       // the active session's provider). The closure reads `_polling` on
       // each home build so the box tracks whatever is configured now.
