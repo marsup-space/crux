@@ -223,16 +223,7 @@ class SubagentRunner {
           modelId: modelId,
           messages: history,
           thinkingMode: 'enabled',
-          tools: tools.isNotEmpty
-              ? [
-                  for (final tool in tools)
-                    {
-                      'name': tool.name,
-                      'description': tool.description,
-                      'parameters': tool.parametersSchema,
-                    },
-                ]
-              : null,
+          tools: _toolsDefinition(),
           userId: 'subagent-$agentName',
           cancelToken: _cancelToken(),
         );
@@ -343,14 +334,36 @@ class SubagentRunner {
     _finish('completed', roundReport);
   }
 
-  /// One final exchange after the round cap: append the stop notice
-  /// (see [kSubagentRoundCapStopNotice]) to the history, stream one
-  /// last reply WITHOUT tools, and return it as the interim report.
+  /// Tools definition for every LLM request of this run. The main
+  /// loop and the final stop-notice exchange send the IDENTICAL list
+  /// (byte-for-byte) — dropping or reordering tools on the last
+  /// request would invalidate the provider's prompt cache for the
+  /// whole conversation.
+  List<Map<String, dynamic>>? _toolsDefinition() => tools.isNotEmpty
+      ? [
+          for (final tool in tools)
+            {
+              'name': tool.name,
+              'description': tool.description,
+              'parameters': tool.parametersSchema,
+            },
+        ]
+      : null;
+
+  /// Final exchanges after the round cap: append the stop notice (see
+  /// [kSubagentRoundCapStopNotice]) to the history and stream replies
+  /// with the SAME tools definition (never null — cache prefix must
+  /// stay identical). A defying tool call is intercepted at the
+  /// SYSTEM level: not executed, not written into the history as a
+  /// tool_use; instead the stop notice is repeated verbatim and the
+  /// model is asked again, up to [maxStopNoticeRepeats] times. The
+  /// first plain-text reply becomes the interim report.
   ///
-  /// Incomplete replies guard against two degenerate outcomes: a
-  /// truncated stream and a model that answers with a lone tool call
-  /// despite the prohibition — both yield null and the caller falls
-  /// back to the last prose it has.
+  /// Returns null when every attempt fails (stream error, cancel, or
+  /// a model that keeps calling tools) — the caller falls back to the
+  /// last prose it has.
+  static const int maxStopNoticeRepeats = 2;
+
   Future<String?> _requestInterimReport(
     ProviderConfig provider,
     String apiKey,
@@ -359,49 +372,82 @@ class SubagentRunner {
     String lastProse,
     int cap,
   ) async {
+    final notice = kSubagentRoundCapStopNotice(cap);
     final lastAssistantText = lastProse.trim().isNotEmpty
         ? lastProse.trim()
         : '(mid-work, no prose yet)';
     history
       ..add({'role': 'assistant', 'content': lastAssistantText})
-      ..add({
-        'role': 'user',
-        'content': kSubagentRoundCapStopNotice(cap),
-      });
-    final chunks = <LlmChunk>[];
-    LlmError? streamError;
-    try {
-      final stream = _client.streamChat(
-        endpointUrl: provider.endpointUrl,
-        config: provider,
-        apiKey: apiKey,
-        modelId: modelId,
-        messages: history,
-        thinkingMode: 'enabled',
-        tools: null, // No tools: this exchange must be plain text.
-        userId: 'subagent-$agentName',
-        cancelToken: _cancelToken(),
-      );
-      _sub = stream.listen((chunk) {
-        if (chunk.error != null) {
-          streamError = chunk.error;
-          return;
-        }
-        chunks.add(chunk);
-      }, cancelOnError: true);
-      await _sub!.asFuture().catchError((Object e) {});
-    } catch (e) {
-      streamError = LlmError(
-        kind: LlmErrorKind.unknown,
-        vendor: LlmVendor.unknown,
-        message: '$e',
-      );
+      ..add({'role': 'user', 'content': notice});
+
+    for (var attempt = 0; attempt <= maxStopNoticeRepeats; attempt++) {
+      final chunks = <LlmChunk>[];
+      LlmError? streamError;
+      try {
+        final stream = _client.streamChat(
+          endpointUrl: provider.endpointUrl,
+          config: provider,
+          apiKey: apiKey,
+          modelId: modelId,
+          messages: history,
+          thinkingMode: 'enabled',
+          tools: _toolsDefinition(), // Same list: cache-friendly.
+          userId: 'subagent-$agentName',
+          cancelToken: _cancelToken(),
+        );
+        _sub = stream.listen((chunk) {
+          if (chunk.error != null) {
+            streamError = chunk.error;
+            return;
+          }
+          chunks.add(chunk);
+        }, cancelOnError: true);
+        await _sub!.asFuture().catchError((Object e) {});
+      } catch (e) {
+        streamError = LlmError(
+          kind: LlmErrorKind.unknown,
+          vendor: LlmVendor.unknown,
+          message: '$e',
+        );
+      }
+      _sub = null;
+      if (_cancelled || streamError != null) return null;
+
+      final text = _textOf(chunks).trim();
+      final calls = ToolExecutor.parseToolUseFromChunks(chunks);
+
+      if (calls.isNotEmpty) {
+        // The model defied the ban. Intercept at the system level:
+        // answer its tool call with a refusal the wire format
+        // understands, then repeat the stop notice verbatim.
+        if (attempt == maxStopNoticeRepeats) return null;
+        history
+          ..add(toolExecutor.formatAssistantToolCallsMessage(
+            calls,
+            text,
+            provider.wireFamily,
+          ))
+          ..addAll([
+            for (final call in calls)
+              toolExecutor.formatToolResultForApi(
+                call,
+                ToolResult.error(
+                  'Tool call refused: the run hit its round limit. Do '
+                  'NOT call any tool — reply with your interim report '
+                  'as plain text.',
+                ),
+                provider.wireFamily,
+              ),
+          ])
+          ..add({'role': 'user', 'content': notice});
+        continue;
+      }
+
+      if (text.isNotEmpty) return text;
+      // Empty reply with no tool call: ask once more via the loop
+      // (consumes an attempt, same as a defying call).
     }
-    _sub = null;
-    if (_cancelled || streamError != null) return null;
-    if (ToolExecutor.parseFinishReason(chunks) == 'tool_use') return null;
-    final text = _textOf(chunks).trim();
-    return text.isEmpty ? null : text;
+    return null;
   }
 
   LlmStreamCancelToken? _cancelToken() => null;

@@ -112,6 +112,7 @@ void main() {
     final profile = await store.hire(
       role: SubagentRole.worker,
       model: 'test/smoke',
+      projectPath: tmpDir.path,
     );
     final done = Completer<(String, String)>();
     final runner = SubagentRunner(
@@ -149,25 +150,60 @@ void main() {
     expect(result.$2, contains('INTERIM: fixed the race'));
     // Exactly 3 LLM exchanges: 2 work rounds + 1 stop-notice reply.
     expect(client.requests.length, 3);
-    // The final exchange carried NO tools and ended with the stop notice.
-    expect(client.requestTools.last, isNull);
+    // The final exchange carried the SAME tools definition (dropping
+    // tools would invalidate the provider's prompt cache) and ended
+    // with the stop notice.
+    expect(client.requestTools.last, isNotNull);
+    expect(client.requestTools.last, equals(client.requestTools.first));
     final lastUser = client.requests.last.last;
     expect(lastUser['role'], 'user');
     expect((lastUser['content'] as String), contains('round limit reached'));
     expect((lastUser['content'] as String), contains('do NOT call any tool'));
   });
 
-  test('degenerate stop-notice reply (tool call) falls back gracefully',
+  test('defying tool call is intercepted, notice repeated, then report',
       () async {
     final client = _ScriptedClient([
       _toolRound,
       _toolRound,
-      _toolRound, // model defies the ban — reply is a tool call
+      _toolRound, // defies the ban on the first stop-notice exchange
+      const [   // second exchange: complies with plain text
+        LlmChunk(textDelta: 'INTERIM after the repeated notice.'),
+        LlmChunk(finishReason: 'stop'),
+      ],
+    ]);
+
+    final result = await run(client: client);
+    expect(result.$1, 'round_cap');
+    expect(result.$2, contains('INTERIM after the repeated notice'));
+    // 2 work rounds + 2 stop-notice exchanges (defiance → repeat).
+    expect(client.requests.length, 4);
+    // The defying call was refused at the system level: the history
+    // of the last request carries the refusal tool result + a
+    // repeated notice as the final user message.
+    final lastMessages = client.requests.last;
+    final roles = lastMessages.map((m) => m['role']).toList();
+    expect(roles, contains('tool'));
+    final lastUser = lastMessages.last;
+    expect(lastUser['role'], 'user');
+    expect((lastUser['content'] as String), contains('round limit reached'));
+  });
+
+  test('model that keeps calling tools exhausts repeats and falls back',
+      () async {
+    final client = _ScriptedClient([
+      _toolRound,
+      _toolRound,
+      _toolRound, // defies
+      _toolRound, // defies again
+      _toolRound, // defies a third time — repeats exhausted
     ]);
 
     final result = await run(client: client);
     expect(result.$1, 'round_cap_no_report');
     expect(result.$2, contains('no interim report'));
+    // 2 work rounds + 3 stop-notice exchanges (initial + 2 repeats).
+    expect(client.requests.length, 5);
   });
 
   test('stop notice demands interim report and forbids tools', () {
