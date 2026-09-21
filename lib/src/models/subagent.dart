@@ -26,28 +26,50 @@ class SubagentModelEntry {
   /// Maximum simultaneous runs on [model]. Always at least one.
   final int concurrency;
 
-  const SubagentModelEntry({required this.model, this.concurrency = 1})
-    : assert(concurrency > 0);
+  /// Reasoning effort every run on this pool model uses: one of the
+  /// model's reasoning presets (`off` / `low` / `normal` / `high` /
+  /// `max`). Defaults to `normal`. Read at dispatch time, so a pool
+  /// edit applies from the next run a pool model serves.
+  final String reasoningEffort;
 
-  SubagentModelEntry copyWith({int? concurrency}) => SubagentModelEntry(
-    model: model,
-    concurrency: concurrency ?? this.concurrency,
-  );
+  const SubagentModelEntry({
+    required this.model,
+    this.concurrency = 1,
+    this.reasoningEffort = 'normal',
+  }) : assert(concurrency > 0);
 
-  Map<String, dynamic> toJson() => {'model': model, 'concurrency': concurrency};
+  SubagentModelEntry copyWith({int? concurrency, String? reasoningEffort}) =>
+      SubagentModelEntry(
+        model: model,
+        concurrency: concurrency ?? this.concurrency,
+        reasoningEffort: reasoningEffort ?? this.reasoningEffort,
+      );
+
+  Map<String, dynamic> toJson() => {
+    'model': model,
+    'concurrency': concurrency,
+    'reasoning_effort': reasoningEffort,
+  };
 
   /// Parses one entry, returning null for anything unusable (missing model,
-  /// non-positive concurrency falls back to a single slot).
+  /// non-positive concurrency falls back to a single slot, unknown effort
+  /// falls back to the `normal` default).
   static SubagentModelEntry? fromJson(Object? value) {
     if (value is! Map) return null;
     final model = value['model'];
     if (model is! String || model.trim().isEmpty) return null;
     final rawConcurrency = value['concurrency'];
+    const knownEfforts = {'off', 'low', 'normal', 'high', 'max'};
+    final rawEffort = value['reasoning_effort'];
     return SubagentModelEntry(
       model: model,
       concurrency: rawConcurrency is int && rawConcurrency > 0
           ? rawConcurrency
           : 1,
+      reasoningEffort:
+          rawEffort is String && knownEfforts.contains(rawEffort)
+          ? rawEffort
+          : 'normal',
     );
   }
 
@@ -55,13 +77,15 @@ class SubagentModelEntry {
   bool operator ==(Object other) =>
       other is SubagentModelEntry &&
       other.model == model &&
-      other.concurrency == concurrency;
+      other.concurrency == concurrency &&
+      other.reasoningEffort == reasoningEffort;
 
   @override
-  int get hashCode => Object.hash(model, concurrency);
+  int get hashCode => Object.hash(model, concurrency, reasoningEffort);
 
   @override
-  String toString() => 'SubagentModelEntry($model x$concurrency)';
+  String toString() => 'SubagentModelEntry($model x$concurrency, '
+      'effort $reasoningEffort)';
 }
 
 /// User-level configuration for one subagent role: an ordered model pool.

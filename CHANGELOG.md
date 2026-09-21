@@ -10,16 +10,20 @@ below the version header. Each version has at most two categories:
 
 ### Features
 
-- **Per-agent reasoning effort for subagents** — the agents table gains a
-  `reasoning_effort` column (drift v38, nullable). Each roster row in the
-  subagent config fullpane grows a `✶<next>` cycle segment (hover reveals
-  it next to `delete`), cycling through the bound model's reasoning presets
-  — the same preset resolution (provider base + TOML label overrides) as
-  the toolbar's `✶` cycle button — plus a wrap-around back to `default`
-  (null: no `reasoning_effort` on the wire, the provider's server default;
-  `off` maps to thinking disabled). The current override shows as a `✶high`
-  suffix in the row label. Read at each dispatch, so a change applies from
-  the agent's next run; a live run keeps the value it started with.
+- **Per-model reasoning effort for subagent pools** — each model entry in
+  `[subagent.workers]` / `[subagent.experts]` gains a `reasoning_effort`
+  field (default `normal`; `off` disables thinking), persisted in
+  config.toml. In the subagent config fullpane, every pool row shows the
+  current value as a `✶normal` suffix and hover exposes a bare `✶` cycle
+  segment (the toolbar cycle button's icon) that flips through the bound
+  model's reasoning presets — the same preset resolution (provider base +
+  TOML label overrides) as the toolbar. Copy-on-edit like concurrency:
+  the cycle marks the pool dirty, Ctrl+S / Save persists, and the value
+  applies from the NEXT dispatch on that pool model (a live run keeps the
+  effort it started with). Supersedes the short-lived per-agent
+  `agents.reasoning_effort` column from the same dev cycle (drift v38 now
+  drops it idempotently); the effort belongs to the pool model, not to
+  individual agent identities.
 
 - **prepare_commit: note + approval** — optional `note` displays a prominent
   banner at the top of the review pane, because the pane covers the chat and

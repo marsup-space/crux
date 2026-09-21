@@ -336,6 +336,11 @@ class SubagentManager {
       intention: intention,
     );
     final role = _roleOf(profile);
+    // Pool-entry effort (config.toml): resolved live at dispatch from
+    // the entry whose model the run landed on — a pool edit applies
+    // from the next dispatch. A model no longer in any pool falls
+    // back to the `normal` default.
+    final effort = _effortForModel(profile.model);
     final runner = SubagentRunner(
       agentName: profile.name,
       profile: profile,
@@ -349,6 +354,7 @@ class SubagentManager {
       workingDirectory: workingDirectory,
       userLanguage: userLanguage,
       maxRounds: toggles.roundLimit,
+      reasoningEffort: effort,
       contextCapacity: _contextCapacityFor(profile.model),
       onDistilled: (name, products) => store.writeDistilled(
         projectPath: projectPath,
@@ -468,6 +474,17 @@ class SubagentManager {
   String? _providerNameForModel(String model) {
     final slash = model.indexOf('/');
     return slash <= 0 ? null : model.substring(0, slash);
+  }
+
+  /// The pool entry's reasoning effort for [model] — the first entry
+  /// (either role's pool) whose model matches. Null when the model is
+  /// not in any pool (the runner's `normal` default applies).
+  String _effortForModel(String model) {
+    for (final role in SubagentRole.values) {
+      final entry = toggles.poolFor(role).entryFor(model);
+      if (entry != null) return entry.reasoningEffort;
+    }
+    return 'normal';
   }
 
   dynamic _providerForModel(String model) {

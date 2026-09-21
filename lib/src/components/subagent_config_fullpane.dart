@@ -62,18 +62,12 @@ class SubagentConfigFullpane extends StatefulComponent {
   /// layer; the fullpane only calls it for non-busy rows).
   final Future<void> Function(String name) deleteAgent;
 
-  /// Resolves the reasoning-effort cycle options for one agent's bound
+  /// Resolves the reasoning-effort cycle options for one pool entry's
   /// model, as `(internalValue, displayLabel)` pairs in cycle order —
   /// the same preset resolution as the toolbar's `✶` cycle button.
   /// Null (tests / previews) hides the cycle segment entirely.
   final List<(String, String)>? Function(String compositeModelKey)?
   effortOptionsFor;
-
-  /// Persists one agent's reasoning effort override (null = back to
-  /// the server default). Applies from the agent's NEXT run; a live
-  /// run keeps the value it started with.
-  final Future<void> Function(String name, String? effort)?
-  setReasoningEffort;
 
   final VoidCallback onClose;
   final Strings strings;
@@ -86,7 +80,6 @@ class SubagentConfigFullpane extends StatefulComponent {
     required this.loadRoster,
     required this.deleteAgent,
     this.effortOptionsFor,
-    this.setReasoningEffort,
     required this.onClose,
     this.strings = kEnglishStrings,
   });
@@ -442,8 +435,10 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
     );
   }
 
-  /// One model entry: `provider/model ×N` with hover segments to
-  /// decrement / increment concurrency and remove the entry.
+  /// One model entry: `provider/model ×N ✶effort` with hover segments
+  /// to cycle reasoning effort, decrement / increment concurrency, and
+  /// remove the entry. Effort is copy-on-edit like concurrency — the
+  /// cycle marks dirty; Ctrl+S / Save persists it to config.toml.
   Component _poolEntryRow(
     CruxThemeData theme,
     Strings s, {
@@ -451,13 +446,22 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
     required int index,
   }) {
     final entry = _pools[role]![index];
+    final effortOptions = component.effortOptionsFor?.call(entry.model);
+    final showEffort = effortOptions != null && effortOptions.isNotEmpty;
     return MultiButton(
-      label: '${entry.model} ×${entry.concurrency}',
+      label:
+          '${entry.model} ×${entry.concurrency}'
+          '${showEffort ? ' ✶${entry.reasoningEffort}' : ''}',
       color: theme.onSurface,
       hoverColor: theme.foreground,
       bgColor: theme.surface,
       hoverBgColor: theme.buttonBackgroundHover,
       segments: [
+        if (showEffort)
+          MultiButtonSegment(
+            label: '✶',
+            onPressed: () => _cycleEntryEffort(role, index),
+          ),
         MultiButtonSegment(
           label: '−',
           onPressed: () => _bumpConcurrency(role, index, -1),
@@ -576,87 +580,42 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
   /// same language as the agent bar / chat chip (`✎ 天燕座`). The glyph
   /// goes through [terminalSymbol] so 7-bit terminals degrade like the
   /// chip; the name is localized via [WorkerNameLocalizer] (unknown
-  /// legacy names pass through unchanged). Status/domain/model follow,
-  /// then the current reasoning effort (`✶high`) when an override is
-  /// set — absent means the server default, matching the idle toolbar
-  /// chip which also hides at the default.
-  String _rosterLabel(
-    SubagentRosterEntry entry,
-    Strings s,
-    List<(String, String)>? effortOptions,
-  ) {
+  /// legacy names pass through unchanged). Status/domain/model follow.
+  String _rosterLabel(SubagentRosterEntry entry, Strings s) {
     final expert = entry.role == 'expert';
     final glyph = terminalSymbol(expert ? '✦' : '✎', expert ? '*' : '>');
     final name = const WorkerNameLocalizer().display(entry.name, s.locale);
     final status = entry.busy
         ? s.t('subagent.pool.busy')
         : s.t('subagent.pool.ready');
-    final effortSuffix = entry.reasoningEffort == null
-        ? ''
-        : ' · ✶${_effortLabel(entry, effortOptions)}';
-    return '$glyph $name · $status · ${entry.domain} · ${entry.model}'
-        '$effortSuffix';
+    return '$glyph $name · $status · ${entry.domain} · ${entry.model}';
   }
 
-  /// Display label for the agent's current effort: the preset list's
-  /// label when found, else the raw stored value (legacy / custom).
-  String _effortLabel(
-    SubagentRosterEntry entry,
-    List<(String, String)>? effortOptions,
-  ) {
-    final effort = entry.reasoningEffort;
-    if (effort == null) return '';
-    for (final (value, label) in effortOptions ?? const <(String, String)>[]) {
-      if (value == effort) return label;
-    }
-    return effort;
-  }
-
-  /// Cycles one agent's effort to the next preset in its bound model's
-  /// list. The synthetic `default` head slot represents "never set"
-  /// (null): cycling from the last preset wraps back to it, and it
-  /// renders without the `✶` suffix in the label.
-  Future<void> _cycleEffort(
-    SubagentRosterEntry entry,
-    List<(String, String)> effortOptions,
-  ) async {
-    final setter = component.setReasoningEffort;
-    if (setter == null) return;
-    final current = entry.reasoningEffort;
-    // Null (never set) cycles as the implicit head slot; an unknown
-    // stored value (legacy / preset list changed) cycles as index -1.
+      /// Cycles one pool entry's effort to the next preset of its model.
+  /// Copy-on-edit like concurrency: marks dirty; Ctrl+S / Save
+  /// persists to config.toml and the change applies from the next
+  /// dispatch on that pool model. The segment is a bare `✶` glyph
+  /// (the toolbar cycle button's icon): the row label's `✶<effort>`
+  /// suffix flips live on click, so the value is always in view.
+  void _cycleEntryEffort(SubagentRole role, int index) {
+    final options = component.effortOptionsFor?.call(
+      _pools[role]![index].model,
+    );
+    if (options == null || options.isEmpty) return;
+    final list = _pools[role]!;
+    final entry = list[index];
     var idx = -1;
-    for (var i = 0; i < effortOptions.length; i++) {
-      if (effortOptions[i].$1 == current) {
+    for (var i = 0; i < options.length; i++) {
+      if (options[i].$1 == entry.reasoningEffort) {
         idx = i;
         break;
       }
     }
-    final next = idx + 1 >= effortOptions.length
-        ? null // wrap past the last preset → back to server default
-        : effortOptions[idx + 1].$1;
-    await setter(entry.name, next);
-    await _reloadRoster();
-  }
-
-  /// The cycle segment's label: the effort the click will MOVE TO, so
-  /// the user reads `✶high` and knows high is one click away (the
-  /// current value stays visible in the row label's suffix).
-  String _effortNextLabel(
-    SubagentRosterEntry entry,
-    List<(String, String)> effortOptions,
-  ) {
-    final current = entry.reasoningEffort;
-    var idx = -1;
-    for (var i = 0; i < effortOptions.length; i++) {
-      if (effortOptions[i].$1 == current) {
-        idx = i;
-        break;
-      }
-    }
-    return idx + 1 >= effortOptions.length
-        ? 'def'
-        : effortOptions[idx + 1].$2;
+    final next = options[(idx + 1) % options.length].$1;
+    setState(() {
+      list[index] = entry.copyWith(reasoningEffort: next);
+      _dirty = true;
+    });
   }
 
   /// Bottom section: every roster agent as a hoverable row with a
@@ -686,35 +645,22 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
           // Roster rows are flush: no blank line between agents, only
           // the header keeps its own gap above the list.
           for (final entry in _roster)
-            () {
-              // Per-row effort resolution: null options (tests /
-              // previews, or a model with no presets) hides the cycle
-              // segment — the row degrades to the plain delete row.
-              final effortOptions = component.effortOptionsFor
-                  ?.call(entry.model);
-              return MultiButton(
-                label: _rosterLabel(entry, s, effortOptions),
-                color: entry.busy ? theme.success : theme.onSurface,
-                hoverColor: theme.foreground,
-                disabledColor: theme.onSurfaceDim,
-                bgColor: theme.surface,
-                hoverBgColor: theme.buttonBackgroundHover,
-                segments: [
-                  if (effortOptions != null && effortOptions.isNotEmpty)
-                    MultiButtonSegment(
-                      label: '✶${_effortNextLabel(entry, effortOptions)}',
-                      onPressed: () =>
-                          _cycleEffort(entry, effortOptions),
-                    ),
-                  MultiButtonSegment(
-                    label: s.t('subagent.config.delete'),
-                    onPressed: entry.busy
-                        ? null
-                        : () => _deleteRosterEntry(entry),
-                  ),
-                ],
-              );
-            }(),
+            MultiButton(
+              label: _rosterLabel(entry, s),
+              color: entry.busy ? theme.success : theme.onSurface,
+              hoverColor: theme.foreground,
+              disabledColor: theme.onSurfaceDim,
+              bgColor: theme.surface,
+              hoverBgColor: theme.buttonBackgroundHover,
+              segments: [
+                MultiButtonSegment(
+                  label: s.t('subagent.config.delete'),
+                  onPressed: entry.busy
+                      ? null
+                      : () => _deleteRosterEntry(entry),
+                ),
+              ],
+            ),
       ],
     );
   }

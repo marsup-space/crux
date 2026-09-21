@@ -255,115 +255,94 @@ max_rounds = "unlimited"
       },
     );
   });
-  group('roster reasoning effort cycle', () {
+  group('pool-entry reasoning effort cycle', () {
     const presets = [('off', 'off'), ('low', 'low'), ('normal', 'normal'),
       ('high', 'high'), ('max', 'max')];
 
-    /// Hover the first roster row so its MultiButton morphs into
-    /// segments, then return the terminal state.
-    Future<void> hoverRosterRow(dynamic tester) async {
-      final row = tester.terminalState.findText('db').single;
+    /// Hover the first workers pool row so its MultiButton morphs into
+    /// segments. Returns the row's y BEFORE hovering (the idle label
+    /// is gone while hovered).
+    Future<int> hoverPoolRow(dynamic tester) async {
+      final row = tester.terminalState.findText('zhipu/glm-4.5 ×2').single;
+      final y = row.y;
       await tester.sendMouseEvent(
-        MouseEvent(
-          button: MouseButton.left,
-          x: row.x,
-          y: row.y,
-          pressed: false,
-        ),
+        MouseEvent(button: MouseButton.left, x: row.x, y: y, pressed: false),
       );
       await _pumpAsync(tester);
+      return y;
     }
 
-    test('cycle segment renders the NEXT effort; label shows current',
+    test('idle label shows the current effort; cycle segment is ✶',
         () async {
       await testNocterm('subagent effort cycle render', (tester) async {
-        await _mount(
-          tester,
-          file,
-          roster: const [
-            SubagentRosterEntry(
-              name: 'apus',
-              role: 'worker',
-              domain: 'db',
-              model: 'zhipu/glm-4.5',
-              intention: 'smoke',
-              busy: false,
-              reasoningEffort: 'high',
-            ),
-          ],
-          effortOptionsFor: (_) => presets,
-        );
+        await file.writeAsString('''
+[subagent.workers]
+models = [{ model = "zhipu/glm-4.5", concurrency = 2, reasoning_effort = "high" }]
+
+[subagent.experts]
+models = [{ model = "zhipu/glm-4.5", concurrency = 1 }]
+''');
+        await _mount(tester, file, effortOptionsFor: (_) => presets);
         // Idle label carries the current value suffix.
         expect(tester.terminalState.getText(), contains('✶high'));
-        // Hover: the segment offers the next preset (max).
-        await hoverRosterRow(tester);
-        expect(tester.terminalState.getText(), contains('✶max'));
+        // Hover: the bare ✶ cycle segment appears next to −/+/del.
+        final y = await hoverPoolRow(tester);
+        expect(
+          tester.terminalState.findText('✶').where((m) => m.y == y),
+          isNotEmpty,
+        );
       }, size: const Size(100, 40));
     });
 
-    test('null effort: no suffix; segment offers the first preset',
-        () async {
+    test('default effort is normal and shows in the label', () async {
       await testNocterm('subagent effort cycle default', (tester) async {
-        await _mount(
-          tester,
-          file,
-          roster: const [
-            SubagentRosterEntry(
-              name: 'apus',
-              role: 'worker',
-              domain: 'db',
-              model: 'zhipu/glm-4.5',
-              intention: 'smoke',
-              busy: false,
-            ),
-          ],
-          effortOptionsFor: (_) => presets,
-        );
-        await hoverRosterRow(tester);
-        // No current-override suffix in the idle label (server
-        // default); the segment offers the first preset (off).
-        final idle = tester.terminalState.getText();
-        expect(idle, isNot(contains('· ✶')));
-        expect(idle, contains('✶off'));
+        await _mount(tester, file, effortOptionsFor: (_) => presets);
+        // Absent reasoning_effort in TOML → normal, visible directly.
+        expect(tester.terminalState.getText(), contains('✶normal'));
       }, size: const Size(100, 40));
     });
 
-    test('clicking the segment cycles and persists via the callback',
-        () async {
+    test('clicking ✶ cycles, marks unsaved, and Save persists', () async {
       await testNocterm('subagent effort cycle click', (tester) async {
-        String? saved;
-        await _mount(
-          tester,
-          file,
-          roster: const [
-            SubagentRosterEntry(
-              name: 'apus',
-              role: 'worker',
-              domain: 'db',
-              model: 'zhipu/glm-4.5',
-              intention: 'smoke',
-              busy: false,
-              reasoningEffort: 'high',
-            ),
-          ],
-          effortOptionsFor: (_) => presets,
-          setReasoningEffort: (name, effort) async => saved = effort,
-        );
-        await hoverRosterRow(tester);
-        final seg = tester.terminalState.findText('✶max').single;
-        await tester.tap(seg.x + 1, seg.y);
+        await _mount(tester, file, effortOptionsFor: (_) => presets);
+        final y = await hoverPoolRow(tester);
+        // The cycle segment is the ✶ on the pool row.
+        final seg = tester.terminalState
+            .findText('✶')
+            .firstWhere((m) => m.y == y);
+        await tester.tap(seg.x, seg.y);
         await _pumpAsync(tester);
-        expect(saved, 'max');
+        // Move the mouse off the row so the MultiButton morphs back
+        // to its idle label (while hovered it shows the segments).
+        await tester.sendMouseEvent(
+          MouseEvent(button: MouseButton.left, x: 2, y: 2, pressed: false),
+        );
+        await _pumpAsync(tester);
+        // normal → high after one click; the label flips live.
+        expect(tester.terminalState.getText(), contains('✶high'));
+        expect(tester.terminalState.getText(), contains('unsaved'));
+
+        // Save → config.toml carries the cycled effort.
+        final save = tester.terminalState
+            .findText('Save')
+            .reduce((a, b) => a.y < b.y ? a : b);
+        await tester.tap(save.x + 1, save.y);
+        await _pumpAsync(tester);
+        expect(
+          file.readAsStringSync(),
+          contains('reasoning_effort = \'high\''),
+        );
       }, size: const Size(100, 40));
     });
 
-    test('no options resolver → no cycle segment (plain delete row)',
+    test('no options resolver → no effort suffix, no cycle segment',
         () async {
       await testNocterm('subagent effort cycle absent', (tester) async {
         await _mount(tester, file);
-        await hoverRosterRow(tester);
-        expect(tester.terminalState.getText(), contains('delete'));
         expect(tester.terminalState.findText('✶'), isEmpty);
+        await hoverPoolRow(tester);
+        // Plain remove/± segments only.
+        expect(tester.terminalState.getText(), contains('del'));
       }, size: const Size(100, 40));
     });
   });
@@ -406,7 +385,6 @@ Future<void> _mount(
   File file, {
   List<SubagentRosterEntry>? roster,
   List<(String, String)>? Function(String)? effortOptionsFor,
-  Future<void> Function(String name, String? effort)? setReasoningEffort,
 }) async {
   final controller = await SubagentController.create(
     configStore: SubagentConfigStore(file),
@@ -435,7 +413,6 @@ Future<void> _mount(
               ],
           deleteAgent: (name) async {},
           effortOptionsFor: effortOptionsFor,
-          setReasoningEffort: setReasoningEffort,
           onClose: () {},
         ),
       ),

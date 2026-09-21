@@ -184,13 +184,15 @@ class CruxDatabase extends _$CruxDatabase {
   ///         stay visible in no workspace and are effectively
   ///         retired, which is the safe default: leaking them into
   ///         every project is the bug being fixed).
-  ///   v38 – added `agents.reasoningEffort` (nullable TEXT): the
-  ///         per-agent reasoning effort override, cycled from the
-  ///         config fullpane's roster rows. NULL = never set: the
-  ///         run sends no `reasoning_effort` and the provider's
-  ///         server default applies (the pre-v38 behavior). Read at
-  ///         each dispatch, so a change applies from the agent's next
-  ///         run; a live run keeps the value it started with.
+  ///   v38 – dropped `agents.reasoningEffort` (the column a dev build
+  ///         of 443380bc added): the per-agent effort override moved to
+  ///         the MODEL POOL entries in config.toml
+  ///         (`[subagent.workers/experts] models[i].reasoning_effort`,
+  ///         default `normal`), so every run on that pool model uses
+  ///         it regardless of which agent picked it up. The migration
+  ///         is an idempotent DROP for any database a dev build already
+  ///         upgraded; databases at v37 are a no-op (column never
+  ///         existed).
   @override
   int get schemaVersion => 38;
 
@@ -642,17 +644,20 @@ UPDATE agents SET project_path = COALESCE(
 ''');
       }
       if (from < 38) {
-        // Idempotency guard mirrors v34–v36: a database created via
-        // onCreate at the CURRENT schema already has the column.
+        // Idempotent DROP of the short-lived per-agent effort column
+        // (see the v38 schema-history note): the override now lives in
+        // the config.toml model-pool entries. SQLite has no
+        // IF EXISTS for DROP COLUMN, so probe pragma_table_info first —
+        // v37 databases never had the column.
         final hasEffort = await m.database
             .customSelect(
               "SELECT 1 FROM pragma_table_info('agents') "
               "WHERE name = 'reasoning_effort' LIMIT 1",
             )
             .get();
-        if (hasEffort.isEmpty) {
+        if (hasEffort.isNotEmpty) {
           await m.database.customStatement(
-            'ALTER TABLE agents ADD COLUMN reasoning_effort TEXT',
+            'ALTER TABLE agents DROP COLUMN reasoning_effort',
           );
         }
       }

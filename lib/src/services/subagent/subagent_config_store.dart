@@ -192,10 +192,6 @@ class SubagentRosterEntry {
 
   final bool busy;
 
-  /// The agent's reasoning effort override (`off`/`low`/`normal`/
-  /// `high`/`max`), or null when never set (server default).
-  final String? reasoningEffort;
-
   /// Session that hired the agent (null = session-agnostic / predates the
   /// column). Informational for UI surfaces; the bar filters on
   /// [lastUsedBySessionId].
@@ -214,7 +210,6 @@ class SubagentRosterEntry {
     required this.model,
     required this.intention,
     required this.busy,
-    this.reasoningEffort,
     this.createdBySessionId,
     this.lastUsedBySessionId,
   });

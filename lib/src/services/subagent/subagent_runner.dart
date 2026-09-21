@@ -60,6 +60,12 @@ class SubagentRunner {
   /// Null = unlimited (the run ends only on a terminal answer, an
   /// error, or cancel).
   final int? maxRounds;
+
+  /// Reasoning effort for every LLM exchange of this run, resolved by
+  /// the manager from the model-pool entry that dispatched it (default
+  /// `normal`). `off` disables thinking entirely. Captured at dispatch:
+  /// a pool edit applies from the NEXT run, never the live one.
+  final String reasoningEffort;
   final String userLanguage;
   final String workingDirectory;
   final int sessionId;
@@ -101,6 +107,7 @@ class SubagentRunner {
     this.onUsage,
     this.clientOverride,
     this.maxRounds = 40,
+    this.reasoningEffort = 'normal',
     this.userLanguage = 'English',
     this.contextCapacity = 128000,
     this.onDistilled,
@@ -154,16 +161,13 @@ class SubagentRunner {
       return;
     }
     final (provider, apiKey, modelId) = resolved;
-    // Per-agent reasoning effort override (v38): `off` disables
-    // thinking entirely; null (never set) keeps the pre-v38 wire
-    // shape — no `reasoning_effort` key, server default applies.
-    // Read once per run: a mid-run flip in the config fullpane
-    // applies from the NEXT dispatch, never the live one.
-    final effort = profile.reasoningEffort;
-    final thinkingMode = effort == 'off' ? 'disabled' : 'enabled';
-    final reasoningEffort = effort == null || effort == 'off'
-        ? null
-        : effort;
+    // Pool-entry effort (config.toml, default `normal`): `off`
+    // disables thinking entirely. Captured at construction — a pool
+    // edit applies from the NEXT dispatch, never the live one.
+    final thinkingMode = reasoningEffort == 'off'
+        ? 'disabled'
+        : 'enabled';
+    final wireEffort = reasoningEffort == 'off' ? null : reasoningEffort;
     // Local copy so the nullable round cap promotes in the comparisons
     // below (a public field never promotes).
     final cap = maxRounds;
@@ -240,7 +244,7 @@ class SubagentRunner {
           modelId: modelId,
           messages: history,
           thinkingMode: thinkingMode,
-          reasoningEffort: reasoningEffort,
+          reasoningEffort: wireEffort,
           tools: _toolsDefinition(),
           userId: 'subagent-$agentName',
           cancelToken: _cancelToken(),
@@ -343,7 +347,7 @@ class SubagentRunner {
         systemText,
         cap,
         thinkingMode: thinkingMode,
-        reasoningEffort: reasoningEffort,
+        reasoningEffort: wireEffort,
       );
       _finish(
         interim == null ? 'round_cap_no_report' : 'round_cap',

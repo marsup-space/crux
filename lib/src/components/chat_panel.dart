@@ -1768,14 +1768,6 @@ class _ChatPanelState extends State<ChatPanel> {
             _scheduleRosterRefresh();
           },
           effortOptionsFor: _subagentEffortOptions,
-          setReasoningEffort: (name, effort) async {
-            await _store.agentStore.setReasoningEffort(
-              Directory.current.path,
-              name,
-              effort,
-            );
-            _scheduleRosterRefresh();
-          },
           onClose: _closeFullpane,
           strings: _strings,
         );
@@ -2235,7 +2227,6 @@ class _ChatPanelState extends State<ChatPanel> {
           model: row.model,
           intention: row.lastIntention,
           busy: busyNames.contains(row.name),
-          reasoningEffort: row.reasoningEffort,
           createdBySessionId: row.createdBySessionId,
           lastUsedBySessionId: row.lastUsedBySessionId,
         ),

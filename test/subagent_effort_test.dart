@@ -14,12 +14,10 @@ import 'package:crux/src/tools/tool_def.dart';
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 
-/// Per-agent reasoning effort (v38): the agents-table override reaches
-/// the LLM wire request; `off` maps to thinkingMode disabled; null
-/// (never set) keeps the pre-v38 wire shape (no effort, thinking on).
-///
-/// Reuses the round-cap test's harness shape: a scripted client that
-/// records every streamChat call's named parameters.
+/// Pool-entry reasoning effort: the runner's `reasoningEffort`
+/// constructor parameter reaches every LLM wire request (`off` maps to
+/// thinkingMode disabled + no effort key; the manager resolves the
+/// value from the dispatching pool entry, default `normal`).
 class _ScriptedClient extends LlmClient {
   _ScriptedClient(this.rounds);
 
@@ -111,23 +109,17 @@ void main() {
 
   Future<(String, String)> run({
     required _ScriptedClient client,
-    required String? effort,
+    String effort = 'normal',
   }) async {
     final profile = await store.hire(
       role: SubagentRole.worker,
       model: 'test/smoke',
       projectPath: tmpDir.path,
     );
-    if (effort != null) {
-      await store.setReasoningEffort(tmpDir.path, profile.name, effort);
-    }
-    // Re-read so the run sees the persisted override (markBusy-style
-    // flows re-read the profile the same way).
-    final fresh = (await store.byName(tmpDir.path, profile.name))!;
     final done = Completer<(String, String)>();
     final runner = SubagentRunner(
-      agentName: fresh.name,
-      profile: fresh,
+      agentName: profile.name,
+      profile: profile,
       role: SubagentRole.worker,
       intention: 'effort pass-through',
       message: 'answer immediately',
@@ -139,16 +131,17 @@ void main() {
       workingDirectory: tmpDir.path,
       clientOverride: client,
       maxRounds: 3,
+      reasoningEffort: effort,
     );
     unawaited(runner.start());
     return done.future.timeout(const Duration(seconds: 5));
   }
 
-  test('null effort keeps the pre-v38 wire shape', () async {
+  test('default effort is normal and reaches the wire', () async {
     final client = _ScriptedClient([_done]);
-    final result = await run(client: client, effort: null);
+    final result = await run(client: client);
     expect(result.$1, 'completed');
-    expect(client.efforts.first, ('enabled', null));
+    expect(client.efforts.first, ('enabled', 'normal'));
   });
 
   test('a set effort reaches every streamChat call', () async {
@@ -158,28 +151,52 @@ void main() {
     expect(client.efforts.first, ('enabled', 'high'));
   });
 
-  test("'off' maps to thinkingMode disabled", () async {
+  test("'off' maps to thinkingMode disabled and no effort key", () async {
     final client = _ScriptedClient([_done]);
     final result = await run(client: client, effort: 'off');
     expect(result.$1, 'completed');
     expect(client.efforts.first, ('disabled', null));
   });
 
-  test('setReasoningEffort persists and clears back to null', () async {
-    final profile = await store.hire(
-      role: SubagentRole.worker,
-      model: 'test/smoke',
-      projectPath: tmpDir.path,
-    );
-    await store.setReasoningEffort(tmpDir.path, profile.name, 'max');
-    expect(
-      (await store.byName(tmpDir.path, profile.name))!.reasoningEffort,
-      'max',
-    );
-    await store.setReasoningEffort(tmpDir.path, profile.name, null);
-    expect(
-      (await store.byName(tmpDir.path, profile.name))!.reasoningEffort,
-      isNull,
-    );
+  group('SubagentModelEntry effort round trip', () {
+    test('parses reasoning_effort; absent → normal; unknown → normal', () {
+      expect(
+        SubagentModelEntry.fromJson({
+          'model': 'zhipu/glm-5.3',
+          'concurrency': 2,
+          'reasoning_effort': 'high',
+        })!.reasoningEffort,
+        'high',
+      );
+      expect(
+        SubagentModelEntry.fromJson({'model': 'zhipu/glm-5.3'})
+            !
+            .reasoningEffort,
+        'normal',
+      );
+      expect(
+        SubagentModelEntry.fromJson({
+          'model': 'zhipu/glm-5.3',
+          'reasoning_effort': 'ultra',
+        })!.reasoningEffort,
+        'normal',
+      );
+    });
+
+    test('toJson emits reasoning_effort; equality covers it', () {
+      final entry = SubagentModelEntry(
+        model: 'zhipu/glm-5.3',
+        reasoningEffort: 'max',
+      );
+      expect(entry.toJson()['reasoning_effort'], 'max');
+      expect(
+        SubagentModelEntry.fromJson(entry.toJson()),
+        entry,
+      );
+      expect(
+        SubagentModelEntry.fromJson(entry.toJson()),
+        isNot(equals(entry.copyWith(reasoningEffort: 'low'))),
+      );
+    });
   });
 }
