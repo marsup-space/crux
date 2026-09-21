@@ -20,13 +20,13 @@
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/marsup-space/crux/v1.1.0/install.sh | bash -s -- --version v1.1.0
+curl -fsSL https://raw.githubusercontent.com/marsup-space/crux/v1.1.4/install.sh | bash -s -- --version v1.1.4
 ```
 
 **Windows（PowerShell）** — 下载 [install.ps1](install.ps1)，然后运行：
 
 ```powershell
-& .\install.ps1 -Version 1.1.0
+& .\install.ps1 -Version 1.1.4
 ```
 
 使用预编译安装包，无需 Dart SDK。安装后若找不到 `crux` 命令，重新打开终端。

@@ -6,7 +6,11 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
-## [Unreleased]
+## [1.1.4] - 2026-09-21
+
+05c2a5c4
+
+### Features
 
 - **Bundled plugins — seeded to every install** — a new top-level
   `plugins/` directory ships plugin specs with each release
@@ -32,6 +36,31 @@ below the version header. Each version has at most two categories:
   retired (`''` matches no workspace), which is the safe direction — the
   cross-workspace leak they would otherwise represent is the bug being
   fixed.
+
+### Fixes
+
+- **Subagent round-cap now ends gracefully instead of hard-cutting the run**
+  (`3dc8934b`, `e00160e8`) — hitting the round limit no longer aborts the run
+  mid-stream: the runner appends a stop notice (limit reached, tools forbidden,
+  produce an interim report) and makes one final tool-free LLM exchange whose
+  prose becomes the report, with the requesting exchange keeping the exact same
+  `tools` definitions as the main loop (so the provider prompt cache is not
+  invalidated) and any tool call the model still makes refused at the system
+  layer with a wire-format result plus a repeated notice, falling back to
+  `round_cap_no_report` and the last prose only after the retries are exhausted.
+
+- **Home subagent box dropped the workers/experts switches** (`7d1574cb`) —
+  those toggles are per-session state (loaded per session by the controller)
+  while the home box is a global workspace view, so the mismatch is removed: the
+  box becomes a pure function of the roster, registers unconditionally
+  (visibility via `visibleWhen`), and `HomeContext.subagentController` is deleted.
+
+- **Agent bar round-count chip and color-only switches** (`05c2a5c4`) — in-flight
+  chips now show the current run's round progress after the name (`12/40`, or a
+  bare `12` when unlimited) via `SubagentUiEntry.roundProgress`/`roundLimit`, and
+  the workers/experts toggles drop their `on`/`off` suffixes, expressing state
+  through color instead (on = bold success green, off = dimmed, brightening on
+  hover).
 
 ## [1.1.0] - 2026-09-19
 

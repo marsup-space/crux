@@ -1,7 +1,7 @@
-# Native Windows installer. Example: & .\install.ps1 -Version 1.1.0
+# Native Windows installer. Example: & .\install.ps1 -Version 1.1.4
 [CmdletBinding()]
 param(
-    [string]$Version = '1.1.0',
+    [string]$Version = '1.1.4',
     [string]$InstallDirectory = (Join-Path $env:USERPROFILE '.crux\bin'),
     [switch]$NoModifyPath
 )
@@ -43,6 +43,10 @@ try {
                 throw "The release archive is missing $resource."
             }
         }
+        # plugins/ joined the bundle later than the three required
+        # resources above — older archives don't carry it, so it is
+        # copied when present instead of required.
+        $bundledPlugins = Join-Path $bundle 'plugins'
         New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null
         $pending = Join-Path $InstallDirectory ('crux.exe.tmp.' + [guid]::NewGuid().ToString('N'))
         Copy-Item -LiteralPath $binary -Destination $pending
@@ -50,6 +54,9 @@ try {
         $pending = $null
         foreach ($resource in @('providers', 'themes', 'third_party')) {
             Copy-Item -LiteralPath (Join-Path $bundle $resource) -Destination $InstallDirectory -Recurse -Force
+        }
+        if (Test-Path -LiteralPath $bundledPlugins -PathType Container) {
+            Copy-Item -LiteralPath $bundledPlugins -Destination $InstallDirectory -Recurse -Force
         }
         $installedVersion = & $destination --version
         if ($LASTEXITCODE -ne 0 -or "$installedVersion".Trim() -ne "v$Version") { throw 'Crux was copied, but its version check failed.' }
