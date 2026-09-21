@@ -98,7 +98,12 @@ void main() {
         role: SubagentRole.worker,
         model: 'zhipu/glm-5.3',
       );
-      await store.markBusy('/w', agent.name, sessionId: 7, intention: 'fix race');
+      await store.markBusy(
+        '/w',
+        agent.name,
+        sessionId: 7,
+        intention: 'fix race',
+      );
       final busy = await store.byName('/w', agent.name);
       expect(busy!.status, 'busy');
       expect(busy.lastIntention, 'fix race');
@@ -185,14 +190,23 @@ void main() {
       // byName is scoped: proj-a's row is invisible from proj-b's
       // scope by the same name... it IS visible under its own scope
       // only.
-      expect((await store.byName('/proj-a', 'andromeda'))!.projectPath,
-          '/proj-a');
-      expect((await store.byName('/proj-b', 'andromeda'))!.projectPath,
-          '/proj-b');
+      expect(
+        (await store.byName('/proj-a', 'andromeda'))!.projectPath,
+        '/proj-a',
+      );
+      expect(
+        (await store.byName('/proj-b', 'andromeda'))!.projectPath,
+        '/proj-b',
+      );
 
       // Status flips stay scoped: marking proj-a's agent busy must
       // not touch proj-b's row of the same name.
-      await store.markBusy('/proj-a', 'andromeda', sessionId: 1, intention: 'x');
+      await store.markBusy(
+        '/proj-a',
+        'andromeda',
+        sessionId: 1,
+        intention: 'x',
+      );
       expect((await store.byName('/proj-a', 'andromeda'))!.status, 'busy');
       expect((await store.byName('/proj-b', 'andromeda'))!.status, 'ready');
 

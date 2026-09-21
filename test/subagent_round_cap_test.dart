@@ -43,7 +43,9 @@ class _ScriptedClient extends LlmClient {
     String? userId,
     LlmStreamCancelToken? cancelToken,
   }) {
-    final script = requests.length < rounds.length ? rounds[requests.length] : const <LlmChunk>[];
+    final script = requests.length < rounds.length
+        ? rounds[requests.length]
+        : const <LlmChunk>[];
     requests.add(List.of(messages));
     requestTools.add(tools);
     return Stream.fromIterable(script);
@@ -58,12 +60,12 @@ class _StubProviders extends ProviderService {
 
   @override
   ProviderConfig? providerByName(String name) => const ProviderConfig(
-        name: 'test',
-        type: 'openai',
-        wireFamily: WireFamily.openaiCompatible,
-        endpointUrl: 'http://localhost:9/v1',
-        models: [],
-      );
+    name: 'test',
+    type: 'openai',
+    wireFamily: WireFamily.openaiCompatible,
+    endpointUrl: 'http://localhost:9/v1',
+    models: [],
+  );
 }
 
 class _EchoTool extends ToolDef {
@@ -77,12 +79,21 @@ class _EchoTool extends ToolDef {
   Map<String, dynamic> get parametersSchema => const {};
 
   @override
-  Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async =>
-      const ToolResult(title: 'echo', output: 'ok');
+  Future<ToolResult> execute(
+    Map<String, dynamic> args,
+    ToolContext ctx,
+  ) async => const ToolResult(title: 'echo', output: 'ok');
 }
 
 const _toolRound = <LlmChunk>[
-  LlmChunk(toolUse: ToolUseChunk(callId: 'c1', name: 'echo', index: 0, inputDelta: '{}')),
+  LlmChunk(
+    toolUse: ToolUseChunk(
+      callId: 'c1',
+      name: 'echo',
+      index: 0,
+      inputDelta: '{}',
+    ),
+  ),
   LlmChunk(finishReason: 'tool_use'),
 ];
 
@@ -142,7 +153,10 @@ void main() {
       const [
         LlmChunk(
           toolUse: ToolUseChunk(
-            callId: 'c1', name: 'echo', index: 0, inputDelta: '{}',
+            callId: 'c1',
+            name: 'echo',
+            index: 0,
+            inputDelta: '{}',
           ),
         ),
         LlmChunk(promptTokens: 100, completionTokens: 20),
@@ -188,50 +202,55 @@ void main() {
     expect((lastUser['content'] as String), contains('do NOT call any tool'));
   });
 
-  test('defying tool call is intercepted, notice repeated, then report',
-      () async {
-    final client = _ScriptedClient([
-      _toolRound,
-      _toolRound,
-      _toolRound, // defies the ban on the first stop-notice exchange
-      const [   // second exchange: complies with plain text
-        LlmChunk(textDelta: 'INTERIM after the repeated notice.'),
-        LlmChunk(finishReason: 'stop'),
-      ],
-    ]);
+  test(
+    'defying tool call is intercepted, notice repeated, then report',
+    () async {
+      final client = _ScriptedClient([
+        _toolRound,
+        _toolRound,
+        _toolRound, // defies the ban on the first stop-notice exchange
+        const [
+          // second exchange: complies with plain text
+          LlmChunk(textDelta: 'INTERIM after the repeated notice.'),
+          LlmChunk(finishReason: 'stop'),
+        ],
+      ]);
 
-    final result = await run(client: client);
-    expect(result.$1, 'round_cap');
-    expect(result.$2, contains('INTERIM after the repeated notice'));
-    // 2 work rounds + 2 stop-notice exchanges (defiance → repeat).
-    expect(client.requests.length, 4);
-    // The defying call was refused at the system level: the history
-    // of the last request carries the refusal tool result + a
-    // repeated notice as the final user message.
-    final lastMessages = client.requests.last;
-    final roles = lastMessages.map((m) => m['role']).toList();
-    expect(roles, contains('tool'));
-    final lastUser = lastMessages.last;
-    expect(lastUser['role'], 'user');
-    expect((lastUser['content'] as String), contains('round limit reached'));
-  });
+      final result = await run(client: client);
+      expect(result.$1, 'round_cap');
+      expect(result.$2, contains('INTERIM after the repeated notice'));
+      // 2 work rounds + 2 stop-notice exchanges (defiance → repeat).
+      expect(client.requests.length, 4);
+      // The defying call was refused at the system level: the history
+      // of the last request carries the refusal tool result + a
+      // repeated notice as the final user message.
+      final lastMessages = client.requests.last;
+      final roles = lastMessages.map((m) => m['role']).toList();
+      expect(roles, contains('tool'));
+      final lastUser = lastMessages.last;
+      expect(lastUser['role'], 'user');
+      expect((lastUser['content'] as String), contains('round limit reached'));
+    },
+  );
 
-  test('model that keeps calling tools exhausts repeats and falls back',
-      () async {
-    final client = _ScriptedClient([
-      _toolRound,
-      _toolRound,
-      _toolRound, // defies
-      _toolRound, // defies again
-      _toolRound, // defies a third time — repeats exhausted
-    ]);
+  test(
+    'model that keeps calling tools exhausts repeats and falls back',
+    () async {
+      final client = _ScriptedClient([
+        _toolRound,
+        _toolRound,
+        _toolRound, // defies
+        _toolRound, // defies again
+        _toolRound, // defies a third time — repeats exhausted
+      ]);
 
-    final result = await run(client: client);
-    expect(result.$1, 'round_cap_no_report');
-    expect(result.$2, contains('no interim report'));
-    // 2 work rounds + 3 stop-notice exchanges (initial + 2 repeats).
-    expect(client.requests.length, 5);
-  });
+      final result = await run(client: client);
+      expect(result.$1, 'round_cap_no_report');
+      expect(result.$2, contains('no interim report'));
+      // 2 work rounds + 3 stop-notice exchanges (initial + 2 repeats).
+      expect(client.requests.length, 5);
+    },
+  );
 
   test('stop notice demands interim report and forbids tools', () {
     final notice = kSubagentRoundCapStopNotice(40);

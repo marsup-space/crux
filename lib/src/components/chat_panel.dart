@@ -408,7 +408,7 @@ class _ChatPanelState extends State<ChatPanel> {
     'git_prepare_commit',
   };
 
-      /// Persist a completed subagent run's aggregate usage as an invisible
+  /// Persist a completed subagent run's aggregate usage as an invisible
   /// accounting row. Empty `user` content stays out of the model wire context;
   /// MessageStore's existing daily aggregates consume its model and tokens.
   void _onSubagentUsage(
@@ -1758,10 +1758,7 @@ class _ChatPanelState extends State<ChatPanel> {
           availableModels: _configuredModelOptions(),
           loadRoster: _loadSubagentRoster,
           deleteAgent: (name) async {
-            await _store.agentStore.deleteByName(
-              Directory.current.path,
-              name,
-            );
+            await _store.agentStore.deleteByName(Directory.current.path, name);
             _scheduleRosterRefresh();
           },
           onClose: _closeFullpane,

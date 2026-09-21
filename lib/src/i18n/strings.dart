@@ -452,8 +452,7 @@ const Map<String, String> _en = {
   'subagent.config.roundLimit': 'Round limit',
   'subagent.config.rounds': '{n} rounds',
   'subagent.config.unlimited': '∞ unlimited',
-  'subagent.config.roundLimitHint':
-      'drag to set · 32–100 rounds, ∞ = no cap',
+  'subagent.config.roundLimitHint': 'drag to set · 32–100 rounds, ∞ = no cap',
   'subagent.plugin.configure': 'configure',
   'chat.bubble.you': 'You',
   'chat.bubble.crux': 'Crux',

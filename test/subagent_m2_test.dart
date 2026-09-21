@@ -19,10 +19,7 @@ class _Toggles implements SubagentControllerLike {
   final bool workers;
   final bool experts;
 
-  const _Toggles({
-    this.workers = true,
-    this.experts = true,
-  });
+  const _Toggles({this.workers = true, this.experts = true});
 
   @override
   bool get workersOn => workers;
@@ -177,7 +174,12 @@ void main() {
         model: 'zhipu/glm-5.3',
         domain: 'auth',
       );
-      await store.markBusy(scope, hired.name, sessionId: 1, intention: 'first look');
+      await store.markBusy(
+        scope,
+        hired.name,
+        sessionId: 1,
+        intention: 'first look',
+      );
       await store.markReady(scope, hired.name);
 
       final manager = managerWith(const _Toggles());

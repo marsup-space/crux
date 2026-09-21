@@ -9,22 +9,24 @@ import 'package:test/test.dart';
 /// drops the accumulated paint offset; the slider must rebuild it from
 /// the parent chain) without pulling in the whole subagent stack.
 void main() {
-  test('renders the default 40 thumb, the track stops and the ∞ end state',
-      () async {
-    await testNocterm('round limit slider render', (tester) async {
-      await _mount(tester, value: 40, onChanged: (_) {});
-      final ts = tester.terminalState;
-      final left = ts.findText('├').single;
-      final inf = ts.findText('∞').single;
-      final thumb = ts.findText('█').single;
+  test(
+    'renders the default 40 thumb, the track stops and the ∞ end state',
+    () async {
+      await testNocterm('round limit slider render', (tester) async {
+        await _mount(tester, value: 40, onChanged: (_) {});
+        final ts = tester.terminalState;
+        final left = ts.findText('├').single;
+        final inf = ts.findText('∞').single;
+        final thumb = ts.findText('█').single;
 
-      expect(inf.y, left.y); // one row: track + ∞ end state
-      expect(thumb.y, left.y);
-      expect(thumb.x, greaterThan(left.x));
-      expect(thumb.x, lessThan(inf.x));
-      expect(inf.x - left.x, greaterThan(60)); // wide draggable track
-    }, size: const Size(100, 40));
-  });
+        expect(inf.y, left.y); // one row: track + ∞ end state
+        expect(thumb.y, left.y);
+        expect(thumb.x, greaterThan(left.x));
+        expect(thumb.x, lessThan(inf.x));
+        expect(inf.x - left.x, greaterThan(60)); // wide draggable track
+      }, size: const Size(100, 40));
+    },
+  );
 
   test('drag maps cells to values and repaints the thumb', () async {
     final changes = <int?>[];

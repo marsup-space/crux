@@ -361,10 +361,7 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
             ),
           ],
         ),
-        RoundLimitSlider(
-          value: value,
-          onChanged: _setRoundLimit,
-        ),
+        RoundLimitSlider(value: value, onChanged: _setRoundLimit),
         Text(
           s.t('subagent.config.roundLimitHint'),
           style: TextStyle(color: theme.onSurfaceDim),

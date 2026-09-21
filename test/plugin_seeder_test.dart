@@ -58,9 +58,7 @@ void main() {
       expect(await userFile('my-notes.toml').readAsString(), content);
 
       final marker = jsonDecode(
-        await File(
-          '${userDir.path}/$kPluginSeedMarkerFileName',
-        ).readAsString(),
+        await File('${userDir.path}/$kPluginSeedMarkerFileName').readAsString(),
       );
       expect(marker, isA<Map<String, dynamic>>());
       expect(marker, containsPair('my-notes.toml', anything));
@@ -90,18 +88,13 @@ void main() {
       );
 
       expect(results.single.action, PluginSeedAction.unchanged);
-      final marker =
-          jsonDecode(
-            await File(
-              '${userDir.path}/$kPluginSeedMarkerFileName',
-            ).readAsString(),
-          )
-              as Map<String, dynamic>;
+      final marker = jsonDecode(
+        await File('${userDir.path}/$kPluginSeedMarkerFileName').readAsString(),
+      ) as Map<String, dynamic>;
       expect(marker, containsPair('my-notes.toml', anything));
     });
 
-    test('updates an unmodified seeded spec when the bundle changes',
-        () async {
+    test('updates an unmodified seeded spec when the bundle changes', () async {
       await bundle('my-notes.toml', 'id = "my-notes"\nlabel = "v1"\n');
       await seedBundledPlugins(builtInDir: builtInDir, userDir: userDir);
 
@@ -179,9 +172,8 @@ void main() {
       await bundle('my-notes.toml', 'id = "my-notes"\n');
       // A user file that matches nothing, with a corrupt marker.
       await userFile('my-notes.toml').writeAsString('id = "my-notes"\n# mine');
-      await File(
-        '${userDir.path}/$kPluginSeedMarkerFileName',
-      ).writeAsString('{not json');
+      await File('${userDir.path}/$kPluginSeedMarkerFileName')
+          .writeAsString('{not json');
 
       final results = await seedBundledPlugins(
         builtInDir: builtInDir,
@@ -203,13 +195,12 @@ void main() {
       await bundle('my-notes.toml', 'id = "my-notes"\n# v2');
       await seedBundledPlugins(builtInDir: builtInDir, userDir: userDir);
 
-      final tomls =
-          userDir
-              .listSync()
-              .whereType<File>()
-              .where((f) => f.path.endsWith('.toml'))
-              .map((f) => f.path)
-              .toList();
+      final tomls = userDir
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.toml'))
+          .map((f) => f.path)
+          .toList();
       expect(tomls, hasLength(1));
       expect(tomls.single, endsWith('my-notes.toml'));
     });

@@ -37,10 +37,7 @@ class AgentStore {
   }
 
   /// All roster rows for one role, within [projectPath].
-  Future<List<db.Agent>> listByRole(
-    String projectPath,
-    SubagentRole role,
-  ) {
+  Future<List<db.Agent>> listByRole(String projectPath, SubagentRole role) {
     final query = _db.select(_db.agents)
       ..where((a) => a.projectPath.equals(projectPath))
       ..where((a) => a.role.equals(role.name))
@@ -68,9 +65,7 @@ class AgentStore {
     final pool = role == SubagentRole.worker
         ? kWorkerConstellations
         : kExpertConstellations;
-    final taken = {
-      for (final row in await listAll(projectPath)) row.name,
-    };
+    final taken = {for (final row in await listAll(projectPath)) row.name};
     // Unsuffixed ids first, in pool order.
     for (final constellation in pool) {
       if (!taken.contains(constellation.id)) return constellation.id;
@@ -159,10 +154,10 @@ class AgentStore {
   /// of busy agents — this store layer only removes the identity and
   /// its distilled memory.
   Future<void> deleteByName(String projectPath, String name) async {
-    await (_db.delete(
-      _db.agents,
-    )..where((a) => a.projectPath.equals(projectPath))
-     ..where((a) => a.name.equals(name.trim().toLowerCase()))).go();
+    await (_db.delete(_db.agents)
+          ..where((a) => a.projectPath.equals(projectPath))
+          ..where((a) => a.name.equals(name.trim().toLowerCase())))
+        .go();
   }
 
   /// Mark [name] busy under [sessionId] and record the dispatched
@@ -180,34 +175,31 @@ class AgentStore {
           ..where((a) => a.projectPath.equals(projectPath))
           ..where((a) => a.name.equals(name)))
         .write(
-      db.AgentsCompanion(
-        status: Value('busy'),
-        lastIntention: Value(intention),
-        runOwnerSessionId: Value(sessionId),
-        lastUsedBySessionId: Value(sessionId),
-        lastActiveAt: Value(now),
-      ),
-    );
+          db.AgentsCompanion(
+            status: Value('busy'),
+            lastIntention: Value(intention),
+            runOwnerSessionId: Value(sessionId),
+            lastUsedBySessionId: Value(sessionId),
+            lastActiveAt: Value(now),
+          ),
+        );
   }
 
   /// Mark [name] ready again. Clears the run owner and stamps activity,
   /// but deliberately keeps `lastUsedBySessionId` (the bar needs it to
   /// still show the chip once the run ends).
-  Future<void> markReady(
-    String projectPath,
-    String name,
-  ) async {
+  Future<void> markReady(String projectPath, String name) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     await (_db.update(_db.agents)
           ..where((a) => a.projectPath.equals(projectPath))
           ..where((a) => a.name.equals(name)))
         .write(
-      db.AgentsCompanion(
-        status: Value('ready'),
-        runOwnerSessionId: Value(null),
-        lastActiveAt: Value(now),
-      ),
-    );
+          db.AgentsCompanion(
+            status: Value('ready'),
+            runOwnerSessionId: Value(null),
+            lastActiveAt: Value(now),
+          ),
+        );
   }
 
   /// Overwrite the distilled memory fields (the distillation pipeline's
@@ -223,12 +215,12 @@ class AgentStore {
           ..where((a) => a.projectPath.equals(projectPath))
           ..where((a) => a.name.equals(name)))
         .write(
-      db.AgentsCompanion(
-        knowledge: Value(knowledge),
-        worklog: Value(worklog),
-        lastActiveAt: Value(now),
-      ),
-    );
+          db.AgentsCompanion(
+            knowledge: Value(knowledge),
+            worklog: Value(worklog),
+            lastActiveAt: Value(now),
+          ),
+        );
   }
 
   /// Reset every `busy` row to `ready` — the restart self-healing path.

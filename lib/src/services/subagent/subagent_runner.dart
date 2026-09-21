@@ -334,8 +334,9 @@ class SubagentRunner {
       );
       _finish(
         interim == null ? 'round_cap_no_report' : 'round_cap',
-        interim ?? '(no interim report — the round-capped run could not '
-            'produce one; partial text below if any)\n$systemText',
+        interim ??
+            '(no interim report — the round-capped run could not '
+                'produce one; partial text below if any)\n$systemText',
       );
       return;
     }
@@ -431,11 +432,13 @@ class SubagentRunner {
         // understands, then repeat the stop notice verbatim.
         if (attempt == maxStopNoticeRepeats) return null;
         history
-          ..add(toolExecutor.formatAssistantToolCallsMessage(
-            calls,
-            text,
-            provider.wireFamily,
-          ))
+          ..add(
+            toolExecutor.formatAssistantToolCallsMessage(
+              calls,
+              text,
+              provider.wireFamily,
+            ),
+          )
           ..addAll([
             for (final call in calls)
               toolExecutor.formatToolResultForApi(

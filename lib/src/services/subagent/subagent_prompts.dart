@@ -165,15 +165,15 @@ String subagentReportEnvelope({
   final capped = status == 'round_cap' || status == 'round_cap_no_report';
   final nextHint = capped
       ? 'agent://$agentName is ready; re-dispatch with send_agent to '
-          'continue from where the interim report left off.'
+            'continue from where the interim report left off.'
       : 'agent://$agentName is ready; send_agent dispatches the next '
-          'task.';
+            'task.';
   return '[Crux system note — subagent report]\n'
       'from: agent://$agentName ($roleLabel, domain: $domain)\n'
       'intention: $intention\n'
       'status: $status\n'
       '${capped ? 'note: INTERIM report — the run hit its round limit '
-          'before finishing; the task is INCOMPLETE.\n' : ''}'
+                'before finishing; the task is INCOMPLETE.\n' : ''}'
       'report: |\n'
       '${_indentBlock(report)}\n'
       'next: $nextHint';

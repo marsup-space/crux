@@ -244,9 +244,9 @@ class HomeContext {
       connectedUsageProviders = _noConnectedUsage,
       plugins = null,
       pluginHost = null,
-            subagentRoster = null,
+      subagentRoster = null,
       openSubagentConfig = null;
-  }
+}
 
 /// One pluggable dashboard box.
 ///

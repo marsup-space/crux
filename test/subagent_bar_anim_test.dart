@@ -12,19 +12,18 @@ SubagentUiEntry _entry(
   String name = 'apus',
   int? roundProgress,
   int? roundLimit,
-}) =>
-    SubagentUiEntry(
-      id: name,
-      name: name,
-      role: SubagentRole.worker,
-      domain: 'smoke',
-      status: status,
-      model: 'deepseek/deepseek-v4-flash',
-      assignmentSummary: 'test',
-      roundProgress: roundProgress,
-      roundLimit: roundLimit,
-      lastActive: DateTime.now(),
-    );
+}) => SubagentUiEntry(
+  id: name,
+  name: name,
+  role: SubagentRole.worker,
+  domain: 'smoke',
+  status: status,
+  model: 'deepseek/deepseek-v4-flash',
+  assignmentSummary: 'test',
+  roundProgress: roundProgress,
+  roundLimit: roundLimit,
+  lastActive: DateTime.now(),
+);
 
 const _toggles = SubagentRuntimeToggles(workersOn: true, expertsOn: true);
 
@@ -113,49 +112,53 @@ void main() {
         // on/off suffix text anywhere.
         expect(tester.terminalState.containsText('workers'), isTrue);
         expect(tester.terminalState.containsText('experts'), isTrue);
-        expect(tester.terminalState.containsText('off'), isFalse,
-            reason: 'switch state is color-only now — no on/off suffix');
+        expect(
+          tester.terminalState.containsText('off'),
+          isFalse,
+          reason: 'switch state is color-only now — no on/off suffix',
+        );
         expect(tester.terminalState.containsText('on'), isFalse);
         print('BOTH-OFF:\n${tester.renderToString(showBorders: false)}');
       });
     });
-    test('round counter renders progress/cap and bare count when unlimited',
-        () async {
-      Future<String> render(SubagentUiEntry entry) async {
-        var output = '';
-        await testNocterm('rounds-${entry.roundLimit ?? 'inf'}', (tester) async {
-          await tester.pumpComponent(
-            Container(
-              width: 80,
-              height: 5,
-              child: SubagentBar(
-                toggles: _toggles,
-                agents: [entry],
+    test(
+      'round counter renders progress/cap and bare count when unlimited',
+      () async {
+        Future<String> render(SubagentUiEntry entry) async {
+          var output = '';
+          await testNocterm('rounds-${entry.roundLimit ?? 'inf'}', (
+            tester,
+          ) async {
+            await tester.pumpComponent(
+              Container(
+                width: 80,
+                height: 5,
+                child: SubagentBar(toggles: _toggles, agents: [entry]),
               ),
-            ),
-          );
-          await tester.pump(const Duration(milliseconds: 100));
-          output = tester.renderToString(showBorders: false);
-        });
-        return output;
-      }
+            );
+            await tester.pump(const Duration(milliseconds: 100));
+            output = tester.renderToString(showBorders: false);
+          });
+          return output;
+        }
 
-      // Capped run: chip shows `12/40` after the name.
-      final capped = await render(
-        _entry(SubagentUiStatus.busy, roundProgress: 12, roundLimit: 40),
-      );
-      expect(capped.contains('12/40'), isTrue);
+        // Capped run: chip shows `12/40` after the name.
+        final capped = await render(
+          _entry(SubagentUiStatus.busy, roundProgress: 12, roundLimit: 40),
+        );
+        expect(capped.contains('12/40'), isTrue);
 
-      // Unlimited run: bare `12` (no slash).
-      final unlimited = await render(
-        _entry(SubagentUiStatus.busy, roundProgress: 12, roundLimit: null),
-      );
-      expect(unlimited.contains('apus 12'), isTrue);
-      expect(unlimited.contains('12/'), isFalse);
+        // Unlimited run: bare `12` (no slash).
+        final unlimited = await render(
+          _entry(SubagentUiStatus.busy, roundProgress: 12, roundLimit: null),
+        );
+        expect(unlimited.contains('apus 12'), isTrue);
+        expect(unlimited.contains('12/'), isFalse);
 
-      // Ready row (no live round data): no counter at all.
-      final idle = await render(_entry(SubagentUiStatus.ready));
-      expect(idle.contains(RegExp(r'apus \d')), isFalse);
-    });
+        // Ready row (no live round data): no counter at all.
+        final idle = await render(_entry(SubagentUiStatus.ready));
+        expect(idle.contains(RegExp(r'apus \d')), isFalse);
+      },
+    );
   });
 }
