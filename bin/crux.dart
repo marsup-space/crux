@@ -64,6 +64,24 @@ void main(List<String> args) async {
   // working when `dart run` is invoked from outside the repository.
   final builtInDir = await resolveBundledDirectory('providers');
   final builtInThemesDir = await resolveBundledDirectory('themes');
+  // Bundled plugin specs (`plugins/` next to the binary, populated by
+  // the release build / install.sh) are seeded into the user's global
+  // `~/.crux/plugins/` on launch — non-destructively: user edits are
+  // never overwritten, deletions never resurrected. Dev checkouts
+  // without a `plugins/` dir make the seeder a silent no-op.
+  final builtInPluginsDir = await resolveBundledDirectory('plugins');
+  final pluginSeedResults = await seedBundledPlugins(
+    builtInDir: builtInPluginsDir,
+    userDir: Directory(
+      p.join(
+        Platform.environment['HOME'] ??
+            Platform.environment['USERPROFILE'] ??
+            Directory.systemTemp.path,
+        '.crux',
+        'plugins',
+      ),
+    ),
+  );
 
   if (args.isNotEmpty && !args.first.startsWith('-')) {
     final target = p.normalize(p.absolute(args.first));
@@ -121,6 +139,7 @@ void main(List<String> args) async {
     userThemesDir,
     themeConfigFile,
     recentProjectsStoreFuture,
+    pluginSeedResults,
   );
   final results = await _showSplashLoading(bootFuture);
 
@@ -161,6 +180,17 @@ void main(List<String> args) async {
   for (final r in results.providerSeedResults) {
     if (r.action == SeedAction.unchanged) continue;
     stderr.writeln('  ${r.action.name}: ${r.fileName}');
+  }
+  // Plugin seeding is silent unless it changed something: `created`
+  // and `updated` are worth a line; `unchanged` is not. `deleted` /
+  // `userModified` are normal user states, not actionable warnings.
+  for (final r in results.pluginSeedResults) {
+    if (r.action == PluginSeedAction.created ||
+        r.action == PluginSeedAction.updated) {
+      stderr.writeln(
+        '  plugin ${r.action.name}: ~/.crux/plugins/${r.fileName}',
+      );
+    }
   }
   for (final entry in results.themeController.registry.loadErrors.entries) {
     stderr.writeln('  theme warning: ${entry.key}: ${entry.value}');
@@ -382,6 +412,7 @@ Future<RecentProjectsStore> _loadAndRecordCurrentProject() async {
 /// All the warmup work the app needs before the UI appears.
 class _LoadingResults {
   final List<SeedResult> providerSeedResults;
+  final List<PluginSeedResult> pluginSeedResults;
   final ThemeController themeController;
   final LocaleController localeController;
   final SubagentController subagentController;
@@ -391,6 +422,7 @@ class _LoadingResults {
 
   const _LoadingResults({
     required this.providerSeedResults,
+    required this.pluginSeedResults,
     required this.themeController,
     required this.localeController,
     required this.subagentController,
@@ -407,6 +439,7 @@ Future<_LoadingResults> _doLoading(
   Directory userThemesDir,
   File themeConfigFile,
   Future<RecentProjectsStore> recentProjectsStoreFuture,
+  List<PluginSeedResult> pluginSeedResults,
 ) async {
   final gitStatusService = GitStatusService();
   final gitStatusFuture = gitStatusService.refresh();
@@ -455,6 +488,7 @@ Future<_LoadingResults> _doLoading(
   final recentProjectsStore = await recentProjectsStoreFuture;
   return _LoadingResults(
     providerSeedResults: providerSeedResults,
+    pluginSeedResults: pluginSeedResults,
     themeController: themeController,
     localeController: localeController,
     subagentController: subagentController,

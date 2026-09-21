@@ -8,6 +8,19 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+- **Bundled plugins — seeded to every install** — a new top-level
+  `plugins/` directory ships plugin specs with each release
+  (`build_release.dart` copies it next to the binary; `install.sh`
+  installs it as a sibling asset like `providers/`/`themes/`). On
+  launch, `seedBundledPlugins` (`lib/src/services/plugin_seeder.dart`)
+  seeds those specs into the user's global `~/.crux/plugins/` so every
+  user gets them in every workspace — non-destructively: a
+  `.seeded.json` marker records what the seeder last wrote, user edits
+  are never overwritten, upgrades replace only unmodified specs, and a
+  deleted spec is never resurrected. First bundled spec: `my-notes`
+  (moved from the crux repo's `.crux/plugins/`, previously visible only
+  when working inside the crux checkout itself).
+
 - **Workspace-scoped subagent roster** — the `agents` table gains a
   `project_path` column (drift v37) and its identity key changes from
   `UNIQUE(name)` to the composite `(project_path, name)`. Each workspace now

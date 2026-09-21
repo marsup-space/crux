@@ -3,12 +3,12 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/marsup-space/crux/main/install.sh | bash
-#   curl -fsSL ... | bash -s -- --version v1.1.0
+#   curl -fsSL ... | bash -s -- --version v1.1.1
 #   curl -fsSL ... | bash -s -- --binary /path/to/crux
 #
 # Flags:
 #   -h, --help              Show this help
-#   -v, --version <ver>     Install a specific version (e.g. v1.1.0)
+#   -v, --version <ver>     Install a specific version (e.g. v1.1.1)
 #   -b, --binary <path>     Install from a local binary instead of downloading
 #       --no-modify-path    Don't modify shell config files
 #
@@ -66,13 +66,13 @@ Usage: install.sh [options]
 
 Options:
     -h, --help              Display this help message
-    -v, --version <version> Install a specific version (e.g. v1.1.0)
+    -v, --version <version> Install a specific version (e.g. v1.1.1)
     -b, --binary <path>     Install from a local binary instead of downloading
         --no-modify-path    Don't modify shell config files
 
 Examples:
     curl -fsSL https://raw.githubusercontent.com/marsup-space/crux/main/install.sh | bash
-    curl -fsSL .../install.sh | bash -s -- --version v1.1.0
+    curl -fsSL .../install.sh | bash -s -- --version v1.1.1
     ./install.sh --binary /path/to/crux
 EOF
 }
@@ -310,7 +310,7 @@ else
     fi
 
     # Copy bundled assets as siblings of the binary.
-    for asset_dir in providers themes third_party; do
+    for asset_dir in providers themes third_party plugins; do
         src="${bundle_dir}/${asset_dir}"
         [ -d "$src" ] || continue
         rm -rf "${INSTALL_DIR:?}/${asset_dir}"

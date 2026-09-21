@@ -145,6 +145,17 @@ Future<void> main(List<String> args) async {
     Directory(p.join(root, 'providers')),
     Directory(p.join(bundle.path, 'providers')),
   );
+  // Bundled plugin specs: seeded into ~/.crux/plugins/ at launch by
+  // seedBundledPlugins (bin/crux.dart). Skipped silently when absent
+  // (dev checkouts) — _copyDirectory on a missing dir throws, so
+  // guard like the model dir below.
+  final bundledPluginsDir = Directory(p.join(root, 'plugins'));
+  if (await bundledPluginsDir.exists()) {
+    await _copyDirectory(
+      bundledPluginsDir,
+      Directory(p.join(bundle.path, 'plugins')),
+    );
+  }
   await _copyDirectory(
     Directory(p.join(root, 'themes')),
     Directory(p.join(bundle.path, 'themes')),

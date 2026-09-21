@@ -23,7 +23,8 @@
 //   2. ACTIONS — turn something the user does repeatedly into one click
 //      (start/stop/reload a service, run tests, submit a prompt).
 //
-// Schema (see .crux/plugins/my-notes.toml for a live project example):
+// Schema (see plugins/my-notes.toml for a live bundled example,
+// seeded to ~/.crux/plugins/ on launch):
 //
 //   id = "my-plugin"                    # must match the file name
 //   placement = "sidebar"               # sidebar | home | both

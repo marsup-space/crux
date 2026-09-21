@@ -55,7 +55,9 @@ class NotesService {
   NotesService(this._store, {required this.projectPath});
 
   /// Path of the status projection the widget polls, relative to
-  /// [projectPath]. Kept in sync with the `.crux/plugins/my-notes.toml` plugin.
+  /// [projectPath]. Kept in sync with the `my-notes.toml` plugin
+  /// (bundled at `plugins/my-notes.toml`, seeded to
+  /// `~/.crux/plugins/` on launch).
   static const statusPath = '.dart_tool/my_notes.json';
 
   /// Load the note content from the DB (empty string when none yet)

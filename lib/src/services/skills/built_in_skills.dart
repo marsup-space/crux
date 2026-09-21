@@ -417,7 +417,7 @@ state changed; if a test run failed, offer to fix it.
   `.crux/widgets/*.toml`: `git mv` it to `.crux/plugins/` (the
   schema is unchanged; `placement` is the only new key).
 
-Canonical project-local example: `.crux/plugins/my-notes.toml` in the
-Crux repo (a status projection with a fullpane action).
+Canonical bundled example: `plugins/my-notes.toml` in the Crux repo
+(bundled into releases; seeded to `~/.crux/plugins/` on launch).
 Parser source of truth: `lib/src/services/plugin.dart`.
 ''';

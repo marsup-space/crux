@@ -37,4 +37,5 @@ export 'src/services/git_status_service.dart';
 export 'src/services/llm_client.dart';
 export 'src/services/provider_config_loader.dart';
 export 'src/services/provider_seeder.dart';
+export 'src/services/plugin_seeder.dart';
 export 'src/services/provider_service.dart';

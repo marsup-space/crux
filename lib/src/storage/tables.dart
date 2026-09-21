@@ -174,7 +174,8 @@ class FileLastWriter extends Table {
 ///
 /// No foreign key to sessions: a note belongs to the project, not to
 /// any session, and must survive session deletion. See
-/// `notes_store.dart` and the `.crux/plugins/my-notes.toml` plugin.
+/// `notes_store.dart` and the `my-notes.toml` plugin (bundled at
+/// `plugins/`, seeded to `~/.crux/plugins/` on launch).
 class ProjectNotes extends Table {
   /// The workspace root this note belongs to (Directory.current.path
   /// of the owning session). Primary key — one note per project.
