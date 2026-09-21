@@ -130,6 +130,21 @@ String subagentSystemPrompt({
   return buffer.toString();
 }
 
+/// Stop notice injected when a run exhausts its round budget (the
+/// runner's cap branch): interrupts the model mid-work and demands an
+/// interim report. The wording forbids ALL tool use — the runner
+/// grants no more rounds, so a tool call in reply could never execute.
+String kSubagentRoundCapStopNotice(int maxRounds) =>
+    '[Crux system note — round limit reached]\n'
+    'This run has reached its $maxRounds-round limit. Stop working NOW '
+    'and do NOT call any tool — this is your final exchange and tool '
+    'calls cannot be executed anymore. Write your INTERIM report as '
+    'plain text in this reply: state that the round limit was hit, '
+    'then cover what you completed so far (with file paths / evidence), '
+    'what is verified, what remains, and exactly where the next '
+    'dispatch should pick up. This report is the only thing that '
+    'survives — anything not written here is lost.';
+
 /// The report envelope injected into the main session when a run ends.
 ///
 /// Walks the runtime system-note path (never a user message). The
@@ -143,14 +158,25 @@ String subagentReportEnvelope({
   required String report,
 }) {
   final roleLabel = role == SubagentRole.worker ? 'worker' : 'expert';
+  // Round-cap statuses arrive from the runner's cap branch: the report
+  // below is INTERIM, gathered by a final stop-notice exchange, not a
+  // finished task. The envelope must say so — the main agent would
+  // otherwise relay unfinished work as done.
+  final capped = status == 'round_cap' || status == 'round_cap_no_report';
+  final nextHint = capped
+      ? 'agent://$agentName is ready; re-dispatch with send_agent to '
+          'continue from where the interim report left off.'
+      : 'agent://$agentName is ready; send_agent dispatches the next '
+          'task.';
   return '[Crux system note — subagent report]\n'
       'from: agent://$agentName ($roleLabel, domain: $domain)\n'
       'intention: $intention\n'
       'status: $status\n'
+      '${capped ? 'note: INTERIM report — the run hit its round limit '
+          'before finishing; the task is INCOMPLETE.\n' : ''}'
       'report: |\n'
       '${_indentBlock(report)}\n'
-      'next: agent://$agentName is ready; send_agent dispatches the next '
-      'task.';
+      'next: $nextHint';
 }
 
 String _indentBlock(String text) {

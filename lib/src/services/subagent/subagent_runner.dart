@@ -71,7 +71,11 @@ class SubagentRunner {
   final Future<void> Function(String name, DistillationProducts products)?
   onDistilled;
 
-  final LlmClient _client = LlmClient();
+  /// Client seam: production runs leave this null and a plain
+  /// [LlmClient] is built lazily; tests inject a scriptable fake.
+  final LlmClient? clientOverride;
+  late final LlmClient _client = clientOverride ?? LlmClient();
+
   final AbortSignal _abort = AbortSignal();
   StreamSubscription<LlmChunk>? _sub;
   bool _cancelled = false;
@@ -90,6 +94,7 @@ class SubagentRunner {
     required this.sessionId,
     required this.workingDirectory,
     this.onStatus,
+    this.clientOverride,
     this.maxRounds = 40,
     this.userLanguage = 'English',
     this.contextCapacity = 128000,
@@ -314,15 +319,89 @@ class SubagentRunner {
       return;
     }
     if (cap != null && _round >= cap) {
+      // Out of rounds: ONE final LLM exchange collects the interim
+      // report instead of hard-cutting the run. A hard cut at this
+      // point usually lands mid-tool-work and loses everything since
+      // the model's last prose. The stop notice forbids further tool
+      // use; the model's plain-text answer becomes the report. See
+      // [_requestInterimReport] for the failure fallback.
+      final interim = await _requestInterimReport(
+        provider,
+        apiKey,
+        modelId,
+        history,
+        systemText,
+        cap,
+      );
       _finish(
-        'completed',
-        '${roundReport.isEmpty ? '(no final text)' : roundReport}\n\n'
-            '[Stopped at the $cap-round cap. If more work is needed, '
-            're-dispatch with send_agent.]',
+        interim == null ? 'round_cap_no_report' : 'round_cap',
+        interim ?? '(no interim report — the round-capped run could not '
+            'produce one; partial text below if any)\n$systemText',
       );
       return;
     }
     _finish('completed', roundReport);
+  }
+
+  /// One final exchange after the round cap: append the stop notice
+  /// (see [kSubagentRoundCapStopNotice]) to the history, stream one
+  /// last reply WITHOUT tools, and return it as the interim report.
+  ///
+  /// Incomplete replies guard against two degenerate outcomes: a
+  /// truncated stream and a model that answers with a lone tool call
+  /// despite the prohibition — both yield null and the caller falls
+  /// back to the last prose it has.
+  Future<String?> _requestInterimReport(
+    ProviderConfig provider,
+    String apiKey,
+    String modelId,
+    List<Map<String, dynamic>> history,
+    String lastProse,
+    int cap,
+  ) async {
+    final lastAssistantText = lastProse.trim().isNotEmpty
+        ? lastProse.trim()
+        : '(mid-work, no prose yet)';
+    history
+      ..add({'role': 'assistant', 'content': lastAssistantText})
+      ..add({
+        'role': 'user',
+        'content': kSubagentRoundCapStopNotice(cap),
+      });
+    final chunks = <LlmChunk>[];
+    LlmError? streamError;
+    try {
+      final stream = _client.streamChat(
+        endpointUrl: provider.endpointUrl,
+        config: provider,
+        apiKey: apiKey,
+        modelId: modelId,
+        messages: history,
+        thinkingMode: 'enabled',
+        tools: null, // No tools: this exchange must be plain text.
+        userId: 'subagent-$agentName',
+        cancelToken: _cancelToken(),
+      );
+      _sub = stream.listen((chunk) {
+        if (chunk.error != null) {
+          streamError = chunk.error;
+          return;
+        }
+        chunks.add(chunk);
+      }, cancelOnError: true);
+      await _sub!.asFuture().catchError((Object e) {});
+    } catch (e) {
+      streamError = LlmError(
+        kind: LlmErrorKind.unknown,
+        vendor: LlmVendor.unknown,
+        message: '$e',
+      );
+    }
+    _sub = null;
+    if (_cancelled || streamError != null) return null;
+    if (ToolExecutor.parseFinishReason(chunks) == 'tool_use') return null;
+    final text = _textOf(chunks).trim();
+    return text.isEmpty ? null : text;
   }
 
   LlmStreamCancelToken? _cancelToken() => null;
