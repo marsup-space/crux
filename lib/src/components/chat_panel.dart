@@ -459,7 +459,12 @@ class _ChatPanelState extends State<ChatPanel> {
     db.Agent agent,
     String status,
   ) async {
-    final sessionId = _sessionController.currentSessionId;
+    // The report belongs to the session that DISPATCHED the run
+    // (the run owner stamped by markBusy), never whichever session
+    // the user happens to be viewing. Null (legacy rows) falls back
+    // to the current session — the pre-fix behavior.
+    final sessionId =
+        agent.runOwnerSessionId ?? _sessionController.currentSessionId;
     if (sessionId == null) return;
 
     // 1. Persist the UI row (bubble content = the report's one-line
@@ -486,8 +491,9 @@ class _ChatPanelState extends State<ChatPanel> {
     _sessionController.putCachedMessages(sessionId, updated);
     _refresh();
 
-    // 2. Queue the model wake (immediate when idle).
-    _turnOrchestrator.enqueueSubagentWake(envelope);
+    // 2. Queue the model wake (immediate when idle) — targeted at the
+    // dispatching session.
+    _turnOrchestrator.enqueueSubagentWake(envelope, sessionId: sessionId);
   }
 
   String _subagentUserLanguage() {

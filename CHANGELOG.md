@@ -29,6 +29,22 @@ below the version header. Each version has at most two categories:
 
 ### Fixes
 
+- **Subagent reports landed in whichever session the user was viewing** —
+  the report bubble row was persisted to and the model wake dispatched from
+  the CURRENT session, so a report for session A's dispatched run landed in
+  (and woke) session B when the user happened to be viewing B. The report
+  path now targets the run's owning session (`agents.runOwnerSessionId`,
+  stamped at dispatch; legacy null rows fall back to the current session),
+  and the orchestrator's wake queue carries per-session entries: each
+  session's queued reports coalesce into one wake targeting THAT session —
+  fired when it is idle, requeued while it is mid-turn, dropped when the
+  session no longer exists. `sendTurn` gains a `targetSessionId` parameter
+  (null = current session; every user-typed path unchanged) and its
+  view-coupled side effects (title generation, image-gate toasts) are
+  scoped to the foreground session; compaction projection reads the target
+  session's history. The agent bar chip, usage accounting row, and
+  per-session scoping were already correct and are unchanged.
+
 - **Home subagent box showed English constellation names under a zh locale**
   — the `subagent-pool` box rendered the persisted constellation id
   (`antlia`) directly, skipping the `WorkerNameLocalizer` every other

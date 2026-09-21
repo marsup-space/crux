@@ -87,9 +87,12 @@ class ChatTurnOrchestrator {
   /// Subagent report envelopes that arrived while the main agent was
   /// mid-turn (or before the session was idle). Persisted immediately by
   /// the panel; queued here so the wake turn fires once the current turn
-  /// settles. Multiple reports coalesce into ONE wake — the model sees
-  /// every persisted bubble row in history regardless.
-  final List<String> _pendingSubagentWakes = [];
+  /// settles. Each entry carries the session that DISPATCHED the run —
+  /// the wake always targets that session, never whichever session the
+  /// user happens to be viewing. Multiple reports for one session
+  /// coalesce into ONE wake — the model sees every persisted bubble row
+  /// in history regardless.
+  final List<(int sessionId, String envelope)> _pendingSubagentWakes = [];
 
   ChatTurnOrchestrator({
     required SessionStore store,
@@ -147,15 +150,25 @@ class ChatTurnOrchestrator {
   /// provider's raw 400. An unresolvable model keeps the attachments: the turn
   /// is about to fail on the missing provider anyway, and "unknown" is not
   /// "known-incapable".
-  List<ImageAttachment> _imagesForModel(List<ImageAttachment> images) {
+  List<ImageAttachment> _imagesForModel(
+    List<ImageAttachment> images, {
+    int? sessionId,
+  }) {
     if (images.isEmpty) return images;
-    final session = _sessionController.currentSession;
+    final session = sessionId != null &&
+            sessionId != _sessionController.currentSessionId
+        ? (_sessionController.findSession(sessionId) ??
+              _sessionController.currentSession)
+        : _sessionController.currentSession;
     final model = _providerService.modelByCompositeKey(session.model);
     if (model == null || model.imageSupport) return images;
-    _showToast(
-      _strings.t('toast.imagesUnsupported', {'model': session.model}),
-      mode: ToastMode.error,
-    );
+    if (sessionId == null ||
+        sessionId == _sessionController.currentSessionId) {
+      _showToast(
+        _strings.t('toast.imagesUnsupported', {'model': session.model}),
+        mode: ToastMode.error,
+      );
+    }
     return const [];
   }
 
@@ -175,10 +188,15 @@ class ChatTurnOrchestrator {
       contextSize: modelConfig.contextSize,
     );
 
+    // History comes from the TARGET session's cache (a background wake
+    // turn must not project the foreground session's messages).
+    final history =
+        _sessionController.messageCache[session.id] ??
+        _sessionController.currentMessages;
     final projected = estimateProjectedContextTokens(
       session: session,
       systemPrompt: session.systemPrompt,
-      history: _sessionController.currentMessages,
+      history: history,
       incomingUserContent: incomingUserContent,
       toolDefs: _toolRegistry.toApiTools(),
     );
@@ -341,32 +359,48 @@ class ChatTurnOrchestrator {
   /// Mid-turn, a bare `sendTurn` is a no-op (`rt.isResponding` guard), which
   /// used to drop reports silently (the M2 "report never arrived" bug). Now
   /// the envelope queues; [_drainSubagentWakes] fires one combined wake turn
-  /// once the current turn settles. When idle it wakes immediately.
-  ///
-  /// Multiple queued reports coalesce — the model re-reads every persisted
-  /// bubble row from history, so one wake surfaces them all.
-  void enqueueSubagentWake(String envelope) {
-    _pendingSubagentWakes.add(envelope);
+  /// per target session once that session's current turn settles. When idle
+  /// it wakes immediately.
+  void enqueueSubagentWake(String envelope, {required int sessionId}) {
+    _pendingSubagentWakes.add((sessionId, envelope));
     _drainSubagentWakes();
   }
 
+  /// Drain queued wakes, grouped per target session. A group fires when
+  /// its session is idle; a busy session's group stays queued (the
+  /// turn-settle hooks re-drain). A session that no longer exists
+  /// (deleted / detached) drops its group — the wake has nowhere to land.
   void _drainSubagentWakes() {
     if (_pendingSubagentWakes.isEmpty) return;
-    final sessionId = _sessionController.currentSessionId;
-    if (sessionId == null) {
-      _pendingSubagentWakes.clear();
-      return;
+    final bySession = <int, List<String>>{};
+    for (final (sessionId, envelope) in _pendingSubagentWakes) {
+      bySession.putIfAbsent(sessionId, () => []).add(envelope);
     }
-    final rt = _sessionController.runtime(sessionId);
-    if (rt.isResponding || _chatService.isStreaming(sessionId)) return;
-    final combined = _pendingSubagentWakes.join('\n\n');
     _pendingSubagentWakes.clear();
-    unawaited(sendTurn(text: combined, allowAutoCompact: true));
+    bySession.forEach((sessionId, envelopes) {
+      final session = _sessionController.findSession(sessionId);
+      if (session == null) return; // session gone — drop the group
+      final rt = _sessionController.runtime(sessionId);
+      if (rt.isResponding || _chatService.isStreaming(sessionId)) {
+        // Busy — requeue the whole group for the turn-settle drain.
+        for (final envelope in envelopes) {
+          _pendingSubagentWakes.add((sessionId, envelope));
+        }
+        return;
+      }
+      unawaited(
+        sendTurn(
+          text: envelopes.join('\n\n'),
+          allowAutoCompact: true,
+          targetSessionId: sessionId,
+        ),
+      );
+    });
   }
 
   /// Test hooks for the wake queue (queue-and-drain contract).
   @visibleForTesting
-  List<String> get pendingSubagentWakesForTest =>
+  List<(int, String)> get pendingSubagentWakesForTest =>
       List.unmodifiable(_pendingSubagentWakes);
 
   @visibleForTesting
@@ -378,6 +412,14 @@ class ChatTurnOrchestrator {
     bool allowAutoCompact = true,
     TextEditingController? textController,
 
+    /// Explicit target for this turn. Null (the default, and every
+    /// user-typed path) targets the CURRENT session — unchanged
+    /// behavior. The subagent-report wake path passes the run's
+    /// owning session so a report lands in (and wakes) the session
+    /// that DISPATCHED the run, never whichever session the user
+    /// happens to be viewing.
+    int? targetSessionId,
+
     /// Distilled continuation context (three-stage ladder's 3rd rung):
     /// when non-null, the turn's user message is prefixed with the
     /// KNOWLEDGE / WORKLOG / INSTRUCTION block so the main agent
@@ -386,8 +428,14 @@ class ChatTurnOrchestrator {
     /// prompt) — zero cache-prefix invalidation.
     String? distilledContext,
   }) async {
-    final sessionId = _sessionController.currentSessionId;
-    if (sessionId == null) return;
+    final sid = targetSessionId ?? _sessionController.currentSessionId;
+    if (sid == null) return;
+    final sessionId = sid;
+    // A background turn targets a session the user may not be viewing:
+    // view-coupled side effects (toasts, title generation, the
+    // input-box image gate) belong to the FOREGROUND, not to it.
+    final backgroundTurn = targetSessionId != null &&
+        targetSessionId != _sessionController.currentSessionId;
     final rt = _sessionController.runtime(sessionId);
     if (rt.isResponding) return;
 
@@ -397,7 +445,9 @@ class ChatTurnOrchestrator {
     // and the user can switch models between attaching and sending. Dropping
     // them before the row is persisted also keeps the image OUT of the
     // history — a text-only model rejects every later turn that replays it.
-    final turnImages = _imagesForModel(images);
+    final turnImages = backgroundTurn
+        ? _imagesForModel(images, sessionId: sessionId)
+        : _imagesForModel(images);
 
     // Compute the LLM-bound expansion of any `$<skill>` chips but
     // keep `text` as the user's raw input for the message bubble.
@@ -405,7 +455,10 @@ class ChatTurnOrchestrator {
     // the LLM sees the expanded form with the body appended.
     String? llmText;
     if (text != null && text.isNotEmpty) {
-      final session = _sessionController.currentSession;
+      final session = backgroundTurn
+          ? (_sessionController.findSession(sessionId) ??
+                _sessionController.currentSession)
+          : _sessionController.currentSession;
       // Rewrite session-mention chips FIRST, on the raw text, so the
       // recorded chip offsets still line up. Skill expansion below may
       // strip leading `$` chars (shifting offsets) but never touches
@@ -729,7 +782,9 @@ class ChatTurnOrchestrator {
           sessionId: sessionId,
           userContent: llmText ?? text,
           images: turnImages,
-          session: _sessionController.currentSession,
+          session:
+              _sessionController.findSession(sessionId) ??
+              _sessionController.currentSession,
           runtime: rt,
           onDelta: (delta) {
             if (_interruptedSessions.contains(sessionId)) return;
@@ -941,8 +996,11 @@ class ChatTurnOrchestrator {
                   .copyWith(cacheHitPct: rt.cacheHitPct),
             );
             _refresh();
+            // Title generation is view-coupled (the sidebar shows the
+            // foreground session's title); only the foreground session's
+            // turn may trigger it.
             final currentSession = _sessionController.currentSession;
-            if (currentSession.isUntitled) {
+            if (currentSession.id == sessionId && currentSession.isUntitled) {
               _sessionController.generateTitle(sessionId);
             }
             final lastAiMsg = msgs.lastWhere(
@@ -1517,6 +1575,11 @@ class ChatTurnOrchestrator {
   }
 
   void _maybeKickOffTitleEarly(int sessionId, String userContent) {
+    // Title generation is a view-coupled convenience (the sidebar
+    // shows the title of what the user is looking at). A background
+    // wake turn must not generate a title for the background session
+    // off the report envelope — the user never typed it.
+    if (sessionId != _sessionController.currentSessionId) return;
     if (!_sessionController.currentSession.isUntitled) return;
     if (_shouldDeferTitleToAfterResponse()) return;
     _sessionController.generateTitle(sessionId, userContent: userContent);
