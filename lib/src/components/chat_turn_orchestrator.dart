@@ -155,15 +155,14 @@ class ChatTurnOrchestrator {
     int? sessionId,
   }) {
     if (images.isEmpty) return images;
-    final session = sessionId != null &&
-            sessionId != _sessionController.currentSessionId
+    final session =
+        sessionId != null && sessionId != _sessionController.currentSessionId
         ? (_sessionController.findSession(sessionId) ??
               _sessionController.currentSession)
         : _sessionController.currentSession;
     final model = _providerService.modelByCompositeKey(session.model);
     if (model == null || model.imageSupport) return images;
-    if (sessionId == null ||
-        sessionId == _sessionController.currentSessionId) {
+    if (sessionId == null || sessionId == _sessionController.currentSessionId) {
       _showToast(
         _strings.t('toast.imagesUnsupported', {'model': session.model}),
         mode: ToastMode.error,
@@ -434,7 +433,8 @@ class ChatTurnOrchestrator {
     // A background turn targets a session the user may not be viewing:
     // view-coupled side effects (toasts, title generation, the
     // input-box image gate) belong to the FOREGROUND, not to it.
-    final backgroundTurn = targetSessionId != null &&
+    final backgroundTurn =
+        targetSessionId != null &&
         targetSessionId != _sessionController.currentSessionId;
     final rt = _sessionController.runtime(sessionId);
     if (rt.isResponding) return;

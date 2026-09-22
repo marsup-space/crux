@@ -66,8 +66,7 @@ class SubagentModelEntry {
       concurrency: rawConcurrency is int && rawConcurrency > 0
           ? rawConcurrency
           : 1,
-      reasoningEffort:
-          rawEffort is String && knownEfforts.contains(rawEffort)
+      reasoningEffort: rawEffort is String && knownEfforts.contains(rawEffort)
           ? rawEffort
           : 'normal',
     );
@@ -84,7 +83,8 @@ class SubagentModelEntry {
   int get hashCode => Object.hash(model, concurrency, reasoningEffort);
 
   @override
-  String toString() => 'SubagentModelEntry($model x$concurrency, '
+  String toString() =>
+      'SubagentModelEntry($model x$concurrency, '
       'effort $reasoningEffort)';
 }
 

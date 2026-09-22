@@ -169,8 +169,7 @@ void main() {
         'high',
       );
       expect(
-        SubagentModelEntry.fromJson({'model': 'zhipu/glm-5.3'})
-            !
+        SubagentModelEntry.fromJson({'model': 'zhipu/glm-5.3'})!
             .reasoningEffort,
         'normal',
       );
@@ -189,10 +188,7 @@ void main() {
         reasoningEffort: 'max',
       );
       expect(entry.toJson()['reasoning_effort'], 'max');
-      expect(
-        SubagentModelEntry.fromJson(entry.toJson()),
-        entry,
-      );
+      expect(SubagentModelEntry.fromJson(entry.toJson()), entry);
       expect(
         SubagentModelEntry.fromJson(entry.toJson()),
         isNot(equals(entry.copyWith(reasoningEffort: 'low'))),

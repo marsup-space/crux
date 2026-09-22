@@ -591,7 +591,7 @@ class _SubagentConfigFullpaneState extends State<SubagentConfigFullpane> {
     return '$glyph $name · $status · ${entry.domain} · ${entry.model}';
   }
 
-      /// Cycles one pool entry's effort to the next preset of its model.
+  /// Cycles one pool entry's effort to the next preset of its model.
   /// Copy-on-edit like concurrency: marks dirty; Ctrl+S / Save
   /// persists to config.toml and the change applies from the next
   /// dispatch on that pool model. The segment is a bare `✶` glyph

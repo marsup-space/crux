@@ -131,65 +131,56 @@ void main() {
       expect(orchestrator.pendingSubagentWakesForTest, isEmpty);
     });
 
-    test(
-      'a report for a BACKGROUND session wakes that session, not the viewed one',
-      () async {
-        final viewed = await newSession();
-        final background = await store.create(
-          title: 'bg',
-          projectPath: tempDir.path,
-          model: 'openai/gpt-5',
-        );
-        sessionController.sessions = [viewed, background];
-        // Both idle. The user is VIEWING `viewed`; the run belonged to
-        // `background`. The wake must target `background`: its turn
-        // starts (and, with no provider key in tests, settles with a
-        // persisted row), while `viewed` stays untouched.
-        orchestrator.enqueueSubagentWake(
-          '[Crux system note — subagent report] done',
-          sessionId: background.id,
-        );
-        await _pumpUntil(
-          () async => (await store.messageStore.getMessages(background.id))
-              .isNotEmpty,
-        );
-        // The viewed session's history stays empty — no wake, no user
-        // row, no error row.
-        expect(
-          await store.messageStore.getMessages(viewed.id),
-          isEmpty,
-        );
-        expect(sessionController.currentSessionId, viewed.id);
-      },
-    );
+    test('a report for a BACKGROUND session wakes that session, not the viewed one', () async {
+      final viewed = await newSession();
+      final background = await store.create(
+        title: 'bg',
+        projectPath: tempDir.path,
+        model: 'openai/gpt-5',
+      );
+      sessionController.sessions = [viewed, background];
+      // Both idle. The user is VIEWING `viewed`; the run belonged to
+      // `background`. The wake must target `background`: its turn
+      // starts (and, with no provider key in tests, settles with a
+      // persisted row), while `viewed` stays untouched.
+      orchestrator.enqueueSubagentWake(
+        '[Crux system note — subagent report] done',
+        sessionId: background.id,
+      );
+      await _pumpUntil(
+        () async =>
+            (await store.messageStore.getMessages(background.id)).isNotEmpty,
+      );
+      // The viewed session's history stays empty — no wake, no user
+      // row, no error row.
+      expect(await store.messageStore.getMessages(viewed.id), isEmpty);
+      expect(sessionController.currentSessionId, viewed.id);
+    });
 
-    test(
-      'busy background session keeps its group queued while another group drains',
-      () async {
-        final a = await newSession();
-        final b = await store.create(
-          title: 'b',
-          projectPath: tempDir.path,
-          model: 'openai/gpt-5',
-        );
-        sessionController.sessions = [a, b];
-        sessionController.runtime(b.id).isResponding = true; // b mid-turn
+    test('busy background session keeps its group queued while another group drains', () async {
+      final a = await newSession();
+      final b = await store.create(
+        title: 'b',
+        projectPath: tempDir.path,
+        model: 'openai/gpt-5',
+      );
+      sessionController.sessions = [a, b];
+      sessionController.runtime(b.id).isResponding = true; // b mid-turn
 
-        orchestrator.enqueueSubagentWake('for-a', sessionId: a.id);
-        orchestrator.enqueueSubagentWake('for-b', sessionId: b.id);
+      orchestrator.enqueueSubagentWake('for-a', sessionId: a.id);
+      orchestrator.enqueueSubagentWake('for-b', sessionId: b.id);
 
-        // b's group requeued synchronously (b is mid-turn); a's group
-        // drained into a targeted sendTurn that lands rows in a's
-        // history (user row first; the keyless provider then settles).
-        final pending = orchestrator.pendingSubagentWakesForTest;
-        expect(pending, hasLength(1));
-        expect(pending.first.$1, b.id);
-        expect(pending.first.$2, 'for-b');
-        await _pumpUntil(
-          () async => (await store.messageStore.getMessages(a.id)).isNotEmpty,
-        );
-      },
-    );
+      // b's group requeued synchronously (b is mid-turn); a's group
+      // drained into a targeted sendTurn that lands rows in a's
+      // history (user row first; the keyless provider then settles).
+      final pending = orchestrator.pendingSubagentWakesForTest;
+      expect(pending, hasLength(1));
+      expect(pending.first.$1, b.id);
+      expect(pending.first.$2, 'for-b');
+      await _pumpUntil(
+        () async => (await store.messageStore.getMessages(a.id)).isNotEmpty,
+      );
+    });
   });
 }
 

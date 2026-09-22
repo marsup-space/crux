@@ -256,8 +256,13 @@ max_rounds = "unlimited"
     );
   });
   group('pool-entry reasoning effort cycle', () {
-    const presets = [('off', 'off'), ('low', 'low'), ('normal', 'normal'),
-      ('high', 'high'), ('max', 'max')];
+    const presets = [
+      ('off', 'off'),
+      ('low', 'low'),
+      ('normal', 'normal'),
+      ('high', 'high'),
+      ('max', 'max'),
+    ];
 
     /// Hover the first workers pool row so its MultiButton morphs into
     /// segments. Returns the row's y BEFORE hovering (the idle label
@@ -272,8 +277,7 @@ max_rounds = "unlimited"
       return y;
     }
 
-    test('idle label shows the current effort; cycle segment is ✶',
-        () async {
+    test('idle label shows the current effort; cycle segment is ✶', () async {
       await testNocterm('subagent effort cycle render', (tester) async {
         await file.writeAsString('''
 [subagent.workers]
@@ -335,8 +339,7 @@ models = [{ model = "zhipu/glm-4.5", concurrency = 1 }]
       }, size: const Size(100, 40));
     });
 
-    test('no options resolver → no effort suffix, no cycle segment',
-        () async {
+    test('no options resolver → no effort suffix, no cycle segment', () async {
       await testNocterm('subagent effort cycle absent', (tester) async {
         await _mount(tester, file);
         expect(tester.terminalState.findText('✶'), isEmpty);
@@ -347,6 +350,7 @@ models = [{ model = "zhipu/glm-4.5", concurrency = 1 }]
     });
   });
 }
+
 /// track stop and an `∞` (the value label's `∞ unlimited` never sits on
 /// the track).
 TextMatch _sliderInf(TerminalState ts) => ts

@@ -164,9 +164,7 @@ class SubagentRunner {
     // Pool-entry effort (config.toml, default `normal`): `off`
     // disables thinking entirely. Captured at construction — a pool
     // edit applies from the NEXT dispatch, never the live one.
-    final thinkingMode = reasoningEffort == 'off'
-        ? 'disabled'
-        : 'enabled';
+    final thinkingMode = reasoningEffort == 'off' ? 'disabled' : 'enabled';
     final wireEffort = reasoningEffort == 'off' ? null : reasoningEffort;
     // Local copy so the nullable round cap promotes in the comparisons
     // below (a public field never promotes).
