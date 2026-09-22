@@ -26,7 +26,7 @@ void main() {
 
     test('removes reasoning_effort from the wire body', () {
       final body = provider.buildRequestBody(
-        'mimo-v2.5-pro',
+        'mimo-v2.6-pro',
         userMsg,
         thinkingMode: 'enabled',
         reasoningEffort: 'max',
@@ -36,7 +36,7 @@ void main() {
 
     test('emits thinking.type enabled when thinking is on', () {
       final body = provider.buildRequestBody(
-        'mimo-v2.5-pro',
+        'mimo-v2.6-pro',
         userMsg,
         thinkingMode: 'enabled',
         reasoningEffort: 'max',
@@ -46,7 +46,7 @@ void main() {
 
     test('emits thinking.type disabled when thinking is off', () {
       final body = provider.buildRequestBody(
-        'mimo-v2.5-pro',
+        'mimo-v2.6-pro',
         userMsg,
         thinkingMode: 'disabled',
         reasoningEffort: 'max',
@@ -63,7 +63,7 @@ void main() {
           for (final callerTemp in const [0.0, 0.5, 0.7, 1.0]) {
             for (final callerTopP in const [0.85, 0.9, 0.95, 1.0]) {
               final body = provider.buildRequestBody(
-                'mimo-v2.5-pro',
+                'mimo-v2.6-pro',
                 userMsg,
                 thinkingMode: 'enabled',
                 temperature: callerTemp,
@@ -86,7 +86,7 @@ void main() {
 
       test('thinking disabled: honors caller temperature and top_p', () {
         final body = provider.buildRequestBody(
-          'mimo-v2.5-pro',
+          'mimo-v2.6-pro',
           userMsg,
           thinkingMode: 'disabled',
           temperature: 0.2,
@@ -105,11 +105,11 @@ void main() {
 
     test('passes model id and messages through unchanged', () {
       final body = provider.buildRequestBody(
-        'mimo-v2.5-pro',
+        'mimo-v2.6-pro',
         userMsg,
         thinkingMode: 'enabled',
       );
-      expect(body['model'], 'mimo-v2.5-pro');
+      expect(body['model'], 'mimo-v2.6-pro');
       expect(body['messages'], userMsg);
     });
 
@@ -122,7 +122,7 @@ void main() {
         },
       ];
       final body = provider.buildRequestBody(
-        'mimo-v2.5-pro',
+        'mimo-v2.6-pro',
         userMsg,
         thinkingMode: 'enabled',
         tools: tools,
@@ -139,7 +139,7 @@ void main() {
 
     test('omits user_id when not provided', () {
       final body = provider.buildRequestBody(
-        'mimo-v2.5-pro',
+        'mimo-v2.6-pro',
         userMsg,
         thinkingMode: 'enabled',
       );
@@ -148,7 +148,7 @@ void main() {
 
     test('includes user_id when provided', () {
       final body = provider.buildRequestBody(
-        'mimo-v2.5-pro',
+        'mimo-v2.6-pro',
         userMsg,
         thinkingMode: 'enabled',
         userId: 'user-42',

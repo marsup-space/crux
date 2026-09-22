@@ -10,6 +10,16 @@ below the version header. Each version has at most two categories:
 
 ### Features
 
+- **MiMo V2.6 series** — the MiMo provider's model list moves from the
+  V2.5 series to the V2.6 lineup (released 2026-09-22): `mimo-v2.6-pro`,
+  `mimo-v2.6-flash`, and the 20x-speed `mimo-v2.6-pro-ultraspeed`. All
+  three are natively multimodal (text/image/video/audio input, so
+  `image_support = true`), 1M context, 128K max output. The deprecated
+  `mimo-v2.5` / `mimo-v2.5-pro` / `mimo-v2.5-pro-ultraspeed` entries are
+  removed — they stop being served on 2026-10-21 per the official
+  deprecation notice. The wire layer is unchanged (V2.6 keeps the binary
+  `thinking.type` knob the existing provider already speaks).
+
 - **Per-model reasoning effort for subagent pools** — each model entry in
   `[subagent.workers]` / `[subagent.experts]` gains a `reasoning_effort`
   field (default `normal`; `off` disables thinking), persisted in

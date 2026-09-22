@@ -17,16 +17,31 @@
 #
 # Models
 # ------
-# Per https://mimo.mi.com/docs/en-US/api/chat/models and the
-# hyperparameter docs, the current flagship text models are:
+# Per https://mimo.mi.com/docs/en-US/updates/model, the MiMo-V2.6
+# series (released 2026-09-22, blog: https://mimo.xiaomi.com/mimo-v2-6)
+# is the current flagship lineup, and all three entries below are
+# natively multimodal per the official model pages:
 #
-#   * mimo-v2.5-pro           — 1T total / 42B active, 1M context
-#   * mimo-v2.5               — native omni-modal + 1M context
-#   * mimo-v2.5-pro-ultraspeed — fastest variant, 1M context
+#   * mimo-v2.6-pro            — 1M context, 128K max output,
+#                                text/image/video/audio input
+#                                (https://mimo.mi.com/models/mimo-v2.6-pro)
+#   * mimo-v2.6-flash          — 1M context, 128K max output,
+#                                text/image/video/audio input
+#                                (https://mimo.mi.com/models/mimo-v2.6-flash)
+#   * mimo-v2.6-pro-ultraspeed — up to 20x the output speed of
+#                                mimo-v2.6-pro, 1M context, 128K max
+#                                output, text/image/video/audio input
+#                                (https://mimo.mi.com/models/mimo-v2.6-pro-ultraspeed)
 #
-# The base `mimo-v2.5` model is advertised as natively multimodal;
-# `image_support = true` is set only on that model because the docs
-# explicitly verify image input on it.
+# The deprecated MiMo-V2.5 series was removed: per
+# https://mimo.mi.com/docs/welcome, `mimo-v2.5-pro` and `mimo-v2.5`
+# stop being served on 2026-10-21 10:00 (GMT+8) and are scheduled to
+# be taken offline entirely; pricing for them is already officially
+# deprecated. V2.5 call behavior during the transition (auto-redirect
+# or hard stop) is not documented, so Crux lists only the real V2.6
+# targets — same rationale as the zhipu.toml cleanup. `mimo-v2.5-asr`
+# (speech-to-text) and the TTS models are not chat-completions models
+# and stay out of this list.
 #
 # Reasoning
 # ---------
@@ -61,37 +76,37 @@ normal = "disabled"
 high = "disabled"
 max = "on"
 
-# === mimo-v2.5-pro — flagship reasoning model ===
+# === mimo-v2.6-pro — flagship reasoning model ===
 [[models]]
-id = "mimo-v2.5-pro"
-name = "MiMo V2.5 Pro"
-context_size = 1048576
-image_support = false
-max_tokens = 32768
-reasoning_effort = "max"
-thinking = true
-temperature = 1.0
-stream_lerp = true
-
-# === mimo-v2.5 — omni-modal flagship ===
-[[models]]
-id = "mimo-v2.5"
-name = "MiMo V2.5"
+id = "mimo-v2.6-pro"
+name = "MiMo V2.6 Pro"
 context_size = 1048576
 image_support = true
-max_tokens = 32768
+max_tokens = 131072
 reasoning_effort = "max"
 thinking = true
 temperature = 1.0
 stream_lerp = true
 
-# === mimo-v2.5-pro-ultraspeed — fastest flagship ===
+# === mimo-v2.6-flash — efficient omni-modal model ===
 [[models]]
-id = "mimo-v2.5-pro-ultraspeed"
-name = "MiMo V2.5 Pro UltraSpeed"
+id = "mimo-v2.6-flash"
+name = "MiMo V2.6 Flash"
 context_size = 1048576
-image_support = false
-max_tokens = 32768
+image_support = true
+max_tokens = 131072
+reasoning_effort = "max"
+thinking = true
+temperature = 1.0
+stream_lerp = true
+
+# === mimo-v2.6-pro-ultraspeed — 20x-speed flagship ===
+[[models]]
+id = "mimo-v2.6-pro-ultraspeed"
+name = "MiMo V2.6 Pro UltraSpeed"
+context_size = 1048576
+image_support = true
+max_tokens = 131072
 reasoning_effort = "max"
 thinking = true
 temperature = 1.0

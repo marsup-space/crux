@@ -17,7 +17,7 @@ import 'openai_compatible_provider.dart';
 ///    OpenAI-compatible body.
 ///
 /// 2. **Temperature / top_p are forced in thinking mode.** MiMo's
-///    `mimo-v2.5` and `mimo-v2.5-pro` models ignore any custom
+///    `mimo-v2.6` and `mimo-v2.6-pro` models ignore any custom
 ///    `temperature` or `top_p` while thinking is enabled and silently
 ///    use their recommended defaults (`1.0` and `0.95`). To keep the
 ///    toolbar honest about what the server will actually use, we
@@ -63,11 +63,13 @@ import 'openai_compatible_provider.dart';
 /// ## Model configuration
 ///
 /// See `providers/mimo.toml` for the bundled model list. MiMo
-/// publishes `mimo-v2.5`, `mimo-v2.5-pro`, and
-/// `mimo-v2.5-pro-ultraspeed`. The base `mimo-v2.5` is advertised as
-/// natively multimodal; vision input is enabled in the TOML for that
-/// model only, because the API docs verify image input on the base
-/// model.
+/// publishes the `mimo-v2.6` series (`mimo-v2.6-pro`,
+/// `mimo-v2.6-flash`, `mimo-v2.6-pro-ultraspeed`). All three are
+/// advertised as natively multimodal (text/image/video/audio input),
+/// so vision input is enabled in the TOML for every entry. The
+/// deprecated `mimo-v2.5` series was removed from the TOML — per
+/// https://mimo.mi.com/docs/welcome, `mimo-v2.5-pro` and
+/// `mimo-v2.5` stop being served on 2026-10-21 10:00 (GMT+8).
 class MimoProvider extends OpenAICompatibleProvider {
   @override
   String get name => 'mimo';
