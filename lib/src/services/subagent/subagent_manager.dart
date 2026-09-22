@@ -191,6 +191,9 @@ class SubagentManager {
     if (profile == null) {
       return 'Unknown agent "$agentName". Call find_agents first.';
     }
+    if (!_isRoleEnabled(_roleOf(profile))) {
+      return _roleDisabledMessage(_roleOf(profile));
+    }
     if (isBusy(agentName)) {
       if (ifBusy == 'fork') {
         return forkThenDispatch(
@@ -231,9 +234,7 @@ class SubagentManager {
     required String message,
     required int sessionId,
   }) async {
-    if (!toggles.anyOn) {
-      return 'Subagent mode is off — enable it with /subagent first.';
-    }
+    if (!_isRoleEnabled(role)) return _roleDisabledMessage(role);
     final model = await _pickModelForHire(role);
     if (model == null) {
       return 'No model available for ${role.name}s: the '
@@ -261,6 +262,7 @@ class SubagentManager {
     required int sessionId,
   }) async {
     final role = _roleOf(source);
+    if (!_isRoleEnabled(role)) return _roleDisabledMessage(role);
     var model = source.model;
     if (await remainingBudget(model) == BudgetLevel.exhausted ||
         !_hasCapacity(model)) {
@@ -324,6 +326,19 @@ class SubagentManager {
 
   Future<db.Agent?> _profileOrError(String agentName) =>
       store.byName(projectPath, agentName);
+
+  bool _isRoleEnabled(SubagentRole role) => switch (role) {
+    SubagentRole.worker => toggles.workersOn,
+    SubagentRole.expert => toggles.expertsOn,
+  };
+
+  String _roleDisabledMessage(SubagentRole role) {
+    final switchName = role == SubagentRole.expert ? 'Experts' : 'Workers';
+    final command = role == SubagentRole.expert
+        ? '/subagent experts on'
+        : '/subagent workers on';
+    return '$switchName is currently OFF — enable it with $command first.';
+  }
 
   Future<void> _startRun(
     db.Agent profile,

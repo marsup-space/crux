@@ -145,18 +145,68 @@ void main() {
       expect(result, contains('find_agents'));
     });
 
-    test('hire refuses when mode is off', () async {
-      final manager = managerWith(
-        const _Toggles(workers: false, experts: false),
+    test('manager gates hire and send by the requested agent role', () async {
+      final workersOnly = managerWith(const _Toggles(experts: false));
+      final expertHire = await workersOnly.hire(
+        role: SubagentRole.expert,
+        domain: 'd',
+        intention: 'i',
+        message: 'm',
+        sessionId: 1,
       );
-      final result = await manager.hire(
+      expect(expertHire, contains('Experts is currently OFF'));
+      expect(expertHire, contains('/subagent experts on'));
+
+      final expertsOnly = managerWith(const _Toggles(workers: false));
+      final workerHire = await expertsOnly.hire(
         role: SubagentRole.worker,
         domain: 'd',
         intention: 'i',
         message: 'm',
         sessionId: 1,
       );
-      expect(result.toLowerCase(), contains('off'));
+      expect(workerHire, contains('Workers is currently OFF'));
+      expect(workerHire, contains('/subagent workers on'));
+
+      final expert = await store.hire(
+        projectPath: Directory.current.path,
+        role: SubagentRole.expert,
+        model: 'missing/provider',
+        domain: 'review',
+      );
+      final expertSend = await workersOnly.send(
+        agentName: expert.name,
+        intention: 'i',
+        message: 'm',
+        sessionId: 1,
+      );
+      expect(expertSend, contains('Experts is currently OFF'));
+    });
+
+    test('both role switches allow manager dispatch paths', () async {
+      final manager = managerWith(const _Toggles());
+      final hire = await manager.hire(
+        role: SubagentRole.expert,
+        domain: 'd',
+        intention: 'i',
+        message: 'm',
+        sessionId: 1,
+      );
+      expect(hire, isNot(contains('currently OFF')));
+
+      final expert = await store.hire(
+        projectPath: Directory.current.path,
+        role: SubagentRole.expert,
+        model: 'missing/provider',
+        domain: 'review',
+      );
+      final send = await manager.send(
+        agentName: expert.name,
+        intention: 'i',
+        message: 'm',
+        sessionId: 1,
+      );
+      expect(send, startsWith('Dispatched agent://'));
     });
 
     test('hire refuses when the pool is empty', () async {
@@ -294,6 +344,85 @@ void main() {
         expect(result.output, contains('OFF'), reason: tool.name);
         expect(result.output, contains('/subagent'), reason: tool.name);
       }
+    });
+
+    test('hire and send gate dispatches by agent role', () async {
+      final workersOnly = const _Toggles(experts: false);
+      final expertsOnly = const _Toggles(workers: false);
+      SubagentManager managerFor(_Toggles toggles) => SubagentManager(
+        store: store,
+        providerService: providers,
+        toolExecutor: ToolExecutor(ToolRegistry()),
+        toolRegistry: ToolRegistry(),
+        toggles: toggles,
+        workingDirectory: Directory.current.path,
+      );
+
+      final expertHire =
+          await HireAgentTool(
+            manager: managerFor(workersOnly),
+            toggles: workersOnly,
+          ).execute({
+            'role': 'expert',
+            'domain': 'review',
+            'intention': 'i',
+            'message': 'm',
+          }, ctx());
+      expect(expertHire.output, contains('Experts is currently OFF'));
+      expect(expertHire.output, contains('/subagent experts on'));
+
+      final workerHire =
+          await HireAgentTool(
+            manager: managerFor(expertsOnly),
+            toggles: expertsOnly,
+          ).execute({
+            'role': 'worker',
+            'domain': 'implementation',
+            'intention': 'i',
+            'message': 'm',
+          }, ctx());
+      expect(workerHire.output, contains('Workers is currently OFF'));
+      expect(workerHire.output, contains('/subagent workers on'));
+
+      final expert = await store.hire(
+        projectPath: Directory.current.path,
+        role: SubagentRole.expert,
+        model: 'missing/provider',
+        domain: 'review',
+      );
+      final expertSend =
+          await SendAgentTool(
+            manager: managerFor(workersOnly),
+            toggles: workersOnly,
+          ).execute({
+            'agent': 'agent://${expert.name}',
+            'intention': 'i',
+            'message': 'm',
+          }, ctx());
+      expect(expertSend.output, contains('Experts is currently OFF'));
+
+      final bothOn = const _Toggles();
+      final allowedHire =
+          await HireAgentTool(
+            manager: managerFor(bothOn),
+            toggles: bothOn,
+          ).execute({
+            'role': 'expert',
+            'domain': 'review',
+            'intention': 'i',
+            'message': 'm',
+          }, ctx());
+      expect(allowedHire.output, isNot(contains('currently OFF')));
+      final allowedSend =
+          await SendAgentTool(
+            manager: managerFor(bothOn),
+            toggles: bothOn,
+          ).execute({
+            'agent': 'agent://${expert.name}',
+            'intention': 'i',
+            'message': 'm',
+          }, ctx());
+      expect(allowedSend.output, isNot(contains('currently OFF')));
     });
 
     test('send stamps agentBubble metadata with the parsed name', () async {

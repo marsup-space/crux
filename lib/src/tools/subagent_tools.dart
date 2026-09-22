@@ -19,20 +19,34 @@ abstract class SubagentToolBase extends ToolDef {
 
   SubagentToolBase({required this.manager, required this.toggles});
 
-  /// Common gate: mode off → redirect message. Returns null when the
-  /// call may proceed.
+  /// Common gate: a disabled mode redirects the main agent instead of
+  /// executing. `any` is for roster reads/management; role names select the
+  /// corresponding dispatch switch.
   ToolResult? gate(String neededSwitch) {
-    final anyOn = toggles.anyOn;
-    if (!anyOn) {
-      return ToolResult(
-        title: 'subagent mode off',
-        output:
-            'Subagent mode is currently OFF. Tell the user to enable it '
-            'with /subagent (e.g. "/subagent workers on") and re-ask.',
-        metadata: const {},
-      );
-    }
-    return null;
+    final enabled = switch (neededSwitch) {
+      'worker' => toggles.workersOn,
+      'expert' => toggles.expertsOn,
+      _ => toggles.anyOn,
+    };
+    if (enabled) return null;
+
+    final command = switch (neededSwitch) {
+      'worker' => '/subagent workers on',
+      'expert' => '/subagent experts on',
+      _ => '/subagent (e.g. "/subagent workers on")',
+    };
+    final label = switch (neededSwitch) {
+      'worker' => 'Workers',
+      'expert' => 'Experts',
+      _ => 'Subagent mode',
+    };
+    return ToolResult(
+      title: 'subagent mode off',
+      output:
+          '$label is currently OFF. Tell the user to enable it with '
+          '$command and re-ask.',
+      metadata: const {},
+    );
   }
 
   /// Parse `agent://orion` or bare `orion` into the roster name.
@@ -224,13 +238,12 @@ class HireAgentTool extends SubagentToolBase {
 
   @override
   Future<ToolResult> execute(Map<String, dynamic> args, ToolContext ctx) async {
-    final gateResult = gate('any');
-    if (gateResult != null) return gateResult;
-
     final roleArg = (args['role'] as String?)?.toLowerCase() ?? 'worker';
     final role = roleArg == 'expert'
         ? SubagentRole.expert
         : SubagentRole.worker;
+    final gateResult = gate(role.name);
+    if (gateResult != null) return gateResult;
     final domain = (args['domain'] as String?)?.trim() ?? '';
     final intention = (args['intention'] as String?)?.trim() ?? '';
     final message = (args['message'] as String?)?.trim() ?? '';
@@ -336,6 +349,12 @@ class SendAgentTool extends SubagentToolBase {
       return ToolResult.error(
         'agent, intention, and message are all required.',
       );
+    }
+    // Preserve manager.send's unknown-agent response before role gating.
+    final profile = await manager.store.byName(manager.projectPath, agent);
+    if (profile != null) {
+      final gateResult = gate(profile.role == 'expert' ? 'expert' : 'worker');
+      if (gateResult != null) return gateResult;
     }
 
     final result = await manager.send(

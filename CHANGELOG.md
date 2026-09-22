@@ -8,6 +8,20 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+### Fixes
+
+- **hire/send ignored the per-role mode switches** — the subagent tools'
+  shared gate never read its `neededSwitch` argument (every tool passed
+  `'any'`, and the body only checked `anyOn`), so with workers ON and
+  experts OFF the main agent could still `hire_agent` an expert (or send
+  / fork to one). The gate now resolves per role: `hire_agent` checks the
+  switch for the REQUESTED role, `send_agent` for the target agent's role,
+  and the manager enforces the same per-role check at `hire` / `send` /
+  `forkThenDispatch` as the final backstop. A disabled role redirects with
+  the exact enabling command (`/subagent experts on`). Roster reads
+  (`find_agents` / `check_agent` / `cancel_agent`) keep the any-switch
+  semantics.
+
 ## [1.1.5] - 2026-09-22
 
 bea93deb
