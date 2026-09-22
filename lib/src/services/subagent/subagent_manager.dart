@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:drift/drift.dart' show Value;
 
@@ -17,6 +18,26 @@ import 'subagent_runner.dart';
 
 /// Normalized budget verdict for one model (see plan §模型分配).
 enum BudgetLevel { ample, tight, exhausted }
+
+/// Selects one positive-weight model using [rng].
+///
+/// Map insertion order is used only as a deterministic tie/display order;
+/// every model's selection chance is its weight divided by all weights.
+String? pickWeighted(Map<String, int> freeWeights, Random rng) {
+  var total = 0;
+  for (final weight in freeWeights.values) {
+    if (weight > 0) total += weight;
+  }
+  if (total == 0) return null;
+
+  var ticket = rng.nextInt(total);
+  for (final entry in freeWeights.entries) {
+    if (entry.value <= 0) continue;
+    if (ticket < entry.value) return entry.key;
+    ticket -= entry.value;
+  }
+  return null; // Unreachable when [total] was calculated above.
+}
 
 /// The in-process subagent orchestrator: owns every live run, the
 /// per-model concurrency accounting, dispatch semantics (send / hire /
@@ -54,6 +75,8 @@ class SubagentManager {
 
   final Map<String, SubagentRunner> _runs = {};
   final Map<String, List<_QueuedDispatch>> _queues = {};
+  final Random _random = Random();
+
   final String workingDirectory;
   final String userLanguage;
 
@@ -266,7 +289,13 @@ class SubagentManager {
     var model = source.model;
     if (await remainingBudget(model) == BudgetLevel.exhausted ||
         !_hasCapacity(model)) {
-      model = await _pickModelForHire(role, excludingCurrent: false) ?? model;
+      model =
+          await _pickModelForHire(
+            role,
+            excludingCurrent: true,
+            currentModel: source.model,
+          ) ??
+          model;
     }
     final forked = await store.hire(
       projectPath: projectPath,
@@ -464,21 +493,30 @@ class SubagentManager {
     ];
   }
 
-  /// Pool-order model pick: first entry with free concurrency AND
-  /// budget. Null when the whole pool is unavailable.
+  /// Picks from models with both budget and free slots, weighted by their
+  /// remaining slots. Budget probes run concurrently; null means no candidate.
   Future<String?> _pickModelForHire(
     SubagentRole role, {
     bool excludingCurrent = false,
+    String? currentModel,
   }) async {
-    final pool = toggles.poolFor(role);
-    for (final entry in pool.models) {
-      if (_runningOnModel(entry.model) >= entry.concurrency) continue;
-      if (await remainingBudget(entry.model) == BudgetLevel.exhausted) {
-        continue;
-      }
-      return entry.model;
-    }
-    return null;
+    final candidates = [
+      for (final entry in toggles.poolFor(role).models)
+        if (!excludingCurrent || entry.model != currentModel)
+          (
+            model: entry.model,
+            free: max(0, entry.concurrency - _runningOnModel(entry.model)),
+          ),
+    ].where((candidate) => candidate.free > 0).toList();
+    final budgets = await Future.wait([
+      for (final candidate in candidates) remainingBudget(candidate.model),
+    ]);
+    final freeWeights = <String, int>{
+      for (var i = 0; i < candidates.length; i++)
+        if (candidates[i].free > 0 && budgets[i] != BudgetLevel.exhausted)
+          candidates[i].model: candidates[i].free,
+    };
+    return pickWeighted(freeWeights, _random);
   }
 
   bool _hasCapacity(String model) {

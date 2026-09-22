@@ -90,11 +90,12 @@ class SubagentModelEntry {
 
 /// User-level configuration for one subagent role: an ordered model pool.
 ///
-/// Index 0 is the preferred model; the rest are the fallback chain, in the
-/// order the user wrote them (recovery walks the pool front to back, so the
-/// list is a priority order and is never re-sorted). Every entry carries its
-/// own concurrency, so the pool is the single source of truth for both
-/// "which models may run" and "how many of them at once".
+/// Pool order does not determine model-selection priority. After excluding
+/// exhausted models and full entries, a hire is chosen randomly with each
+/// model weighted by its remaining concurrency slots. The written order is
+/// retained only as a stable display/tie order. Every entry carries its own
+/// concurrency, so the pool is the single source of truth for both "which
+/// models may run" and "how many of them at once".
 ///
 /// An empty pool means the role has not been configured, so callers must not
 /// start a run for it.
@@ -106,13 +107,13 @@ class SubagentModelConfig {
   bool get isConfigured =>
       models.isNotEmpty && models.every((entry) => entry.model.isNotEmpty);
 
-  /// The pool's model ids, in priority order.
+  /// The pool's model ids in configured display order.
   List<String> get modelIds => [for (final entry in models) entry.model];
 
-  /// The preferred model — the pool's first entry.
+  /// The first configured model, for display/default presentation only.
   ///
-  /// Readable alias for the common "what does this role run on" question.
-  /// Only valid when [isConfigured]: an empty pool has no model to name.
+  /// This is not a model-selection preference: hires are weighted by free
+  /// concurrency after budget filtering. Only valid when [isConfigured].
   String get primaryModel => models.first.model;
 
   SubagentModelEntry? entryFor(String model) {
@@ -132,9 +133,8 @@ class SubagentModelConfig {
   /// Index of the first pool entry that still has a free slot, or null when
   /// every model is saturated.
   ///
-  /// [runningForModel] reports the live run count for one model. Callers use
-  /// this to prefer a model that can start now, instead of parking new work
-  /// behind a full preferred model.
+  /// This helper preserves configured display order; hire selection instead
+  /// uses all free entries with remaining-slot weights.
   int? firstIndexWithCapacity(int Function(String model) runningForModel) {
     for (var index = 0; index < models.length; index++) {
       final entry = models[index];

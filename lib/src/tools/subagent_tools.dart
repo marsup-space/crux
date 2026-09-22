@@ -194,8 +194,9 @@ class HireAgentTool extends SubagentToolBase {
       'Create a NEW subagent and immediately dispatch its first task. '
       'The name is allocated from the constellation pool (workers get '
       'IAU constellations, experts get zodiac signs). The model is picked '
-      'from the role\'s configured pool (first entry with free concurrency '
-      'and budget) and bound to the agent for its lifetime. '
+      'from the role\'s configured pool (weighted randomly among entries '
+      'with free concurrency and budget) and bound to the agent for its '
+      'lifetime. '
       'Use when find_agents shows nobody owns the domain. '
       'Prefer narrow, specific domains ("token-refresh", not "general") — a '
       'fresh specialist beats reusing an unrelated agent.';

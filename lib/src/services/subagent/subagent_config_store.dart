@@ -29,8 +29,11 @@ import '../../models/subagent.dart';
 /// models = [{ model = "zhipu/glm-5.3", concurrency = 1 }]
 /// ```
 ///
-/// The v1 single `advisor` key is read as an alias for `experts` so an
-/// existing config file migrates silently on first save.
+/// Hires exclude exhausted and saturated models, then select among the rest
+/// randomly weighted by each entry's remaining concurrency; array order is
+/// only a stable display order. The v1 single `advisor` key is read as an
+/// alias for `experts` so an existing config file migrates silently on first
+/// save.
 class SubagentConfigStore {
   final File file;
 

@@ -8,6 +8,19 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+### Features
+
+- **Weighted-random model selection for subagent hires** — the hire/fork
+  model pick no longer walks the pool in fixed priority order (which
+  always landed on the first model with a free slot); it now excludes
+  saturated (running >= concurrency) and budget-exhausted entries, probes
+  budgets concurrently, and samples the remainder weighted by free slots
+  (`free = concurrency - running`): with kimi x1, glm-5.3-flash x1, and
+  deepseek-v4-flash x2 free, hires land 25% / 25% / 50%. Pool order
+  becomes display/tie order only. Fork's exclude-current-model fallback
+  keeps its semantics. Selection is a pure `pickWeighted` function pinned
+  by a seeded-distribution test.
+
 ### Fixes
 
 - **hire/send ignored the per-role mode switches** — the subagent tools'
