@@ -3,12 +3,12 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/marsup-space/crux/main/install.sh | bash
-#   curl -fsSL ... | bash -s -- --version v1.1.4
+#   curl -fsSL ... | bash -s -- --version v1.1.5
 #   curl -fsSL ... | bash -s -- --binary /path/to/crux
 #
 # Flags:
 #   -h, --help              Show this help
-#   -v, --version <ver>     Install a specific version (e.g. v1.1.4)
+#   -v, --version <ver>     Install a specific version (e.g. v1.1.5)
 #   -b, --binary <path>     Install from a local binary instead of downloading
 #       --no-modify-path    Don't modify shell config files
 #
@@ -66,13 +66,13 @@ Usage: install.sh [options]
 
 Options:
     -h, --help              Display this help message
-    -v, --version <version> Install a specific version (e.g. v1.1.4)
+    -v, --version <version> Install a specific version (e.g. v1.1.5)
     -b, --binary <path>     Install from a local binary instead of downloading
         --no-modify-path    Don't modify shell config files
 
 Examples:
     curl -fsSL https://raw.githubusercontent.com/marsup-space/crux/main/install.sh | bash
-    curl -fsSL .../install.sh | bash -s -- --version v1.1.4
+    curl -fsSL .../install.sh | bash -s -- --version v1.1.5
     ./install.sh --binary /path/to/crux
 EOF
 }
