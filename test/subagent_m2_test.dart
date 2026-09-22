@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:crux/src/models/subagent.dart';
@@ -118,13 +119,18 @@ void main() {
       addTearDown(() => db.close());
     });
 
-    SubagentManager managerWith(_Toggles toggles) => SubagentManager(
+    SubagentManager managerWith(
+      _Toggles toggles, {
+      void Function(String envelope, Agent agent, String status)?
+      onReportEnvelope,
+    }) => SubagentManager(
       store: store,
       providerService: providers,
       toolExecutor: ToolExecutor(ToolRegistry()),
       toolRegistry: ToolRegistry(),
       toggles: toggles,
       workingDirectory: Directory.current.path,
+      onReportEnvelope: onReportEnvelope,
     );
 
     test('send to unknown agent names the mistake', () async {
@@ -165,6 +171,45 @@ void main() {
       expect(result, contains('No model available'));
       expect(result, contains('config.toml'));
     });
+
+    test(
+      'completed report retains the dispatching session after markReady',
+      () async {
+        final scope = Directory.current.path;
+        final hired = await store.hire(
+          projectPath: scope,
+          role: SubagentRole.worker,
+          model: 'missing/provider',
+          domain: 'report routing',
+        );
+        final reportAgent = Completer<Agent>();
+        final manager = managerWith(
+          const _Toggles(),
+          onReportEnvelope: (_, agent, _) => reportAgent.complete(agent),
+        );
+
+        // This is the session that dispatched the run. A UI host may now be
+        // viewing another session, so the callback must not lose this stamp.
+        await manager.send(
+          agentName: hired.name,
+          intention: 'report to session A',
+          message: 'go',
+          sessionId: 41,
+        );
+
+        expect(
+          (await reportAgent.future.timeout(const Duration(seconds: 1)))
+              .runOwnerSessionId,
+          41,
+        );
+        // The durable row correctly becomes ready and clears its owner; only
+        // the completion callback receives the owner-preserving snapshot.
+        expect(
+          (await store.byName(scope, hired.name))!.runOwnerSessionId,
+          isNull,
+        );
+      },
+    );
 
     test('check on a ready agent returns the roster summary', () async {
       final scope = Directory.current.path;

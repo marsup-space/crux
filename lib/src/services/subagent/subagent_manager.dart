@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:drift/drift.dart' show Value;
+
 import '../../models/coding_plan_usage.dart';
 import '../../models/subagent.dart';
 import '../../storage/agent_store.dart';
@@ -335,15 +337,19 @@ class SubagentManager {
       sessionId: sessionId,
       intention: intention,
     );
-    final role = _roleOf(profile);
+    // `markBusy` is the durable point that stamps the dispatching session.
+    // Re-read it for the live run: the caller's ready-roster snapshot predates
+    // that write and therefore has no run owner.
+    final runProfile = await store.byName(projectPath, profile.name) ?? profile;
+    final role = _roleOf(runProfile);
     // Pool-entry effort (config.toml): resolved live at dispatch from
     // the entry whose model the run landed on — a pool edit applies
     // from the next dispatch. A model no longer in any pool falls
     // back to the `normal` default.
-    final effort = _effortForModel(profile.model);
+    final effort = _effortForModel(runProfile.model);
     final runner = SubagentRunner(
-      agentName: profile.name,
-      profile: profile,
+      agentName: runProfile.name,
+      profile: runProfile,
       role: role,
       intention: intention,
       message: message,
@@ -355,7 +361,7 @@ class SubagentManager {
       userLanguage: userLanguage,
       maxRounds: toggles.roundLimit,
       reasoningEffort: effort,
-      contextCapacity: _contextCapacityFor(profile.model),
+      contextCapacity: _contextCapacityFor(runProfile.model),
       onDistilled: (name, products) => store.writeDistilled(
         projectPath: projectPath,
         name: name,
@@ -364,10 +370,10 @@ class SubagentManager {
       ),
       onStatus: (_) => onRunsChanged?.call(),
       onUsage: (tokensIn, tokensOut) =>
-          onUsage?.call(tokensIn, tokensOut, profile, sessionId),
-      onDone: (status, report) => _onRunDone(profile, status, report),
+          onUsage?.call(tokensIn, tokensOut, runProfile, sessionId),
+      onDone: (status, report) => _onRunDone(runProfile, status, report),
     );
-    _runs[profile.name] = runner;
+    _runs[runProfile.name] = runner;
     onRunsChanged?.call();
     unawaited(runner.start());
   }
@@ -390,9 +396,19 @@ class SubagentManager {
       status: status,
       report: report,
     );
-    onReportEnvelope?.call(envelope, fresh ?? profile, status);
+    // Keep fresh roster fields (notably distillation's knowledge/worklog), but
+    // restore the live run's owner. `markReady` intentionally clears the DB
+    // owner before this callback; passing its raw readback would make the host
+    // fall back to whichever session happens to be visible.
+    final reportAgent = (fresh ?? profile).copyWith(
+      runOwnerSessionId: Value(profile.runOwnerSessionId),
+    );
+    onReportEnvelope?.call(envelope, reportAgent, status);
 
-    // Drain the queue: the next queued dispatch starts immediately.
+    // Drain the queue: the next queued dispatch starts immediately. This
+    // deliberately uses the live pre-markReady [profile] snapshot: its owner
+    // still identifies the run that owns queued follow-up work, while the DB
+    // readback above has already been cleared by markReady.
     final queue = _queues[profile.name];
     if (queue != null && queue.isNotEmpty) {
       final next = queue.removeAt(0);

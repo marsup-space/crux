@@ -17,6 +17,11 @@ void main() {
       expect(text, contains('MUST go to a worker'));
       expect(text, contains('send_agent'));
       expect(text, contains('find_agents'));
+      expect(text, contains('HARD RULE — domain match is mandatory'));
+      expect(
+        text,
+        contains('idle "CI 修复" agent must not receive a subagent-runtime bug'),
+      );
       expect(text, contains('report granularity'));
       expect(text, contains('Parallelize'));
       expect(text, contains('DIFFERENT worker'));
