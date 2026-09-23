@@ -8,6 +8,23 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+### Features
+
+- **Codex: GPT-6 Sol / GPT-6 Luna** — the Codex provider's model list adds
+  `gpt-6-sol` and `gpt-6-luna` (released 2026-09-22, OpenAI's recommended
+  Codex workhorse line): 256k context (repo convention; official 272k is the
+  API billing tier), 128k max output, image input, reasoning effort high. The
+  deprecated `gpt-5.3-codex-spark` entry is removed (gpt-5.2/5.3-codex are
+  deprecated for ChatGPT-auth Codex per the official help page); `gpt-5.5`
+  stays until its 2026-10-14 retirement. Wire layer unchanged — the existing
+  effort mapping already speaks the new levels.
+
+- **`crux upgrade` CLI subcommand** — the headless twin of `/upgrade`:
+  same check/download/replace flow, progress and outcome printed to
+  stdout with exit code 1 on refusal or failure, so it works from a
+  shell, a shortcut, or a package-manager hook. Listed under a new
+  `Commands:` section in `--help`.
+
 ### Fixes
 
 - **`/upgrade` works on Windows and no longer vanishes silently** — the
@@ -21,14 +38,6 @@ below the version header. Each version has at most two categories:
   POSIX file names (`crux`) where the service installs `crux.exe`, so
   they never exercised replacement on Windows — they now seed and assert
   the host binary name and pass.
-
-### Features
-
-- **`crux upgrade` CLI subcommand** — the headless twin of `/upgrade`:
-  same check/download/replace flow, progress and outcome printed to
-  stdout with exit code 1 on refusal or failure, so it works from a
-  shell, a shortcut, or a package-manager hook. Listed under a new
-  `Commands:` section in `--help`.
 
 ## [1.1.6] - 2026-09-23
 

@@ -16,6 +16,28 @@ type = "codex"
 endpoint_url = "https://chatgpt.com/backend-api/codex"
 
 [[models]]
+id = "gpt-6-sol"
+name = "GPT-6 Sol"
+context_size = 256000
+image_support = true
+max_tokens = 128000
+thinking = true
+reasoning_effort = "high"
+temperature = 0
+stream_lerp = true
+
+[[models]]
+id = "gpt-6-luna"
+name = "GPT-6 Luna"
+context_size = 256000
+image_support = true
+max_tokens = 128000
+thinking = true
+reasoning_effort = "high"
+temperature = 0
+stream_lerp = true
+
+[[models]]
 id = "gpt-6-astra"
 name = "GPT-6 Astra"
 context_size = 256000
@@ -64,17 +86,6 @@ id = "gpt-5.5"
 name = "GPT-5.5"
 context_size = 256000
 image_support = true
-max_tokens = 128000
-thinking = true
-reasoning_effort = "high"
-temperature = 0
-stream_lerp = true
-
-[[models]]
-id = "gpt-5.3-codex-spark"
-name = "GPT-5.3 Codex Spark"
-context_size = 256000
-image_support = false
 max_tokens = 128000
 thinking = true
 reasoning_effort = "high"
