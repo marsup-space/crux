@@ -12,6 +12,7 @@ import 'package:crux/src/services/codex_oauth.dart';
 import 'package:crux/src/services/provider_service.dart';
 import 'package:crux/src/services/providers/tinyfish_web_provider.dart';
 import 'package:crux/src/services/runtime_setup_service.dart';
+import 'package:crux/src/services/terminal_font_service.dart';
 import 'package:crux/src/services/web_provider_registry.dart';
 import 'package:crux/src/theme/crux_theme.dart';
 import 'package:crux/src/theme/theme_config_store.dart';
@@ -83,6 +84,9 @@ context_size = 4096
     CodexLoginStarter? beginCodexLogin,
     CodexLoginWaiter? waitForCodexLogin,
     ClipboardWriter? copyToClipboard,
+    Map<String, String> Function()? environment,
+    TerminalFontService? terminalFont,
+    Future<void> Function(RuntimeProgressCallback)? installMapleFont,
   }) => CruxTheme(
     data: themes.activeTheme,
     child: SetupGuide(
@@ -98,6 +102,9 @@ context_size = 4096
       beginCodexLogin: beginCodexLogin ?? CodexOAuth.beginDeviceLogin,
       waitForCodexLogin: waitForCodexLogin ?? CodexOAuth.waitForDeviceLogin,
       copyToClipboard: copyToClipboard ?? ClipboardManager.copy,
+      environment: environment,
+      terminalFont: terminalFont,
+      installMapleFont: installMapleFont,
       onQuit: onQuit,
       onFinish: onFinish ?? (_) async {},
     ),
@@ -845,4 +852,190 @@ context_size = 4096
       expect(finishedWith, 'test/test-model');
     }, size: const Size(80, 24));
   });
+
+  group('terminal font card', () {
+    late Directory fontDir;
+    late TerminalFontService fontService;
+    late _FakeFontService fakeFont;
+
+    setUp(() async {
+      fontDir = await Directory.systemTemp.createTemp('crux_setup_font_');
+      final wtPackage = Directory(
+        p.join(fontDir.path, 'Packages', 'Microsoft.WindowsTerminal_8wekyb3d8bbwe'),
+      )..createSync(recursive: true);
+      final settingsFile = File(
+        p.join(wtPackage.path, 'LocalState', 'settings.json'),
+      )..createSync(recursive: true);
+      settingsFile.writeAsStringSync('{"profiles": {"defaults": {}}}');
+      fontService = TerminalFontService(localAppData: () => fontDir.path);
+      fakeFont = _FakeFontService(fontService);
+    });
+
+    tearDown(() async {
+      if (await fontDir.exists()) await fontDir.delete(recursive: true);
+    });
+
+    Map<String, String> Function() wtEnvironment() =>
+        () => const {'WT_SESSION': '{abc-123}'};
+
+    test('renders for Windows Terminal with a settings file only', () async {
+      await testNocterm('setup font card renders', (tester) async {
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 60,
+            child: guide(
+              environment: wtEnvironment(),
+              terminalFont: fakeFont,
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 30));
+
+        expect(fakeFont.findCalls, greaterThan(0));
+        expect(fakeFont.statusText, isNotNull);
+        // Narrow layout stacks the font card below the fold; page down
+        // until it renders (same pattern as the short-terminal test).
+        var sawCard = false;
+        for (var i = 0; i < 12 && !sawCard; i++) {
+          sawCard = tester.terminalState.findText('Terminal font').isNotEmpty;
+          await tester.sendKey(LogicalKey.pageDown);
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+        expect(sawCard, isTrue);
+        expect(tester.terminalState, containsText('Optional · opt-in'));
+      }, size: const Size(80, 60));
+
+      await testNocterm('setup font card hidden without WT_SESSION', (
+        tester,
+      ) async {
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 60,
+            child: guide(
+              environment: () => const {},
+              terminalFont: fakeFont,
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 30));
+
+        expect(tester.terminalState.findText('Terminal font'), isEmpty);
+      }, size: const Size(80, 60));
+    });
+
+    test('never writes settings until the user acts', () async {
+      await testNocterm('setup font card zero writes', (tester) async {
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 30,
+            child: guide(
+              environment: wtEnvironment(),
+              terminalFont: fakeFont,
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 30));
+
+        expect(fakeFont.applyCalls, 0);
+      }, size: const Size(80, 30));
+    });
+
+    test('Apply on focus 32 sends the selected cell width preset', () async {
+      await testNocterm('setup font card apply', (tester) async {
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 30,
+            child: guide(
+              environment: wtEnvironment(),
+              terminalFont: fakeFont,
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 30));
+
+        // Focus 18 (codex sign-in) is skipped for non-codex providers, so
+        // 31 tabs land on 32 (Apply).
+        for (var i = 0; i < 31; i++) {
+          await tester.sendTab();
+        }
+        await tester.sendEnter();
+        await tester.pump(const Duration(milliseconds: 30));
+
+        expect(fakeFont.applyCalls, 1);
+        expect(
+          fakeFont.lastEdit?.cellWidthPreset,
+          CellWidthPreset.defaultWidth,
+        );
+      }, size: const Size(80, 30));
+    });
+
+    test('the install button invokes the injected installer', () async {
+      var installCalls = 0;
+      await testNocterm('setup font card install', (tester) async {
+        await tester.pumpComponent(
+          Container(
+            width: 80,
+            height: 60,
+            child: guide(
+              environment: wtEnvironment(),
+              terminalFont: fakeFont,
+              installMapleFont: (_) async {
+                installCalls++;
+              },
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 30));
+
+        // Page down until the install button renders (narrow layout).
+        var matches = tester.terminalState.findText(' Install Maple Mono ');
+        for (var i = 0; i < 12 && matches.isEmpty; i++) {
+          await tester.sendKey(LogicalKey.pageDown);
+          await tester.pump(const Duration(milliseconds: 20));
+          matches = tester.terminalState.findText(' Install Maple Mono ');
+        }
+        final install = matches.single;
+        await tester.tap(install.x + 1, install.y);
+        await tester.pump(const Duration(milliseconds: 30));
+
+        expect(installCalls, 1);
+      }, size: const Size(80, 60));
+    });
+  });
+}
+
+/// Records [applyFontSettings] calls while delegating reads to a real
+/// [TerminalFontService] backed by a temp directory.
+class _FakeFontService extends TerminalFontService {
+  final TerminalFontService _inner;
+  var applyCalls = 0;
+  var findCalls = 0;
+  String? statusText;
+  FontSettingsEdit? lastEdit;
+
+  _FakeFontService(this._inner) : super(localAppData: _inner.localAppData);
+
+  @override
+  File? findSettingsFile() {
+    findCalls++;
+    return _inner.findSettingsFile();
+  }
+
+  @override
+  Future<TerminalFontStatus?> loadStatus() async {
+    final status = await _inner.loadStatus();
+    statusText = status == null ? 'null' : 'file=${status.settingsFile.path}';
+    return status;
+  }
+
+  @override
+  Future<File?> applyFontSettings(FontSettingsEdit edit) async {
+    applyCalls++;
+    lastEdit = edit;
+    return _inner.applyFontSettings(edit);
+  }
 }

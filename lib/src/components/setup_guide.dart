@@ -6,6 +6,8 @@ import 'package:nocterm/nocterm.dart';
 import '../i18n/locale_controller.dart';
 import '../services/codex_oauth.dart';
 import '../services/llm_client.dart';
+import '../services/maple_font_installer.dart';
+import '../services/terminal_font_service.dart';
 import '../services/provider_service.dart';
 import '../services/runtime_setup_service.dart';
 import '../services/web_provider_registry.dart';
@@ -74,6 +76,9 @@ class SetupGuide extends StatefulComponent {
   final CodexLoginStarter beginCodexLogin;
   final CodexLoginWaiter waitForCodexLogin;
   final ClipboardWriter copyToClipboard;
+  final Map<String, String> Function()? environment;
+  final TerminalFontService? terminalFont;
+  final Future<void> Function(RuntimeProgressCallback)? installMapleFont;
 
   const SetupGuide({
     super.key,
@@ -92,6 +97,9 @@ class SetupGuide extends StatefulComponent {
     this.beginCodexLogin = _beginCodexLogin,
     this.waitForCodexLogin = _waitForCodexLogin,
     this.copyToClipboard = _copyToClipboard,
+    this.environment,
+    this.terminalFont,
+    this.installMapleFont,
   });
 
   @override
@@ -101,7 +109,7 @@ class SetupGuide extends StatefulComponent {
 class _SetupGuideState extends State<SetupGuide> {
   static const _providerKeyFocus = 16;
   static const _webKeyFocus = 23;
-  static const _focusCount = 27;
+  static const _focusCount = 33;
 
   final _scroll = ScrollController();
   final _providerKey = TextEditingController();
@@ -123,6 +131,15 @@ class _SetupGuideState extends State<SetupGuide> {
   String _sembleTransfer = '';
   String _ripgrepTransfer = '';
   String _runtimeStatus = '';
+  bool _fontCardVisible = false;
+  TerminalFontStatus? _fontStatus;
+  bool _fontInstalled = false;
+  bool _fontBusy = false;
+  bool _fontInstalling = false;
+  double _fontProgress = 0;
+  String _fontStage = 'waiting';
+  String _fontStatusText = '';
+  CellWidthPreset? _fontCellWidthPreset;
   String _languageError = '';
   String _providerStatus = '';
   String? _codexUserCode;
@@ -185,6 +202,33 @@ class _SetupGuideState extends State<SetupGuide> {
     unawaited(_initializeWebProvider());
 
     unawaited(_checkRuntime());
+    unawaited(_initializeTerminalFont());
+  }
+
+  /// The terminal font card only exists for Windows Terminal hosts with a
+  /// settings file. Detection and the status read touch nothing on disk
+  /// besides reading — nothing is written until the user presses a button.
+  ///
+  /// [SetupGuide.environment] is the only environment source here on
+  /// purpose: a plain `dart test` on a developer machine otherwise
+  /// inherits `WT_SESSION` from the hosting terminal and the card would
+  /// flap in unrelated layout assertions.
+  Future<void> _initializeTerminalFont() async {
+    final env = component.environment?.call();
+    if (env == null) return;
+    if (detectTerminalHost(env) != TerminalHost.windowsTerminal) return;
+    final service = component.terminalFont ?? TerminalFontService();
+    if (service.findSettingsFile() == null) return;
+    final status = await service.loadStatus();
+    if (!mounted) return;
+    setState(() {
+      _fontCardVisible = true;
+      _fontStatus = status;
+      // Normalize to a real preset so Apply always sends an explicit
+      // choice; defaultWidth on a file without cellWidth is a no-op.
+      _fontCellWidthPreset = status?.cellWidthPreset ?? CellWidthPreset.defaultWidth;
+      _fontInstalled = isMapleMonoInstalled(service.localAppData);
+    });
   }
 
   /// Restores the persisted auxiliary-model choice when setup is reopened.
@@ -331,6 +375,97 @@ class _SetupGuideState extends State<SetupGuide> {
     if (index == 24) unawaited(_saveAndTestWeb());
     if (index == 25) unawaited(_finish());
     if (index == 26) unawaited(_checkRuntime());
+    if (index == 27 && !_fontInstalled && !_fontBusy) {
+      unawaited(_installTerminalFont());
+    }
+    if (index >= 28 && index < 32) {
+      setState(() => _fontCellWidthPreset = CellWidthPreset.values[index - 28]);
+    }
+    if (index == 32 && !_fontBusy) unawaited(_applyTerminalFont());
+  }
+
+  void _updateFontProgress(
+    double progress,
+    String stage, [
+    RuntimeTransferStats? stats,
+  ]) {
+    if (!mounted) return;
+    setState(() {
+      _fontProgress = progress;
+      _fontStage = stage;
+      _fontStatusText = _formatTransfer(stats);
+    });
+  }
+
+  Future<void> _installTerminalFont() async {
+    setState(() {
+      _fontBusy = true;
+      _fontInstalling = true;
+      _fontProgress = 0;
+      _fontStage = 'checking';
+      _fontStatusText = '';
+    });
+    try {
+      final injected = component.installMapleFont;
+      final fontService = component.terminalFont ?? TerminalFontService();
+      if (injected != null) {
+        await injected(_updateFontProgress);
+      } else {
+        await installMapleMonoNfCn(
+          onProgress: _updateFontProgress,
+          localAppData: fontService.localAppData,
+        );
+      }
+      final status = await fontService.loadStatus();
+      if (!mounted) return;
+      setState(() {
+        _fontInstalled = true;
+        _fontStatus = status;
+        _fontCellWidthPreset =
+            status?.cellWidthPreset ?? CellWidthPreset.defaultWidth;
+        _fontStatusText = _t('Maple Mono NF CN installed', 'Maple Mono NF CN 已安装');
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _fontStatusText = _runtimeFailure('Maple Mono', error));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _fontBusy = false;
+          _fontInstalling = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _applyTerminalFont() async {
+    final service = component.terminalFont ?? TerminalFontService();
+    final preset = _fontCellWidthPreset;
+    setState(() {
+      _fontBusy = true;
+      _fontStatusText = _t('Saving font settings…', '正在保存字体设置…');
+    });
+    try {
+      await service.applyFontSettings(
+        FontSettingsEdit(
+          face: _fontInstalled ? mapleFontFaceName : null,
+          cellWidthPreset: preset,
+        ),
+      );
+      final status = await service.loadStatus();
+      if (!mounted) return;
+      setState(() {
+        _fontStatus = status;
+        _fontCellWidthPreset =
+            status?.cellWidthPreset ?? CellWidthPreset.defaultWidth;
+        _fontStatusText = _t('Font settings saved', '字体设置已保存');
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _fontStatusText = _runtimeFailure('font', error));
+    } finally {
+      if (mounted) setState(() => _fontBusy = false);
+    }
   }
 
   Future<void> _checkRuntime() async {
@@ -1180,6 +1315,7 @@ class _SetupGuideState extends State<SetupGuide> {
     'downloading' => _t('downloading', '下载中'),
     'verifying' => _t('verifying', '校验中'),
     'extracting' => _t('extracting', '解压中'),
+    'registering' => _t('registering', '注册中'),
     'warming_up' => _t('warming up', '预热中'),
     'ready' => _t('ready', '已就绪'),
     'failed' => _t('failed', '失败'),
@@ -1248,9 +1384,89 @@ class _SetupGuideState extends State<SetupGuide> {
     );
   }
 
+  Component _fontCard(BuildContext context) {
+    final theme = CruxTheme.of(context);
+    final status = _fontStatus;
+    final face = status?.fontFace;
+    final cellWidth = status?.cellWidth;
+    const presetLabels = ['default', '0.95ch', '0.9ch', '0.85ch'];
+    final selectedPreset = _fontCellWidthPreset ?? CellWidthPreset.defaultWidth;
+    return _section(
+      context,
+      '6',
+      _t('Terminal font', '终端字体'),
+      [
+        Text(
+          _t('Optional · opt-in', '可选 · 手动启用'),
+          style: TextStyle(color: theme.onSurfaceDim),
+        ),
+        const SizedBox(height: 1),
+        Text(
+          cellWidth == null
+              ? _t(
+                  'Font  ${face ?? '—'}  ·  cell width  default',
+                  '字体  ${face ?? '—'}  ·  字宽  默认',
+                )
+              : _t(
+                  'Font  ${face ?? '—'}  ·  cell width  $cellWidth',
+                  '字体  ${face ?? '—'}  ·  字宽  $cellWidth',
+                ),
+          style: TextStyle(color: theme.onSurfaceVariant),
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 1),
+        OptionToggle(
+          options: presetLabels,
+          selectedIndex: CellWidthPreset.values.indexOf(selectedPreset),
+          selectedBgColor: theme.buttonBackgroundHover,
+          unselectedBgColor: theme.buttonBackground,
+          hoverBgColor: theme.buttonBackgroundHover,
+          onFocusRequest: (index) => setState(() => _focus = 28 + index),
+          onChanged: (index) => setState(
+            () => _fontCellWidthPreset = CellWidthPreset.values[index],
+          ),
+          focused: _focus >= 28 && _focus < 32,
+        ),
+        const SizedBox(height: 1),
+        Row(
+          children: [
+            _button(
+              27,
+              _fontInstalled
+                  ? _t(' Installed ', ' 已安装 ')
+                  : _fontBusy && _fontInstalling
+                  ? _t(' Installing… ', ' 安装中… ')
+                  : _t(' Install Maple Mono ', ' 安装 Maple Mono '),
+              _fontInstalled || _fontBusy ? null : () => unawaited(_installTerminalFont()),
+            ),
+            const SizedBox(width: 1),
+            _button(
+              32,
+              _fontBusy
+                  ? _t(' Apply… ', ' 应用… ')
+                  : _t(' Apply ', ' 应用 '),
+              _fontBusy ? null : () => unawaited(_applyTerminalFont()),
+            ),
+          ],
+        ),
+        if (_fontInstalling)
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Text(
+              '${( _fontProgress.clamp(0.0, 1.0) * 100).round()}%  ${_runtimeStage(_fontStage)}${_fontStatusText.isEmpty ? '' : '  ·  $_fontStatusText'}',
+              style: TextStyle(color: theme.onSurfaceDim),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        _status(_fontStatusText.isNotEmpty && !_fontInstalling ? _fontStatusText : ''),
+      ],
+      completed: false,
+    );
+  }
+
   Component _runtimeCard(BuildContext context) {
     final theme = CruxTheme.of(context);
-    return _section(context, '6', _t('Runtime readiness', '运行环境'), [
+    return _section(context, '7', _t('Runtime readiness', '运行环境'), [
       Text(
         _t('Checked and installed automatically', '自动检查并安装'),
         style: TextStyle(color: theme.onSurfaceDim),
@@ -1369,6 +1585,7 @@ class _SetupGuideState extends State<SetupGuide> {
     final providers = _providerCard(context, provider, configured);
     final aux = _auxCard(context);
     final web = _webCard(context);
+    final font = _fontCardVisible ? _fontCard(context) : null;
     final runtime = _runtimeCard(context);
     final finish = _finishCard(context);
     if (width < 96) {
@@ -1378,6 +1595,7 @@ class _SetupGuideState extends State<SetupGuide> {
         providers,
         aux,
         web,
+        ?font,
         runtime,
         finish,
       ]);
@@ -1397,7 +1615,15 @@ class _SetupGuideState extends State<SetupGuide> {
               child: _gapColumn([language, providers, runtime]),
             ),
             const SizedBox(width: 2),
-            SizedBox(width: columnWidth, child: _gapColumn([theme, aux, web])),
+            SizedBox(
+              width: columnWidth,
+              child: _gapColumn([
+                theme,
+                aux,
+                web,
+                ?font,
+              ]),
+            ),
           ],
         ),
         const SizedBox(height: 1),
