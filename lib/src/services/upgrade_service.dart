@@ -218,13 +218,31 @@ class UpgradeService {
   /// The rename also sidesteps macOS 26 provenance tracking, which can SIGKILL
   /// an adhoc-signed binary written over an existing flagged path — the same
   /// reason `install.sh` refuses to copy in place.
+  ///
+  /// On Windows the final rename must additionally dance around the running
+  /// exe: replacing a file that is executing fails with access denied
+  /// (errno 5), while *renaming it aside* is allowed. So an existing
+  /// destination moves to `<name>.old` first, the staged file takes its
+  /// place, and the aside copy is deleted best-effort — impossible while
+  /// this process still runs it, so the next upgrade simply reuses the name.
   void _installFile(ArchiveFile entry, String destination) {
     final staging = '$destination.tmp.$pid';
     final file = File(staging);
     file.writeAsBytesSync(entry.content as List<int>, flush: true);
-    if (!Platform.isWindows) {
-      Process.runSync('chmod', ['755', staging]);
+    if (Platform.isWindows) {
+      final aside = '$destination.old';
+      final existing = File(destination);
+      if (existing.existsSync()) existing.renameSync(aside);
+      file.renameSync(destination);
+      try {
+        File(aside).deleteSync();
+      } catch (_) {
+        // The running binary cannot be unlinked until the process exits;
+        // the next upgrade renames over this name anyway.
+      }
+      return;
     }
+    Process.runSync('chmod', ['755', staging]);
     file.renameSync(destination);
   }
 

@@ -13,6 +13,7 @@ import 'package:crux/src/services/subagent/subagent_config_store.dart';
 import 'package:crux/src/services/subagent/subagent_controller.dart';
 import 'package:crux/src/services/plugin_registry.dart';
 import 'package:crux/src/services/daemon_client.dart';
+import 'package:crux/src/services/upgrade_service.dart';
 import 'package:crux/src/tools/semble_warmup.dart';
 import 'package:crux/src/utils/clipboard_text.dart';
 import 'package:crux/src/utils/windows_vt.dart';
@@ -47,6 +48,11 @@ void main(List<String> args) async {
       stdout.writeln('  -v, --version    Show version');
       stdout.writeln('      --doctor     Diagnose and fix issues');
       stdout.writeln('      --no-home    Skip the home screen on launch');
+      stdout.writeln();
+      stdout.writeln('Commands:');
+      stdout.writeln(
+        '  upgrade          Download and install the latest release',
+      );
       return;
     }
     if (arg == '--version' || arg == '-v') {
@@ -55,6 +61,10 @@ void main(List<String> args) async {
     }
     if (arg == '--doctor') {
       await _runDoctor();
+      return;
+    }
+    if (arg == 'upgrade') {
+      await _runUpgrade();
       return;
     }
   }
@@ -628,6 +638,60 @@ Directory _resolveUserConfigDir() {
         p.join(Platform.environment['HOME'] ?? '.', '.config');
   }
   return Directory(p.join(configHome, 'crux'));
+}
+
+// ── upgrade subcommand and ChatPanel (unchanged) ─────────────────────
+
+/// `crux upgrade` — the headless twin of the `/upgrade` command: same
+/// [UpgradeService] flow, but progress and outcome print to stdout so it
+/// works from a shell, a shortcut, or a package-manager hook.
+///
+/// Exit codes: 0 = upgraded or already up to date, 1 = refused/failed
+/// (dev build, unsupported platform, unwritable install, network error).
+Future<void> _runUpgrade() async {
+  stdout.writeln('crux upgrade — checking for the latest version…');
+  final service = UpgradeService(
+    currentVersion: kCruxVersion,
+    executablePath: Platform.resolvedExecutable,
+    download: httpDownloadBytes,
+    fetchLatestVersion: httpFetchLatestVersion,
+  );
+  final result = await service.run(
+    onProgress: (stage) => stdout.writeln('  $stage…'),
+  );
+
+  switch (result.status) {
+    case UpgradeStatus.upgraded:
+      stdout.writeln(
+        'Upgraded to v${result.version} — restart Crux to run it.',
+      );
+    case UpgradeStatus.upToDate:
+      stdout.writeln('Already on the latest version (v${result.version}).');
+    case UpgradeStatus.notAnInstalledBuild:
+      if (result.detail != null) {
+        stderr.writeln('Install directory not found: ${result.detail}');
+      } else {
+        stderr.writeln(
+          'This is a development build — upgrade only manages installed '
+          'release binaries.',
+        );
+      }
+      exit(1);
+    case UpgradeStatus.unsupportedPlatform:
+      stderr.writeln(
+        'No published build for ${service.target} '
+        '(published: ${result.detail ?? ''}).',
+      );
+      exit(1);
+    case UpgradeStatus.installDirNotWritable:
+      stderr.writeln(
+        'Install directory is not writable: ${result.detail ?? ''}',
+      );
+      exit(1);
+    case UpgradeStatus.failed:
+      stderr.writeln('Upgrade failed: ${result.detail ?? ''}');
+      exit(1);
+  }
 }
 
 // ── --doctor and ChatPanel (unchanged) ────────────────────────────────

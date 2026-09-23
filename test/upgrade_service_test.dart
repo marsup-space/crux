@@ -28,6 +28,11 @@ Uint8List releaseZip({
   return Uint8List.fromList(ZipEncoder().encode(archive));
 }
 
+/// The install-side file name for [base] on the host: the service installs
+/// `crux.exe` on Windows and `crux` elsewhere, so assertions must follow.
+String hostBinary(String base) =>
+    Platform.isWindows ? '$base.exe' : base;
+
 void main() {
   group('version comparison', () {
     test('orders release versions numerically, not lexically', () {
@@ -295,6 +300,12 @@ void main() {
       if (await installDir.exists()) await installDir.delete(recursive: true);
     });
 
+    // Writes a fake pre-existing binary under the host's naming so the
+    // assertions below read back what the service actually replaces.
+    File seedOldBinary([String base = 'crux']) =>
+        File(p.join(installDir.path, hostBinary(base)))
+          ..writeAsStringSync('OLD-CRUX');
+
     Future<UpgradeResult> upgradeWith(
       Uint8List zip, {
       String latest = 'v1.1.0',
@@ -352,21 +363,21 @@ void main() {
     test(
       'leaves the existing binaries alone when already up to date',
       () async {
-        File(p.join(installDir.path, 'crux')).writeAsStringSync('OLD-CRUX');
+        seedOldBinary();
         final result = await upgradeWith(
           releaseZip(cruxBody: 'NEW-CRUX'),
           latest: 'v1.0.0',
         );
         expect(result.status, UpgradeStatus.upToDate);
         expect(
-          File(p.join(installDir.path, 'crux')).readAsStringSync(),
+          File(p.join(installDir.path, hostBinary('crux'))).readAsStringSync(),
           'OLD-CRUX',
         );
       },
     );
 
     test('fails cleanly when the archive has no crux binary', () async {
-      File(p.join(installDir.path, 'crux')).writeAsStringSync('OLD-CRUX');
+      seedOldBinary();
       final result = await upgradeWith(
         releaseZip(cruxBody: '', includeCrux: false),
       );
@@ -374,17 +385,17 @@ void main() {
       expect(result.detail, contains('crux'));
       // The old binary must survive a bad download.
       expect(
-        File(p.join(installDir.path, 'crux')).readAsStringSync(),
+        File(p.join(installDir.path, hostBinary('crux'))).readAsStringSync(),
         'OLD-CRUX',
       );
     });
 
     test('keeps working when the bundle ships no daemon sidecar', () async {
-      File(p.join(installDir.path, 'crux')).writeAsStringSync('OLD-CRUX');
+      seedOldBinary();
       final result = await upgradeWith(releaseZip(cruxBody: 'NEW-CRUX'));
       expect(result.status, UpgradeStatus.upgraded, reason: result.detail);
       expect(
-        File(p.join(installDir.path, 'crux')).readAsStringSync(),
+        File(p.join(installDir.path, hostBinary('crux'))).readAsStringSync(),
         'NEW-CRUX',
       );
     });

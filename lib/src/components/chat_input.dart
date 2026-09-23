@@ -22,6 +22,7 @@ import 'session_controller.dart';
 import 'streaming_controller.dart';
 import 'ui/button.dart';
 import 'ui/layout_metrics.dart';
+import 'ui/toast.dart';
 
 /// The chat input box at the bottom of the chat panel.
 ///
@@ -301,6 +302,14 @@ class ChatInputState extends State<ChatInput> {
       // "Unknown command" and discarding the input.
       if (cmd != null) {
         if (isResponding && !cmd.availableDuringResponse) {
+          // Refuse loudly, not silently: swallowing the keystroke with no
+          // feedback reads as "the command does nothing".
+          ToastHubState.globalInstance?.show(
+            component.strings.t('toast.commandWhileResponding', {
+              'cmd': text.split(' ').first,
+            }),
+            mode: ToastMode.error,
+          );
           return;
         }
         component.textController.clear();

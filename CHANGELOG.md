@@ -8,6 +8,28 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+### Fixes
+
+- **`/upgrade` works on Windows and no longer vanishes silently** — the
+  in-TUI upgrade refused to replace a running `crux.exe` (Windows denies
+  overwriting an executing image, errno 5); the install step now renames
+  the existing binary aside to `<name>.old` before moving the staged file
+  into place, deleting the aside copy best-effort. Submitting a command
+  without `availableDuringResponse` (e.g. `/upgrade`) while a response is
+  streaming silently swallowed the keystroke; the guard now shows an
+  error toast instead. The upgrade tests were additionally asserting
+  POSIX file names (`crux`) where the service installs `crux.exe`, so
+  they never exercised replacement on Windows — they now seed and assert
+  the host binary name and pass.
+
+### Features
+
+- **`crux upgrade` CLI subcommand** — the headless twin of `/upgrade`:
+  same check/download/replace flow, progress and outcome printed to
+  stdout with exit code 1 on refusal or failure, so it works from a
+  shell, a shortcut, or a package-manager hook. Listed under a new
+  `Commands:` section in `--help`.
+
 ## [1.1.6] - 2026-09-23
 
 7f0d7f8b
