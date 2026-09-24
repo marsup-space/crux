@@ -226,6 +226,25 @@ class _FailingActor extends LspServerActor {
   Future<LspServerSpec?> resolveSpec(String root, String file) async => null;
 }
 
+/// A server that ignores every signal — kill() records the signal
+/// but never exits, forcing [_killAfter]'s SIGKILL escalation.
+class _StubbornProcess extends _FakeProcess {
+  @override
+  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
+    killCalled = true;
+    killSignal = signal;
+    return true; // exitCode never completes.
+  }
+}
+
+class _StubbornActor extends _TestActor {
+  @override
+  Future<Process> spawnProcess(LspServerSpec spec) async {
+    lastProcess = _StubbornProcess();
+    return lastProcess!;
+  }
+}
+
 void main() {
   group('LspServerActor handle', () {
     test('emits LspEventStarted after successful initialize', () async {
@@ -399,5 +418,43 @@ void main() {
       expect(fatals, hasLength(1));
       expect(fatals.first.root, '/r');
     });
+
+    test('shutdown group-TERMs the server (fallback kill observed)', () async {
+      final actor = _TestActor();
+      final events = <LspEvent>[];
+      actor.attach(events.add);
+
+      await actor.handle(LspCmdStart(root: '/g', file: '/g/x.test'));
+      await actor.handle(const LspCmdShutdownRoot(root: '/g'));
+
+      final proc = actor.lastProcess!;
+      expect(proc.killCalled, isTrue);
+      // The kill sites go through `killProcessGroup`
+      // (utils/process_group_kill.dart): the group signal itself
+      // travels via `kill -TERM -- -<pgid>`, and the per-pid
+      // fallback we observe here is a bare SIGTERM kill.
+      expect(proc.killSignal, ProcessSignal.sigterm);
+      expect(actor.activeServerCount, 0);
+    });
+
+    test(
+      'shutdown escalates to SIGKILL when the server ignores TERM',
+      () async {
+        final actor = _StubbornActor();
+        final events = <LspEvent>[];
+        actor.attach(events.add);
+
+        await actor.handle(LspCmdStart(root: '/s', file: '/s/x.test'));
+        // The stubborn server never exits on its own, so this only
+        // returns after _killAfter's SIGKILL escalation
+        // (grace 1s + 500ms TERM window + 200ms reap).
+        await actor.handle(const LspCmdShutdownRoot(root: '/s'));
+
+        final proc = actor.lastProcess!;
+        expect(proc.killCalled, isTrue);
+        expect(proc.killSignal, ProcessSignal.sigkill);
+        expect(actor.activeServerCount, 0);
+      },
+    );
   });
 }

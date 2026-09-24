@@ -70,6 +70,14 @@ class LspManager {
   /// Set when shutdown() has been called.
   bool _shutdown = false;
 
+  /// In-flight [shutdown] teardown. Kept so every caller — e.g. the
+  /// `QuitHandler.onBeforeExit` path and the SIGTERM/SIGINT fallback
+  /// in ChatPanel — awaits the *same* single pass. Without this a
+  /// second caller would return before the first finished killing
+  /// children and could `exit(0)` mid-teardown, orphaning the very
+  /// servers shutdown was supposed to reap.
+  Future<void>? _shutdownFuture;
+
   LspManager({
     required this.workingDirectory,
     required Map<String, LspActorFactory> actorFactories,
@@ -335,9 +343,19 @@ class LspManager {
   }
 
   /// Shut down all slots and release resources.
-  Future<void> shutdown() async {
-    if (_shutdown) return;
+  ///
+  /// Idempotent AND await-safe: the first call kicks off the teardown
+  /// (setting [_shutdown] synchronously so later API calls no-op), and
+  /// every subsequent call returns that same in-flight future instead
+  /// of returning early while children are still dying.
+  Future<void> shutdown() {
+    final future = _shutdownFuture;
+    if (future != null) return future;
     _shutdown = true;
+    return _shutdownFuture = _shutdownSlots();
+  }
+
+  Future<void> _shutdownSlots() async {
     for (final slot in _slots.values) {
       await slot.shutdown();
     }

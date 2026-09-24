@@ -332,6 +332,7 @@ class _ChatPanelState extends State<ChatPanel> {
   late final ChatTurnOrchestrator _turnOrchestrator;
   late final FileReadTracker _tracker;
   late final LspManager _lspManager;
+  late final List<StreamSubscription<ProcessSignal>> _lspSignalSubs;
   late final PollingCoordinator _polling;
   late final QuitHandler _quitHandler;
 
@@ -877,8 +878,39 @@ class _ChatPanelState extends State<ChatPanel> {
     );
     _quitHandler = QuitHandler(
       themeController: component.themeController,
+      onBeforeExit: () => _lspManager.shutdown(),
       stringsProvider: () => _strings,
     );
+    // Signal fallback (Fix C): the normal quit path above already
+    // awaits `_lspManager.shutdown`, but OS-level SIGTERM / external
+    // SIGINT (terminal-window close, `kill`, `pkill`) can arrive
+    // without any widget teardown — nocterm only turns them into a
+    // synthetic Ctrl+C keyboard event, and with
+    // `CtrlCBehavior.disabled` (bin/crux.dart) an unhandled one is a
+    // no-op that would orphan every LSP child. `ProcessSignal.watch`
+    // is a broadcast stream, so this coexists with nocterm's own
+    // listeners. Shutdown is fire-and-forget with a 3s grace window
+    // (SIGKILL escalation in `_killAfter` backstops it): after the
+    // timeout the handler lets the normal signal semantics proceed.
+    _lspSignalSubs = [
+      ProcessSignal.sigterm.watch().listen((_) {
+        unawaited(
+          _lspManager.shutdown().timeout(
+            const Duration(seconds: 3),
+            onTimeout: () {},
+          ),
+        );
+      }),
+      if (!Platform.isWindows)
+        ProcessSignal.sigint.watch().listen((_) {
+          unawaited(
+            _lspManager.shutdown().timeout(
+              const Duration(seconds: 3),
+              onTimeout: () {},
+            ),
+          );
+        }),
+    ];
 
     if (bootState != null) {
       _providerServiceReady = true;
@@ -1405,6 +1437,9 @@ class _ChatPanelState extends State<ChatPanel> {
 
   @override
   void dispose() {
+    for (final sub in _lspSignalSubs) {
+      sub.cancel();
+    }
     CommandRegistry.instance.removeListener(_refresh);
     _webProviderChangesSub?.cancel();
     _webProviderChangesSub = null;

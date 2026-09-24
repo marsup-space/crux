@@ -23,8 +23,17 @@ class QuitHandler {
   /// though the `LocaleController` is already gone by then.
   final Strings Function() stringsProvider;
 
+  /// Best-effort async cleanup awaited just before `exit(0)` — wired
+  /// by the chat panel to `LspManager.shutdown` so `/quit` and the
+  /// Ctrl+C path stop all language-server child processes instead of
+  /// orphaning them. Awaited with a bounded timeout in
+  /// [quitAndPrintSummary]: a hung server must never keep the
+  /// terminal from exiting.
+  final Future<void> Function()? onBeforeExit;
+
   QuitHandler({
     required this.themeController,
+    this.onBeforeExit,
     this.stringsProvider = kEnglishStringsFn,
   });
 
@@ -32,12 +41,15 @@ class QuitHandler {
 
   /// Single exit path used by both `/quit` and the Ctrl+C handler.
   ///
+  /// Async so [onBeforeExit] (LSP shutdown) can run to completion —
+  /// within its timeout — before the process leaves.
+  ///
   /// This is the load-bearing reason the chat panel owns the exit
   /// rather than letting nocterm's default `CtrlCBehavior.immediateExit`
   /// do the work: that default calls `StdioBackend.requestExit(0)`,
   /// which schedules an `exit(0)` on a microtask — and that microtask
   /// runs before `runApp()`'s `runEventLoop` can notice `_shouldExit`.
-  void quitAndPrintSummary() {
+  Future<void> quitAndPrintSummary() async {
     RunMetrics.instance.setLastKnownTheme(themeController.activeTheme);
     RunMetrics.instance.setLastKnownStrings(strings);
 
@@ -78,6 +90,19 @@ class QuitHandler {
     // the PowerShell/cmd session that launched Crux.
     try {
       TerminalBinding.instance.terminal.backend.disableRawMode();
+    } catch (_) {}
+
+    // Step 4.5: give async cleanup (LSP shutdown) a bounded window so
+    // language-server children are not orphaned by the exit below.
+    // Bounded at 3s: a wedged server must not hold the terminal
+    // hostage, and `LspServerActor._killAfter`'s SIGKILL escalation
+    // backstops the graceful stop while this process is still alive.
+    // The try/catch guarantees the exit even if the callback throws.
+    try {
+      await onBeforeExit?.call().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {},
+      );
     } catch (_) {}
 
     // Step 5: flush, then exit.

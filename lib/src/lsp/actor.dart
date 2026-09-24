@@ -31,6 +31,9 @@ import 'language.dart';
 import 'peer.dart' as peer_lib;
 import 'protocol.dart';
 
+import '../utils/process_group_kill.dart' show killProcessGroup;
+import '../utils/setsid_spawn.dart';
+
 /// Abstract base class for LSP server actors.
 ///
 /// Subclasses override [id], [extensions], [bareFilenames], [resolveSpec],
@@ -262,17 +265,41 @@ abstract class LspServerActor {
     await _killAfter(server.process, const Duration(seconds: 1));
   }
 
+  /// Ensure [process] is gone within roughly `grace + 1.7s`.
+  ///
+  /// The setsid trampoline ([spawnProcess]) made the server a session
+  /// leader (pid == pgid), so every signal below goes through
+  /// [killProcessGroup]: the whole process group is signalled and any
+  /// grandchildren the server forked (watchers, workers) die with it,
+  /// while Crux's own group is never touched. On Windows
+  /// [killProcessGroup] degrades to plain `process.kill`.
   Future<void> _killAfter(Process process, Duration grace) async {
     try {
       await process.exitCode.timeout(grace);
     } on TimeoutException {
-      process.kill(ProcessSignal.sigterm);
+      killProcessGroup(process);
       // Give the OS a moment to deliver the signal; the exit
       // listener will fire when [process.exitCode] resolves.
       try {
-        await process.exitCode.timeout(const Duration(milliseconds: 200));
+        await process.exitCode.timeout(const Duration(milliseconds: 500));
+      } on TimeoutException {
+        // The process ignored SIGTERM (some language servers trap it
+        // during their own shutdown). Escalate to SIGKILL so it can
+        // never outlive Crux. process_group_kill.dart is TERM-only,
+        // and the group already got SIGTERM above — so this is a
+        // direct SIGKILL to the server pid; any grandchildren that
+        // ignored the group SIGTERM are on their own.
+        process.kill(ProcessSignal.sigkill);
+        // SIGKILL cannot be handled; awaiting is just reap
+        // bookkeeping, best-effort.
+        try {
+          await process.exitCode.timeout(const Duration(milliseconds: 200));
+        } catch (_) {
+          // Even this can time out on a wedged pipe; nothing more
+          // this process can do for the child.
+        }
       } catch (_) {
-        // Process ignored SIGTERM; nothing more we can do here.
+        // Exited after SIGTERM.
       }
     } catch (_) {
       // Already exited.
@@ -285,7 +312,9 @@ abstract class LspServerActor {
   ) async {
     try {
       peer.cancelAll(const peer_lib.ShuttingDown('cleanup'));
-      process.kill(ProcessSignal.sigterm);
+      // Group TERM (see [_killAfter]): pid == pgid, so forked
+      // grandchildren are reaped along with the server itself.
+      killProcessGroup(process);
     } catch (_) {}
   }
 
@@ -357,10 +386,26 @@ abstract class LspServerActor {
 
   /// Spawn the server process. Default uses `Process.start` with the
   /// command and env from the spec. Tests override to inject a fake.
+  ///
+  /// On Unix the server is wrapped in a tiny Perl setsid trampoline
+  /// (shared with the shell tool, see `utils/setsid_spawn.dart`) so
+  /// each LSP server gets its own process group: the trampoline calls
+  /// `setsid()` and then `exec`s the real command, so the spawned pid
+  /// IS the server pid (post-exec) and IS the process group id. That
+  /// makes `process.kill()` reach the server directly and lets the
+  /// kill sites signal the whole group (`kill -TERM -- -<pid>`) so
+  /// forked grandchildren die with the server instead of leaking.
   Future<Process> spawnProcess(LspServerSpec spec) async {
-    return Process.start(
-      spec.command[0],
-      spec.command.skip(1).toList(),
+    if (Platform.isWindows) {
+      return Process.start(
+        spec.command[0],
+        spec.command.skip(1).toList(),
+        workingDirectory: spec.root,
+        environment: spec.env.isEmpty ? null : spec.env,
+      );
+    }
+    return startWithSetsid(
+      spec.command,
       workingDirectory: spec.root,
       environment: spec.env.isEmpty ? null : spec.env,
     );

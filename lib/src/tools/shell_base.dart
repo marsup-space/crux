@@ -6,6 +6,7 @@ import '../services/auxiliary_prompts.dart';
 import '../services/shell_live_registry.dart';
 import '../services/shell_monitor_notifier.dart' show ShellMonitorRegistry;
 import '../utils/bundled_executable.dart';
+import '../utils/setsid_spawn.dart' show resolvePerl, setsidTrampolineScript;
 import '../utils/token_estimate.dart'
     show estimateTokens, estimateToolRoundTripTokens;
 import 'shell_guard.dart';
@@ -220,13 +221,12 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
     // Dart's normal Process.start keeps Unix children in Crux's process
     // group. Wrap the shell in a tiny Perl setsid trampoline so timeout /
     // interrupt cleanup can signal the tool's group without signaling Crux.
-    final perl = File('/usr/bin/perl').existsSync() ? '/usr/bin/perl' : 'perl';
     return ShellInvocation(
-      executable: perl,
+      executable: resolvePerl(),
       args: [
         '-MPOSIX=setsid',
         '-e',
-        r'setsid() or die "setsid: $!\n"; exec @ARGV or die "exec: $!\n";',
+        setsidTrampolineScript,
         invocation.executable,
         ...invocation.args,
       ],
