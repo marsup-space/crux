@@ -27,6 +27,12 @@ below the version header. Each version has at most two categories:
 
 ### Fixes
 
+- **OpenRouter's bundled stealth model moves to Space Bunny Alpha** — the
+  free provider now selects OpenRouter's current `stealth/space-bunny-alpha`
+  preview instead of the retired Union Alpha entry, refreshed with its 1M
+  context window, 512K maximum output, multimodal input, and mandatory `max`
+  reasoning from the live catalog.
+
 - **`/upgrade` works on Windows and no longer vanishes silently** — the
   in-TUI upgrade refused to replace a running `crux.exe` (Windows denies
   overwriting an executing image, errno 5); the install step now renames

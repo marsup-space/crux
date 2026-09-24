@@ -28,9 +28,10 @@
 # generic openai_compatible provider sends — so no custom provider
 # class is needed.
 #
-# Union Alpha currently accepts text and image input, supports tools,
-# and does not expose a reasoning-effort control. Keep thinking disabled
-# so Crux does not send an unsupported reasoning parameter.
+# Space Bunny Alpha currently accepts text, image, and video input, supports
+# tools, and exposes adjustable reasoning effort. Its upstream default is
+# `max`; Crux's OpenAI-compatible wire format sends that through
+# `reasoning_effort`.
 
 type = "openai_compatible"
 endpoint_url = "https://openrouter.ai/api/v1"
@@ -73,16 +74,16 @@ retry_base_delay_ms = 250
 # legitimate quiet gap a healthy stream produces here.
 data_idle_timeout_ms = 60000
 
-# === Stealth: Union Alpha — free multimodal coding model ===
-# 256K context, image input, tool support, no reasoning-effort control.
+# === Stealth: Space Bunny Alpha — free multimodal coding model ===
+# 1M context, image/video input, tool support, adjustable reasoning effort.
 [[models]]
-id = "stealth/union-alpha"
-name = "Union Alpha (stealth, free)"
-context_size = 262144
+id = "stealth/space-bunny-alpha"
+name = "Space Bunny Alpha (stealth, free)"
+context_size = 1000000
 image_support = true
-thinking = false
-reasoning_effort = "none"
-max_tokens = 131072
+thinking = true
+reasoning_effort = "max"
+max_tokens = 524288
 expiration_date = "2098-12-31"
 temperature = 0
 
@@ -99,8 +100,8 @@ reasoning_effort = "high"
 temperature = 0
 
 # === NVIDIA Nemotron 3.5 Lightning — fast, no reasoning ===
-# 1M context, fills the quick-question slot when Union Alpha's larger
-# multimodal context is unnecessary.
+# 1M context, fills the quick-question slot when Space Bunny Alpha's
+# mandatory reasoning and larger multimodal context are unnecessary.
 # Note (smoke-tested 2026-08): the model still emits reasoning tokens
 # in responses even with thinking disabled — upstream exposes no knob
 # to turn them off. Harmless; Crux just renders a thinking block.
