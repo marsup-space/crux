@@ -6,44 +6,43 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
-## [Unreleased]
+## [1.1.7] - 2026-09-24
+
+777cc359
 
 ### Features
 
-- **Codex: GPT-6 Sol / GPT-6 Luna** — the Codex provider's model list adds
-  `gpt-6-sol` and `gpt-6-luna` (released 2026-09-22, OpenAI's recommended
-  Codex workhorse line): 256k context (repo convention; official 272k is the
-  API billing tier), 128k max output, image input, reasoning effort high. The
-  deprecated `gpt-5.3-codex-spark` entry is removed (gpt-5.2/5.3-codex are
-  deprecated for ChatGPT-auth Codex per the official help page); `gpt-5.5`
-  stays until its 2026-10-14 retirement. Wire layer unchanged — the existing
-  effort mapping already speaks the new levels.
+- **Codex: GPT-6 Sol / GPT-6 Luna** (`38f72673`) — the Codex provider's
+  model list adds `gpt-6-sol` and `gpt-6-luna` (released 2026-09-22,
+  OpenAI's recommended Codex workhorse line): 256k context (repo convention;
+  official 272k is the API billing tier), 128k max output, image input, and
+  reasoning effort high. The deprecated `gpt-5.3-codex-spark` entry is removed;
+  `gpt-5.5` stays until its 2026-10-14 retirement. The wire layer is unchanged.
 
-- **`crux upgrade` CLI subcommand** — the headless twin of `/upgrade`:
-  same check/download/replace flow, progress and outcome printed to
-  stdout with exit code 1 on refusal or failure, so it works from a
-  shell, a shortcut, or a package-manager hook. Listed under a new
-  `Commands:` section in `--help`.
+- **Windows Terminal font setup** (`b17081ac`) — the setup guide gains an
+  opt-in terminal-font card for Windows Terminal. It can adjust `cellWidth`
+  while preserving comments and key order in `settings.json`, and install the
+  official Maple Mono NF CN font for the current user with checksum
+  verification and no administrator privileges. Nothing is written unless the
+  user applies a change.
+
+- **`crux upgrade` CLI subcommand** (`c928a505`) — the headless twin of
+  `/upgrade` performs the same check, download, and replacement flow with
+  progress and actionable exit status, and is listed in `--help`.
 
 ### Fixes
 
-- **OpenRouter's bundled stealth model moves to Space Bunny Alpha** — the
-  free provider now selects OpenRouter's current `stealth/space-bunny-alpha`
-  preview instead of the retired Union Alpha entry, refreshed with its 1M
-  context window, 512K maximum output, multimodal input, and mandatory `max`
-  reasoning from the live catalog.
+- **OpenRouter's bundled stealth model moves to Space Bunny Alpha**
+  (`777cc359`) — the free provider now selects OpenRouter's current
+  `stealth/space-bunny-alpha` preview instead of the retired Union Alpha
+  entry, refreshed with its 1M context window, 512K maximum output, multimodal
+  input, and mandatory `max` reasoning from the live catalog.
 
-- **`/upgrade` works on Windows and no longer vanishes silently** — the
-  in-TUI upgrade refused to replace a running `crux.exe` (Windows denies
-  overwriting an executing image, errno 5); the install step now renames
-  the existing binary aside to `<name>.old` before moving the staged file
-  into place, deleting the aside copy best-effort. Submitting a command
-  without `availableDuringResponse` (e.g. `/upgrade`) while a response is
-  streaming silently swallowed the keystroke; the guard now shows an
-  error toast instead. The upgrade tests were additionally asserting
-  POSIX file names (`crux`) where the service installs `crux.exe`, so
-  they never exercised replacement on Windows — they now seed and assert
-  the host binary name and pass.
+- **`/upgrade` works on Windows and no longer vanishes silently**
+  (`c928a505`) — replacing a running `crux.exe` now renames the old binary
+  aside before installation, commands submitted while a response streams are
+  no longer silently swallowed, and platform-specific tests now exercise the
+  actual Windows replacement path.
 
 ## [1.1.6] - 2026-09-23
 

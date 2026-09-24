@@ -12,4 +12,4 @@
 // in `bin/crux.dart`, so this constant stays a plain
 // semver string (matching what `pubspec.yaml` declares).
 
-const String kCruxVersion = '1.1.6';
+const String kCruxVersion = '1.1.7';
