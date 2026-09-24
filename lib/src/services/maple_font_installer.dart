@@ -23,10 +23,9 @@ bool isMapleMonoInstalled([String? Function()? localAppData]) {
   if (base == null) return false;
   final fontsDir = Directory(p.join(base, 'Microsoft', 'Windows', 'Fonts'));
   if (!fontsDir.existsSync()) return false;
-  return fontsDir
-      .listSync()
-      .whereType<File>()
-      .any((file) => p.basename(file.path).startsWith('MapleMono-NF-CN-'));
+  return fontsDir.listSync().whereType<File>().any(
+    (file) => p.basename(file.path).startsWith('MapleMono-NF-CN-'),
+  );
 }
 
 /// Downloads, extracts, and per-user registers Maple Mono NF CN so the
@@ -95,14 +94,9 @@ Future<void> installMapleMonoNfCn({
       '/f',
     ]);
     if (register.exitCode != 0) {
-      throw StateError(
-        'could not register ${file.path}: ${register.stderr}',
-      );
+      throw StateError('could not register ${file.path}: ${register.stderr}');
     }
-    onProgress?.call(
-      0.8 + 0.18 * written / total,
-      'extracting',
-    );
+    onProgress?.call(0.8 + 0.18 * written / total, 'extracting');
   }
   onProgress?.call(1, 'ready');
 }

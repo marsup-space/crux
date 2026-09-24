@@ -40,11 +40,17 @@ void main() {
     setUp(() async {
       tempDir = await Directory.systemTemp.createTemp('crux_wt_font_');
       final wtPackage = Directory(
-        p.join(tempDir.path, 'Packages', 'Microsoft.WindowsTerminal_8wekyb3d8bbwe'),
+        p.join(
+          tempDir.path,
+          'Packages',
+          'Microsoft.WindowsTerminal_8wekyb3d8bbwe',
+        ),
       )..createSync(recursive: true);
       Directory(p.join(wtPackage.path, 'LocalState')).createSync();
       packagesDir = wtPackage;
-      settingsFile = File(p.join(wtPackage.path, 'LocalState', 'settings.json'));
+      settingsFile = File(
+        p.join(wtPackage.path, 'LocalState', 'settings.json'),
+      );
     });
 
     tearDown(() async {

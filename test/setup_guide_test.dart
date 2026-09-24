@@ -861,7 +861,11 @@ context_size = 4096
     setUp(() async {
       fontDir = await Directory.systemTemp.createTemp('crux_setup_font_');
       final wtPackage = Directory(
-        p.join(fontDir.path, 'Packages', 'Microsoft.WindowsTerminal_8wekyb3d8bbwe'),
+        p.join(
+          fontDir.path,
+          'Packages',
+          'Microsoft.WindowsTerminal_8wekyb3d8bbwe',
+        ),
       )..createSync(recursive: true);
       final settingsFile = File(
         p.join(wtPackage.path, 'LocalState', 'settings.json'),
@@ -884,10 +888,7 @@ context_size = 4096
           Container(
             width: 80,
             height: 60,
-            child: guide(
-              environment: wtEnvironment(),
-              terminalFont: fakeFont,
-            ),
+            child: guide(environment: wtEnvironment(), terminalFont: fakeFont),
           ),
         );
         await tester.pump(const Duration(milliseconds: 30));
@@ -913,10 +914,7 @@ context_size = 4096
           Container(
             width: 80,
             height: 60,
-            child: guide(
-              environment: () => const {},
-              terminalFont: fakeFont,
-            ),
+            child: guide(environment: () => const {}, terminalFont: fakeFont),
           ),
         );
         await tester.pump(const Duration(milliseconds: 30));
@@ -931,10 +929,7 @@ context_size = 4096
           Container(
             width: 80,
             height: 30,
-            child: guide(
-              environment: wtEnvironment(),
-              terminalFont: fakeFont,
-            ),
+            child: guide(environment: wtEnvironment(), terminalFont: fakeFont),
           ),
         );
         await tester.pump(const Duration(milliseconds: 30));
@@ -949,10 +944,7 @@ context_size = 4096
           Container(
             width: 80,
             height: 30,
-            child: guide(
-              environment: wtEnvironment(),
-              terminalFont: fakeFont,
-            ),
+            child: guide(environment: wtEnvironment(), terminalFont: fakeFont),
           ),
         );
         await tester.pump(const Duration(milliseconds: 30));

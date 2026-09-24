@@ -30,8 +30,7 @@ Uint8List releaseZip({
 
 /// The install-side file name for [base] on the host: the service installs
 /// `crux.exe` on Windows and `crux` elsewhere, so assertions must follow.
-String hostBinary(String base) =>
-    Platform.isWindows ? '$base.exe' : base;
+String hostBinary(String base) => Platform.isWindows ? '$base.exe' : base;
 
 void main() {
   group('version comparison', () {

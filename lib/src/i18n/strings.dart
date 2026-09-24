@@ -1115,8 +1115,7 @@ const Map<String, String> _zh = {
   'toast.webMissingKey': '缺少密钥值。用法：/web-provider {id} key <value>',
   'toast.unknownCommand': '未知命令：{cmd}',
   'toast.notImplemented': '{cmd} — 尚未实现',
-  'toast.commandWhileResponding':
-      '回复进行中无法执行 {cmd}——先中断或等回复结束，再重新运行',
+  'toast.commandWhileResponding': '回复进行中无法执行 {cmd}——先中断或等回复结束，再重新运行',
 
   // ── Parameter suggestion descriptions ──
   'sug.think.off': '关闭思考',

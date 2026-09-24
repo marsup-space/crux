@@ -226,7 +226,8 @@ class _SetupGuideState extends State<SetupGuide> {
       _fontStatus = status;
       // Normalize to a real preset so Apply always sends an explicit
       // choice; defaultWidth on a file without cellWidth is a no-op.
-      _fontCellWidthPreset = status?.cellWidthPreset ?? CellWidthPreset.defaultWidth;
+      _fontCellWidthPreset =
+          status?.cellWidthPreset ?? CellWidthPreset.defaultWidth;
       _fontInstalled = isMapleMonoInstalled(service.localAppData);
     });
   }
@@ -423,7 +424,10 @@ class _SetupGuideState extends State<SetupGuide> {
         _fontStatus = status;
         _fontCellWidthPreset =
             status?.cellWidthPreset ?? CellWidthPreset.defaultWidth;
-        _fontStatusText = _t('Maple Mono NF CN installed', 'Maple Mono NF CN 已安装');
+        _fontStatusText = _t(
+          'Maple Mono NF CN installed',
+          'Maple Mono NF CN 已安装',
+        );
       });
     } catch (error) {
       if (!mounted) return;
@@ -1391,77 +1395,73 @@ class _SetupGuideState extends State<SetupGuide> {
     final cellWidth = status?.cellWidth;
     const presetLabels = ['default', '0.95ch', '0.9ch', '0.85ch'];
     final selectedPreset = _fontCellWidthPreset ?? CellWidthPreset.defaultWidth;
-    return _section(
-      context,
-      '6',
-      _t('Terminal font', '终端字体'),
-      [
-        Text(
-          _t('Optional · opt-in', '可选 · 手动启用'),
-          style: TextStyle(color: theme.onSurfaceDim),
+    return _section(context, '6', _t('Terminal font', '终端字体'), [
+      Text(
+        _t('Optional · opt-in', '可选 · 手动启用'),
+        style: TextStyle(color: theme.onSurfaceDim),
+      ),
+      const SizedBox(height: 1),
+      Text(
+        cellWidth == null
+            ? _t(
+                'Font  ${face ?? '—'}  ·  cell width  default',
+                '字体  ${face ?? '—'}  ·  字宽  默认',
+              )
+            : _t(
+                'Font  ${face ?? '—'}  ·  cell width  $cellWidth',
+                '字体  ${face ?? '—'}  ·  字宽  $cellWidth',
+              ),
+        style: TextStyle(color: theme.onSurfaceVariant),
+        overflow: TextOverflow.ellipsis,
+      ),
+      const SizedBox(height: 1),
+      OptionToggle(
+        options: presetLabels,
+        selectedIndex: CellWidthPreset.values.indexOf(selectedPreset),
+        selectedBgColor: theme.buttonBackgroundHover,
+        unselectedBgColor: theme.buttonBackground,
+        hoverBgColor: theme.buttonBackgroundHover,
+        onFocusRequest: (index) => setState(() => _focus = 28 + index),
+        onChanged: (index) => setState(
+          () => _fontCellWidthPreset = CellWidthPreset.values[index],
         ),
-        const SizedBox(height: 1),
-        Text(
-          cellWidth == null
-              ? _t(
-                  'Font  ${face ?? '—'}  ·  cell width  default',
-                  '字体  ${face ?? '—'}  ·  字宽  默认',
-                )
-              : _t(
-                  'Font  ${face ?? '—'}  ·  cell width  $cellWidth',
-                  '字体  ${face ?? '—'}  ·  字宽  $cellWidth',
-                ),
-          style: TextStyle(color: theme.onSurfaceVariant),
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: 1),
-        OptionToggle(
-          options: presetLabels,
-          selectedIndex: CellWidthPreset.values.indexOf(selectedPreset),
-          selectedBgColor: theme.buttonBackgroundHover,
-          unselectedBgColor: theme.buttonBackground,
-          hoverBgColor: theme.buttonBackgroundHover,
-          onFocusRequest: (index) => setState(() => _focus = 28 + index),
-          onChanged: (index) => setState(
-            () => _fontCellWidthPreset = CellWidthPreset.values[index],
+        focused: _focus >= 28 && _focus < 32,
+      ),
+      const SizedBox(height: 1),
+      Row(
+        children: [
+          _button(
+            27,
+            _fontInstalled
+                ? _t(' Installed ', ' 已安装 ')
+                : _fontBusy && _fontInstalling
+                ? _t(' Installing… ', ' 安装中… ')
+                : _t(' Install Maple Mono ', ' 安装 Maple Mono '),
+            _fontInstalled || _fontBusy
+                ? null
+                : () => unawaited(_installTerminalFont()),
           ),
-          focused: _focus >= 28 && _focus < 32,
-        ),
-        const SizedBox(height: 1),
-        Row(
-          children: [
-            _button(
-              27,
-              _fontInstalled
-                  ? _t(' Installed ', ' 已安装 ')
-                  : _fontBusy && _fontInstalling
-                  ? _t(' Installing… ', ' 安装中… ')
-                  : _t(' Install Maple Mono ', ' 安装 Maple Mono '),
-              _fontInstalled || _fontBusy ? null : () => unawaited(_installTerminalFont()),
-            ),
-            const SizedBox(width: 1),
-            _button(
-              32,
-              _fontBusy
-                  ? _t(' Apply… ', ' 应用… ')
-                  : _t(' Apply ', ' 应用 '),
-              _fontBusy ? null : () => unawaited(_applyTerminalFont()),
-            ),
-          ],
-        ),
-        if (_fontInstalling)
-          Padding(
-            padding: const EdgeInsets.only(top: 1),
-            child: Text(
-              '${( _fontProgress.clamp(0.0, 1.0) * 100).round()}%  ${_runtimeStage(_fontStage)}${_fontStatusText.isEmpty ? '' : '  ·  $_fontStatusText'}',
-              style: TextStyle(color: theme.onSurfaceDim),
-              overflow: TextOverflow.ellipsis,
-            ),
+          const SizedBox(width: 1),
+          _button(
+            32,
+            _fontBusy ? _t(' Apply… ', ' 应用… ') : _t(' Apply ', ' 应用 '),
+            _fontBusy ? null : () => unawaited(_applyTerminalFont()),
           ),
-        _status(_fontStatusText.isNotEmpty && !_fontInstalling ? _fontStatusText : ''),
-      ],
-      completed: false,
-    );
+        ],
+      ),
+      if (_fontInstalling)
+        Padding(
+          padding: const EdgeInsets.only(top: 1),
+          child: Text(
+            '${(_fontProgress.clamp(0.0, 1.0) * 100).round()}%  ${_runtimeStage(_fontStage)}${_fontStatusText.isEmpty ? '' : '  ·  $_fontStatusText'}',
+            style: TextStyle(color: theme.onSurfaceDim),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      _status(
+        _fontStatusText.isNotEmpty && !_fontInstalling ? _fontStatusText : '',
+      ),
+    ], completed: false);
   }
 
   Component _runtimeCard(BuildContext context) {
@@ -1617,12 +1617,7 @@ class _SetupGuideState extends State<SetupGuide> {
             const SizedBox(width: 2),
             SizedBox(
               width: columnWidth,
-              child: _gapColumn([
-                theme,
-                aux,
-                web,
-                ?font,
-              ]),
+              child: _gapColumn([theme, aux, web, ?font]),
             ),
           ],
         ),

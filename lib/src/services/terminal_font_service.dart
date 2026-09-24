@@ -338,12 +338,7 @@ class FontDoc {
       }
       i++;
     }
-    return _Layout(
-      fontRange,
-      defaultsClose,
-      profilesClose,
-      rootClose,
-    );
+    return _Layout(fontRange, defaultsClose, profilesClose, rootClose);
   }
 
   static bool _isSpace(String ch) =>
