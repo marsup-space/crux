@@ -6,7 +6,23 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
-## [Unreleased]
+## [1.1.8] - 2026-09-25
+
+9133f588
+
+### Fixes
+
+- **LSP servers and worker processes are reaped on exit** (`ecdadcd9`) — quit
+  now shuts down language servers, terminates their process groups, and
+  escalates when a child ignores termination.
+- **LSP startup and shutdown races are closed** (`2b594a66`) — shutdown waits
+  for in-flight startup and prevents a late server spawn from escaping cleanup.
+- **LSP worker cleanup completes within the quit deadline** (`6fdbe399`) —
+  shutdown bounds nested cleanup and escalates process groups so descendants
+  are reaped before quit returns.
+- **Plugin shell actions retain their complete output** (`9133f588`) — stdout
+  and stderr streams are drained before returning the command result, including
+  under load.
 
 ## [1.1.7] - 2026-09-24
 
