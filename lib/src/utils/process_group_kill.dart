@@ -54,3 +54,52 @@ void killProcessGroup(io.Process process) {
     process.kill();
   } catch (_) {}
 }
+
+/// Return live members of [processGroupId], or an empty set when unavailable.
+Set<int> processGroupMembers(int processGroupId) {
+  try {
+    if (io.Platform.isWindows || processGroupId <= 0) return const {};
+    final result = io.Process.runSync('pgrep', ['-g', '$processGroupId']);
+    if (result.exitCode != 0) return const {};
+    return result.stdout
+        .toString()
+        .split(RegExp(r'\s+'))
+        .map(int.tryParse)
+        .whereType<int>()
+        .toSet();
+  } catch (_) {
+    return const {};
+  }
+}
+
+/// Send SIGTERM to the former process group led by [leaderPid].
+///
+/// Unlike [killProcessGroup], this remains usable after the leader has
+/// already exited, which is necessary when a cooperative server leaves a
+/// worker behind. Callers may only use it for a process known to have been
+/// spawned through the setsid trampoline. The guards prevent signalling
+/// Crux's own PID or process group. [expectedMembers] must be captured from
+/// the original live group before its leader exits; requiring an intersection
+/// with the current group avoids targeting a reused PID or group ID.
+void killFormerProcessGroup(
+  int leaderPid,
+  Set<int> expectedMembers, {
+  io.ProcessSignal signal = io.ProcessSignal.sigterm,
+}) {
+  try {
+    if (io.Platform.isWindows ||
+        leaderPid <= 0 ||
+        leaderPid == _ownPid ||
+        leaderPid == _ownPgid) {
+      return;
+    }
+    final memberPids = processGroupMembers(leaderPid);
+    if (memberPids.isEmpty ||
+        !memberPids.any(expectedMembers.contains) ||
+        memberPids.contains(_ownPid)) {
+      return;
+    }
+    final signalName = signal == io.ProcessSignal.sigkill ? 'KILL' : 'TERM';
+    io.Process.runSync('kill', ['-$signalName', '--', '-$leaderPid']);
+  } catch (_) {}
+}

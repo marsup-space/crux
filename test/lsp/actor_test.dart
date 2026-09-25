@@ -271,6 +271,198 @@ class _HangingInitializeActor extends LspServerActor {
   }
 }
 
+class _OrphaningExitActor extends LspServerActor {
+  final String childPidPath;
+
+  _OrphaningExitActor(this.childPidPath);
+
+  @override
+  String get id => 'orphaning';
+
+  @override
+  Future<LspServerSpec?> resolveSpec(String root, String file) async =>
+      LspServerSpec(
+        root: root,
+        command: ['perl', '-e', _serverScript, childPidPath],
+        env: const {},
+        initialization: const {},
+      );
+
+  static const _serverScript = r'''
+my $marker = shift;
+my $child = fork();
+die "fork failed: $!" unless defined $child;
+if ($child == 0) { sleep 30; exit 0; }
+open(my $out, '>', $marker) or die "marker: $!";
+print $out $child;
+close($out);
+$| = 1;
+while (1) {
+  my $length = 0;
+  my $saw_header = 0;
+  while (my $line = <STDIN>) {
+    $saw_header = 1;
+    last if $line eq "\n" || $line eq "\r\n";
+    $length = $1 if $line =~ /^Content-Length:\s*(\d+)/i;
+  }
+  last unless $saw_header;
+  read(STDIN, my $body, $length);
+  my ($id) = $body =~ /"id"\s*:\s*(\d+)/;
+  if ($body =~ /"method"\s*:\s*"initialize"/) {
+    my $json = '{"jsonrpc":"2.0","id":'.$id.',"result":{"capabilities":{}}}';
+    print "Content-Length: ".length($json)."\r\n\r\n$json";
+  } elsif ($body =~ /"method"\s*:\s*"shutdown"/) {
+    my $json = '{"jsonrpc":"2.0","id":'.$id.',"result":null}';
+    print "Content-Length: ".length($json)."\r\n\r\n$json";
+  } elsif ($body =~ /"method"\s*:\s*"exit"/) {
+    last;
+  }
+}
+''';
+}
+
+class _StubbornGroupActor extends LspServerActor {
+  final String childPidPath;
+
+  _StubbornGroupActor(this.childPidPath);
+
+  @override
+  String get id => 'stubborn-group';
+
+  @override
+  Future<LspServerSpec?> resolveSpec(String root, String file) async =>
+      LspServerSpec(
+        root: root,
+        command: ['perl', '-e', _serverScript, childPidPath],
+        env: const {},
+        initialization: const {},
+      );
+
+  static const _serverScript = r'''
+my $marker = shift;
+$SIG{TERM} = 'IGNORE';
+my $child = fork();
+die "fork failed: $!" unless defined $child;
+if ($child == 0) { $SIG{TERM} = 'IGNORE'; sleep 30; exit 0; }
+open(my $out, '>', $marker) or die "marker: $!";
+print $out $child;
+close($out);
+$| = 1;
+while (1) {
+  my $length = 0;
+  my $saw_header = 0;
+  while (my $line = <STDIN>) {
+    $saw_header = 1;
+    last if $line eq "\n" || $line eq "\r\n";
+    $length = $1 if $line =~ /^Content-Length:\s*(\d+)/i;
+  }
+  last unless $saw_header;
+  read(STDIN, my $body, $length);
+  my ($id) = $body =~ /"id"\s*:\s*(\d+)/;
+  if ($body =~ /"method"\s*:\s*"initialize"/) {
+    my $json = '{"jsonrpc":"2.0","id":'.$id.',"result":{"capabilities":{}}}';
+    print "Content-Length: ".length($json)."\r\n\r\n$json";
+  }
+}
+''';
+}
+
+class _TerminatingParentActor extends LspServerActor {
+  final String childPidPath;
+  _TerminatingParentActor(this.childPidPath);
+
+  @override
+  String get id => 'terminating-parent';
+
+  @override
+  Future<LspServerSpec?> resolveSpec(String root, String file) async =>
+      LspServerSpec(
+        root: root,
+        command: ['perl', '-e', _serverScript, childPidPath],
+        env: const {},
+        initialization: const {},
+      );
+
+  static const _serverScript = r'''
+my $marker = shift;
+my $child = fork();
+die "fork failed: $!" unless defined $child;
+if ($child == 0) { $SIG{TERM} = 'IGNORE'; sleep 30; exit 0; }
+open(my $out, '>', $marker) or die "marker: $!";
+print $out $child;
+close($out);
+$| = 1;
+while (1) {
+  my $length = 0;
+  my $saw_header = 0;
+  while (my $line = <STDIN>) {
+    $saw_header = 1;
+    last if $line eq "\n" || $line eq "\r\n";
+    $length = $1 if $line =~ /^Content-Length:\s*(\d+)/i;
+  }
+  last unless $saw_header;
+  read(STDIN, my $body, $length);
+  my ($id) = $body =~ /"id"\s*:\s*(\d+)/;
+  if ($body =~ /"method"\s*:\s*"initialize"/) {
+    my $json = '{"jsonrpc":"2.0","id":'.$id.',"result":{"capabilities":{}}}';
+    print "Content-Length: ".length($json)."\r\n\r\n$json";
+  }
+}
+''';
+}
+
+class _HangingInitializeWorkerActor extends LspServerActor {
+  final String childPidPath;
+  _HangingInitializeWorkerActor(this.childPidPath);
+
+  @override
+  String get id => 'hanging-worker';
+
+  @override
+  Future<LspServerSpec?> resolveSpec(String root, String file) async =>
+      LspServerSpec(
+        root: root,
+        command: ['perl', '-e', _serverScript, childPidPath],
+        env: const {},
+        initialization: const {},
+      );
+
+  static const _serverScript = r'''
+my $marker = shift;
+my $child = fork();
+die "fork failed: $!" unless defined $child;
+if ($child == 0) { $SIG{TERM} = 'IGNORE'; sleep 30; exit 0; }
+open(my $out, '>', $marker) or die "marker: $!";
+print $out $child;
+close($out);
+sleep 30;
+''';
+}
+
+bool _isRunning(int processId) {
+  final result = Process.runSync('ps', ['-o', 'stat=', '-p', '$processId']);
+  final status = result.stdout.toString().trim();
+  return result.exitCode == 0 && status.isNotEmpty && !status.startsWith('Z');
+}
+
+Future<bool> _waitForExit(int processId) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (DateTime.now().isBefore(deadline)) {
+    if (!_isRunning(processId)) return true;
+    await Future<void>.delayed(const Duration(milliseconds: 25));
+  }
+  return !_isRunning(processId);
+}
+
+Future<void> _waitForFile(File file) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (DateTime.now().isBefore(deadline)) {
+    if (file.existsSync() && file.lengthSync() > 0) return;
+    await Future<void>.delayed(const Duration(milliseconds: 25));
+  }
+  throw TimeoutException('timed out waiting for ${file.path}');
+}
+
 /// An actor that always refuses to start (returns null from resolveSpec).
 class _FailingActor extends LspServerActor {
   @override
@@ -413,6 +605,114 @@ void main() {
       );
       expect(actor.activeServerCount, 0);
     });
+
+    test('shutdown reaps a worker after its LSP parent exits', () async {
+      if (Platform.isWindows) return;
+      final dir = await Directory.systemTemp.createTemp('lsp_orphan_test_');
+      final marker = File('${dir.path}/worker.pid');
+      final actor = _OrphaningExitActor(marker.path);
+      actor.attach((_) {});
+      int? childPid;
+      try {
+        await actor.handle(
+          LspCmdStart(root: dir.path, file: '${dir.path}/test.orphan'),
+        );
+        childPid = int.parse(await marker.readAsString());
+        await actor.handle(const LspCmdShutdown());
+        expect(await _waitForExit(childPid), isTrue);
+      } finally {
+        if (childPid != null && _isRunning(childPid)) {
+          Process.killPid(childPid, ProcessSignal.sigkill);
+          await _waitForExit(childPid);
+        }
+        if (dir.existsSync()) await dir.delete(recursive: true);
+      }
+    });
+
+    test(
+      'shutdown SIGKILLs a stubborn server group within the quit budget',
+      () async {
+        if (Platform.isWindows) return;
+        final dir = await Directory.systemTemp.createTemp('lsp_stubborn_test_');
+        final marker = File('${dir.path}/worker.pid');
+        final actor = _StubbornGroupActor(marker.path);
+        actor.attach((_) {});
+        int? childPid;
+        try {
+          await actor.handle(
+            LspCmdStart(root: dir.path, file: '${dir.path}/test.stubborn'),
+          );
+          childPid = int.parse(await marker.readAsString());
+          final stopwatch = Stopwatch()..start();
+          await actor.handle(const LspCmdShutdown());
+          stopwatch.stop();
+          expect(stopwatch.elapsed, lessThan(const Duration(seconds: 2)));
+          expect(await _waitForExit(childPid), isTrue);
+        } finally {
+          if (childPid != null && _isRunning(childPid)) {
+            Process.killPid(childPid, ProcessSignal.sigkill);
+            await _waitForExit(childPid);
+          }
+          if (dir.existsSync()) await dir.delete(recursive: true);
+        }
+      },
+    );
+
+    test(
+      'shutdown SIGKILLs a TERM-ignoring worker after its parent exits',
+      () async {
+        if (Platform.isWindows) return;
+        final dir = await Directory.systemTemp.createTemp('lsp_term_worker_');
+        final marker = File('${dir.path}/worker.pid');
+        final actor = _TerminatingParentActor(marker.path);
+        actor.attach((_) {});
+        int? childPid;
+        try {
+          await actor.handle(
+            LspCmdStart(root: dir.path, file: '${dir.path}/test.term'),
+          );
+          childPid = int.parse(await marker.readAsString());
+          final stopwatch = Stopwatch()..start();
+          await actor.handle(const LspCmdShutdown());
+          stopwatch.stop();
+          expect(stopwatch.elapsed, lessThan(const Duration(seconds: 2)));
+          expect(await _waitForExit(childPid), isTrue);
+        } finally {
+          if (childPid != null && _isRunning(childPid)) {
+            Process.killPid(childPid, ProcessSignal.sigkill);
+            await _waitForExit(childPid);
+          }
+          if (dir.existsSync()) await dir.delete(recursive: true);
+        }
+      },
+    );
+
+    test('shutdown reaps a TERM-ignoring worker during initialize', () async {
+      if (Platform.isWindows) return;
+      final dir = await Directory.systemTemp.createTemp('lsp_starting_worker_');
+      final marker = File('${dir.path}/worker.pid');
+      final actor = _HangingInitializeWorkerActor(marker.path);
+      actor.attach((_) {});
+      int? childPid;
+      try {
+        final start = actor.handle(
+          LspCmdStart(root: dir.path, file: '${dir.path}/test.starting'),
+        );
+        await _waitForFile(marker);
+        childPid = int.parse(await marker.readAsString());
+        final stopwatch = Stopwatch()..start();
+        await Future.wait([start, actor.handle(const LspCmdShutdown())]);
+        stopwatch.stop();
+        expect(stopwatch.elapsed, lessThan(const Duration(seconds: 2)));
+        expect(await _waitForExit(childPid), isTrue);
+      } finally {
+        if (childPid != null && _isRunning(childPid)) {
+          Process.killPid(childPid, ProcessSignal.sigkill);
+          await _waitForExit(childPid);
+        }
+        if (dir.existsSync()) await dir.delete(recursive: true);
+      }
+    });
   });
 
   group('LspServerActor document tracking', () {
@@ -543,7 +843,7 @@ void main() {
         await actor.handle(LspCmdStart(root: '/s', file: '/s/x.test'));
         // The stubborn server never exits on its own, so this only
         // returns after _killAfter's SIGKILL escalation
-        // (grace 1s + 500ms TERM window + 200ms reap).
+        // (grace 250ms + 300ms TERM window + 200ms reap).
         await actor.handle(const LspCmdShutdownRoot(root: '/s'));
 
         final proc = actor.lastProcess!;

@@ -31,7 +31,8 @@ import 'language.dart';
 import 'peer.dart' as peer_lib;
 import 'protocol.dart';
 
-import '../utils/process_group_kill.dart' show killProcessGroup;
+import '../utils/process_group_kill.dart'
+    show killFormerProcessGroup, killProcessGroup, processGroupMembers;
 import '../utils/setsid_spawn.dart';
 
 /// Abstract base class for LSP server actors.
@@ -256,9 +257,7 @@ abstract class LspServerActor {
   Future<void> _runShutdownRoot(String? root) async {
     if (root == null) {
       final all = _servers.keys.toList();
-      for (final r in all) {
-        await _shutdownServer(r);
-      }
+      await Future.wait(all.map(_shutdownServer));
     } else {
       await _shutdownServer(root);
     }
@@ -271,16 +270,15 @@ abstract class LspServerActor {
     );
     await Future.wait(_starting.toList(growable: false));
     final roots = _servers.keys.toList();
-    for (final r in roots) {
-      await _shutdownServer(r);
-    }
+    await Future.wait(roots.map(_shutdownServer));
   }
 
   Future<void> _shutdownServer(String root) async {
     final server = _servers.remove(root);
     if (server == null) return;
+    final formerGroupMembers = processGroupMembers(server.process.pid);
     try {
-      await server.peer.request('shutdown').timeout(const Duration(seconds: 2));
+      await server.peer.request('shutdown').timeout(const Duration(seconds: 1));
       server.peer.notify('exit');
     } catch (_) {
       // Server probably already dead; ignore.
@@ -293,44 +291,65 @@ abstract class LspServerActor {
     // waiting, the channel could close its outbound stream while
     // the listener still wanted to emit, raising
     // `Bad state: Cannot add new events after calling close`.
-    await _killAfter(server.process, const Duration(seconds: 1));
+    await _killAfter(
+      server.process,
+      const Duration(milliseconds: 250),
+      formerGroupMembers: formerGroupMembers,
+    );
   }
 
-  /// Ensure [process] is gone within roughly `grace + 1.7s`.
+  /// Ensure [process] is gone within roughly `grace + 0.7s`.
   ///
   /// The setsid trampoline ([spawnProcess]) made the server a session
-  /// leader (pid == pgid), so every signal below goes through
-  /// [killProcessGroup]: the whole process group is signalled and any
+  /// leader (pid == pgid), so group-aware cleanup reaches any
   /// grandchildren the server forked (watchers, workers) die with it,
   /// while Crux's own group is never touched. On Windows
   /// [killProcessGroup] degrades to plain `process.kill`.
-  Future<void> _killAfter(Process process, Duration grace) async {
+  Future<void> _killAfter(
+    Process process,
+    Duration grace, {
+    Set<int> formerGroupMembers = const {},
+  }) async {
+    final groupMembers = formerGroupMembers.isEmpty
+        ? processGroupMembers(process.pid)
+        : formerGroupMembers;
     try {
       await process.exitCode.timeout(grace);
+      // A cooperative LSP parent can exit immediately after the `exit`
+      // notification while a worker it forked remains in its setsid group.
+      // The base spawn path guarantees pid == pgid, so reap those remaining
+      // members even though the leader is no longer queryable by pid.
+      killFormerProcessGroup(process.pid, groupMembers);
     } on TimeoutException {
       killProcessGroup(process);
       // Give the OS a moment to deliver the signal; the exit
       // listener will fire when [process.exitCode] resolves.
+      var leaderExited = false;
       try {
-        await process.exitCode.timeout(const Duration(milliseconds: 500));
+        await process.exitCode.timeout(const Duration(milliseconds: 300));
+        leaderExited = true;
       } on TimeoutException {
-        // The process ignored SIGTERM (some language servers trap it
-        // during their own shutdown). Escalate to SIGKILL so it can
-        // never outlive Crux. process_group_kill.dart is TERM-only,
-        // and the group already got SIGTERM above — so this is a
-        // direct SIGKILL to the server pid; any grandchildren that
-        // ignored the group SIGTERM are on their own.
+        // Escalation below also reaps grandchildren when the leader exited
+        // during this TERM window.
+      }
+      // The parent may have died from group TERM while a worker ignored it.
+      // Always inspect the original group after the grace window rather than
+      // treating leader exit as proof the whole group is gone.
+      killFormerProcessGroup(
+        process.pid,
+        groupMembers,
+        signal: ProcessSignal.sigkill,
+      );
+      if (!leaderExited) {
         process.kill(ProcessSignal.sigkill);
-        // SIGKILL cannot be handled; awaiting is just reap
-        // bookkeeping, best-effort.
-        try {
-          await process.exitCode.timeout(const Duration(milliseconds: 200));
-        } catch (_) {
-          // Even this can time out on a wedged pipe; nothing more
-          // this process can do for the child.
-        }
+      }
+      // SIGKILL cannot be handled; awaiting is just reap bookkeeping,
+      // best-effort.
+      try {
+        await process.exitCode.timeout(const Duration(milliseconds: 200));
       } catch (_) {
-        // Exited after SIGTERM.
+        // Even this can time out on a wedged pipe; nothing more this process
+        // can do for the child.
       }
     } catch (_) {
       // Already exited.
