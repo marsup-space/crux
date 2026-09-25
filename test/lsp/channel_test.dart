@@ -110,6 +110,35 @@ class _ThrowingActor extends LspServerActor {
   }
 }
 
+/// Starts a child that never replies to initialize, exercising channel
+/// shutdown preemption rather than the actor's direct command API.
+class _HangingInitializeActor extends LspServerActor {
+  final spawned = Completer<Process>();
+
+  @override
+  String get id => 'hanging';
+
+  @override
+  Future<LspServerSpec?> resolveSpec(String root, String file) async {
+    return LspServerSpec(
+      root: root,
+      command: const ['sh', '-c', 'while true; do sleep 1; done'],
+      env: const {},
+      initialization: const {},
+    );
+  }
+
+  @override
+  Future<Process> spawnProcess(LspServerSpec spec) async {
+    final process = await Process.start(
+      spec.command.first,
+      spec.command.skip(1).toList(),
+    );
+    spawned.complete(process);
+    return process;
+  }
+}
+
 /// Subscribes to [stream] and resolves [future] with the first
 /// event matching [predicate]. Cancels the subscription after
 /// resolving. Used to await a specific event on a broadcast stream
@@ -185,6 +214,20 @@ void main() {
       // this is a silent no-op (not an error).
       channel.send(const LspCmdShutdown());
     });
+
+    test('shutdown preempts a hung initialize and reaps its child', () async {
+      if (Platform.isWindows) return;
+      final actor = _HangingInitializeActor();
+      final channel = InProcessChannel(actor);
+
+      channel.send(const LspCmdStart(root: '/hang', file: '/hang/a.echo'));
+      final process = await actor.spawned.future.timeout(
+        const Duration(seconds: 2),
+      );
+
+      await channel.shutdown().timeout(const Duration(seconds: 3));
+      await process.exitCode.timeout(const Duration(seconds: 1));
+    });
   });
 
   // =======================================================================
@@ -227,6 +270,17 @@ void main() {
       await completer.future.timeout(const Duration(seconds: 5));
     });
 
+    test('shutdown preempts a hung initialize', () async {
+      if (Platform.isWindows) return;
+      final channel = await IsolateChannel.spawn(_HangingInitializeActor.new);
+
+      channel.send(const LspCmdStart(root: '/hang', file: '/hang/a.echo'));
+      // Give the actor isolate time to spawn the child and await initialize.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      await channel.shutdown().timeout(const Duration(seconds: 3));
+    });
+
     test('two IsolateChannels run independently and route events to the '
         'correct subscribers', () async {
       final ch1 = await IsolateChannel.spawn(_EchoActor.new);
@@ -237,6 +291,17 @@ void main() {
       ch1.events.listen(events1.add);
       ch2.events.listen(events2.add);
 
+      // Subscribe before sending: command serialization can complete the
+      // synthetic actor synchronously enough that a later broadcast listener
+      // would miss its event.
+      final aFuture = _firstMatching<LspEventStarted>(
+        ch1.events,
+        (e) => e is LspEventStarted,
+      );
+      final bFuture = _firstMatching<LspEventStarted>(
+        ch2.events,
+        (e) => e is LspEventStarted,
+      );
       ch1.send(const LspCmdStart(root: '/a', file: '/a/x.echo'));
       ch2.send(const LspCmdStart(root: '/b', file: '/b/x.echo'));
 
@@ -245,14 +310,8 @@ void main() {
       // sees when run as part of the full suite (other
       // tests, isolate spawn churn, etc.). 2s was too
       // tight and caused sporadic failures under load.
-      final a = await _firstMatching<LspEventStarted>(
-        ch1.events,
-        (e) => e is LspEventStarted,
-      ).timeout(const Duration(seconds: 10));
-      final b = await _firstMatching<LspEventStarted>(
-        ch2.events,
-        (e) => e is LspEventStarted,
-      ).timeout(const Duration(seconds: 10));
+      final a = await aFuture.timeout(const Duration(seconds: 10));
+      final b = await bFuture.timeout(const Duration(seconds: 10));
 
       expect(a.root, '/a');
       expect(b.root, '/b');

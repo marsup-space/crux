@@ -158,6 +158,13 @@ class LspManager {
       factory,
       useIsolates: _useIsolates,
     );
+    // Shutdown can begin while an isolate is starting. Do not publish a slot
+    // after that point: shut the newly created channel down before completing
+    // its startup future so it cannot outlive the manager.
+    if (_shutdown) {
+      await slot.shutdown();
+      throw StateError('LspManager is shut down');
+    }
     _slots[serverId] = slot;
     return slot;
   }
@@ -356,9 +363,28 @@ class LspManager {
   }
 
   Future<void> _shutdownSlots() async {
-    for (final slot in _slots.values) {
-      await slot.shutdown();
-    }
+    // Signal slots that already exist before waiting for any pending isolate
+    // handshake. Otherwise a slow startup can consume the quit grace period
+    // while live language servers have not even received shutdown yet.
+    final slots = _slots.values.toList(growable: false);
+    final activeShutdown = Future.wait<void>(
+      slots.map((slot) => slot.shutdown()),
+    );
+
+    // A slot factory may already be awaiting when shutdown starts. Wait for
+    // those attempts to finish; each newly created channel self-closes in
+    // [_spawnSlot] after observing shutdown.
+    // Startup failures are already reported to their request callers and do
+    // not block teardown of slots that did start.
+    final starting = _starting.values.toList(growable: false);
+    await Future.wait<void>([
+      activeShutdown,
+      ...starting.map((future) async {
+        try {
+          await future;
+        } catch (_) {}
+      }),
+    ]);
     _slots.clear();
   }
 }

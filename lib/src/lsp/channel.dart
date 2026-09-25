@@ -67,6 +67,8 @@ class InProcessChannel implements LspChannel {
   final LspServerActor _actor;
   final StreamController<LspEvent> _events =
       StreamController<LspEvent>.broadcast();
+  Future<void> _commands = Future.value();
+  Future<void>? _shutdown;
 
   /// Construct an in-process channel wrapping [actor]. The actor's
   /// outbound event callback is wired to the channel's stream on
@@ -80,16 +82,28 @@ class InProcessChannel implements LspChannel {
     // Fire-and-forget; the actor's `handle` is async but we don't
     // surface its completion to the caller — events arrive on
     // [events] when the actor has done its work.
-    unawaited(_actor.handle(cmd));
+    if (_shutdown != null) return;
+    unawaited(_enqueue(cmd).catchError((_) {}));
   }
 
   @override
   Stream<LspEvent> get events => _events.stream;
 
   @override
-  Future<void> shutdown() async {
-    await _actor.handle(const LspCmdShutdown());
-    await _events.close();
+  Future<void> shutdown() {
+    final shutdown = _shutdown;
+    if (shutdown != null) return shutdown;
+    // Shutdown must preempt a command that is stuck in startup. The actor
+    // tracks in-flight starts and cancels their peers/processes itself.
+    return _shutdown = _actor
+        .handle(const LspCmdShutdown())
+        .whenComplete(_events.close);
+  }
+
+  Future<void> _enqueue(LspCommand cmd) {
+    final command = _commands.then((_) => _actor.handle(cmd));
+    _commands = command.catchError((_) {});
+    return command;
   }
 }
 
@@ -191,24 +205,37 @@ class IsolateChannel implements LspChannel {
     final sink = _OutboundSink(args.mainPort);
     actor.attach(sink.add);
 
-    receivePort.listen((msg) async {
+    Future<void> commands = Future.value();
+    var shuttingDown = false;
+    receivePort.listen((msg) {
       if (msg is! LspCommand) return;
-      try {
-        await actor.handle(msg);
-      } catch (_) {
+      if (shuttingDown) return;
+      if (msg is LspCmdShutdown) {
+        shuttingDown = true;
+        // Do not queue shutdown behind an initialize request that may never
+        // resolve. The actor cancels any active startup before it returns.
+        final shutdown = actor.handle(msg);
+        unawaited(
+          shutdown
+              .whenComplete(() {
+                try {
+                  receivePort.close();
+                  args.mainPort.send(const _ActorExited(0));
+                } catch (_) {
+                  // Manager side already gone; nothing to do.
+                }
+              })
+              .catchError((_) {}),
+        );
+        return;
+      }
+      final command = commands.then((_) => actor.handle(msg));
+      commands = command.catchError((_) {
         // A thrown handler shouldn't tear down the isolate. The
         // manager will see the actor go silent and surface its own
         // timeout / error. Stack traces are logged by the actor
         // internally; we don't ship them across the boundary.
-      }
-      if (msg is LspCmdShutdown) {
-        try {
-          receivePort.close();
-          args.mainPort.send(const _ActorExited(0));
-        } catch (_) {
-          // Manager side already gone; nothing to do.
-        }
-      }
+      });
     });
   }
 

@@ -192,6 +192,7 @@ class _TestActor extends LspServerActor {
   _FakeProcess? lastProcess;
   bool resolveSpecCalled = false;
   int resolveSpecCalls = 0;
+  int spawnCalls = 0;
 
   @override
   String get id => 'test';
@@ -213,8 +214,60 @@ class _TestActor extends LspServerActor {
 
   @override
   Future<Process> spawnProcess(LspServerSpec spec) async {
+    spawnCalls++;
     lastProcess = _FakeProcess();
     return lastProcess!;
+  }
+}
+
+/// Holds spec resolution until the test decides whether startup may proceed.
+class _DelayedResolveActor extends _TestActor {
+  final resolveEntered = Completer<void>();
+  final _spec = Completer<LspServerSpec?>();
+
+  @override
+  Future<LspServerSpec?> resolveSpec(String root, String file) {
+    if (!resolveEntered.isCompleted) resolveEntered.complete();
+    return _spec.future;
+  }
+
+  void completeResolve() {
+    _spec.complete(
+      LspServerSpec(
+        root: '/delayed',
+        command: const ['fake'],
+        env: const {},
+        initialization: const {},
+      ),
+    );
+  }
+}
+
+/// Starts a real child that deliberately never answers `initialize`.
+class _HangingInitializeActor extends LspServerActor {
+  final spawned = Completer<Process>();
+
+  @override
+  String get id => 'hanging';
+
+  @override
+  Future<LspServerSpec?> resolveSpec(String root, String file) async {
+    return LspServerSpec(
+      root: root,
+      command: const ['sh', '-c', 'while true; do sleep 1; done'],
+      env: const {},
+      initialization: const {},
+    );
+  }
+
+  @override
+  Future<Process> spawnProcess(LspServerSpec spec) async {
+    final process = await Process.start(
+      spec.command.first,
+      spec.command.skip(1).toList(),
+    );
+    spawned.complete(process);
+    return process;
   }
 }
 
@@ -315,6 +368,49 @@ void main() {
       await actor.handle(LspCmdStart(root: '/r', file: '/r/a.test'));
 
       expect(events.whereType<LspEventStarted>(), isEmpty);
+      expect(actor.activeServerCount, 0);
+    });
+
+    test(
+      'shutdown waits for delayed resolution and prevents a late spawn',
+      () async {
+        final actor = _DelayedResolveActor();
+        actor.attach((_) {});
+
+        final start = actor.handle(
+          LspCmdStart(root: '/delayed', file: '/delayed/a.test'),
+        );
+        await actor.resolveEntered.future;
+        final shutdown = actor.handle(const LspCmdShutdown());
+
+        actor.completeResolve();
+        await Future.wait([start, shutdown]);
+
+        expect(actor.spawnCalls, 0);
+        expect(actor.activeServerCount, 0);
+      },
+    );
+
+    test('shutdown kills and reaps a child stuck in initialize', () async {
+      if (Platform.isWindows) return;
+      final actor = _HangingInitializeActor();
+      actor.attach((_) {});
+
+      final start = actor.handle(
+        LspCmdStart(root: '/hanging', file: '/hanging/a.test'),
+      );
+      final process = await actor.spawned.future.timeout(
+        const Duration(seconds: 2),
+      );
+
+      await actor
+          .handle(const LspCmdShutdown())
+          .timeout(const Duration(seconds: 3));
+      await start.timeout(const Duration(seconds: 1));
+      expect(
+        await process.exitCode.timeout(const Duration(seconds: 1)),
+        isNotNull,
+      );
       expect(actor.activeServerCount, 0);
     });
   });
