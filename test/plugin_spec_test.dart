@@ -689,6 +689,56 @@ path = "s.json"
       }, Directory.systemTemp.path);
       expect(result.tail, contains('templated-value'));
     });
+
+    test('drains output written after the shell parent exits', () async {
+      if (Platform.isWindows) return;
+      final action = PluginAction(
+        label: 'late-output',
+        kind: PluginActionKind.shell,
+        command: '(sleep 0.1; printf late-output) &',
+      );
+
+      final result = await runPluginShellAction(
+        action,
+        const {},
+        Directory.systemTemp.path,
+        timeout: const Duration(seconds: 2),
+      );
+
+      expect(result.exitCode, 0);
+      expect(result.tail, contains('late-output'));
+    });
+
+    test('bounds draining when a background child holds stdout open', () async {
+      if (Platform.isWindows) return;
+      final dir = await Directory.systemTemp.createTemp('plugin_pipe_test_');
+      final marker = File('${dir.path}/child.pid');
+      int? childPid;
+      try {
+        final action = PluginAction(
+          label: 'held-pipe',
+          kind: PluginActionKind.shell,
+          command: '(sleep 30) & echo \$! > "${marker.path}"',
+        );
+        final stopwatch = Stopwatch()..start();
+        final result = await runPluginShellAction(
+          action,
+          const {},
+          dir.path,
+          postExitDrain: const Duration(milliseconds: 100),
+        );
+        stopwatch.stop();
+        childPid = int.parse(await marker.readAsString());
+
+        expect(result.exitCode, 0);
+        expect(stopwatch.elapsed, lessThan(const Duration(seconds: 1)));
+      } finally {
+        if (childPid != null) {
+          Process.killPid(childPid, ProcessSignal.sigkill);
+        }
+        if (dir.existsSync()) await dir.delete(recursive: true);
+      }
+    });
   });
 
   group('PluginRegistry', () {

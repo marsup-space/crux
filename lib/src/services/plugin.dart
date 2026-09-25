@@ -736,6 +736,7 @@ Future<ShellActionResult> runPluginShellAction(
   Map<String, dynamic> data,
   String projectRoot, {
   Duration timeout = const Duration(minutes: 10),
+  Duration postExitDrain = const Duration(milliseconds: 250),
   int maxTailChars = 2000,
 }) async {
   final command = renderActionCommand(action, data).trim();
@@ -749,12 +750,30 @@ Future<ShellActionResult> runPluginShellAction(
       workingDirectory: projectRoot,
     );
     final out = StringBuffer();
+    final stdoutDone = Completer<void>();
+    final stderrDone = Completer<void>();
     final subOut = proc.stdout
         .transform(const Utf8Decoder(allowMalformed: true))
-        .listen(out.write);
+        .listen(
+          out.write,
+          onDone: () {
+            if (!stdoutDone.isCompleted) stdoutDone.complete();
+          },
+          onError: (_, _) {
+            if (!stdoutDone.isCompleted) stdoutDone.complete();
+          },
+        );
     final subErr = proc.stderr
         .transform(const Utf8Decoder(allowMalformed: true))
-        .listen(out.write);
+        .listen(
+          out.write,
+          onDone: () {
+            if (!stderrDone.isCompleted) stderrDone.complete();
+          },
+          onError: (_, _) {
+            if (!stderrDone.isCompleted) stderrDone.complete();
+          },
+        );
 
     final exitCode = await proc.exitCode.timeout(
       timeout,
@@ -763,8 +782,15 @@ Future<ShellActionResult> runPluginShellAction(
         return -1;
       },
     );
-    await subOut.cancel();
-    await subErr.cancel();
+    // A shell can exit while a descendant still holds its stdout/stderr pipe.
+    // Drain late chunks, but stop after a bounded grace so an inherited pipe
+    // cannot make a timed plugin action wait forever.
+    try {
+      await Future.wait([stdoutDone.future, stderrDone.future])
+          .timeout(postExitDrain);
+    } on TimeoutException {
+      await Future.wait([subOut.cancel(), subErr.cancel()]);
+    }
 
     var tail = out.toString().trim();
     if (tail.length > maxTailChars) {
