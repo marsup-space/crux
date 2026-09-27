@@ -8,11 +8,25 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [1.1.9] - 2026-09-27
+
+6e0ffbc
+
 ### Features
 
 - **LongCat 2.5 Preview** — add LongCat's new multimodal coding model to the
   built-in provider, with image input, 1M context, and 128K max output. Keep
   LongCat 2.0 available as a text-only option.
+
+### Fixes
+
+- **Windows tool paths and cleanup** (`6e0ffbc`) — read-before-write and
+  plan-mode checks now compare Windows paths consistently, command batch files
+  are cleaned up after execution, and local plugin actions fail promptly when
+  their control endpoint is unavailable.
+- **Windows app stability** (`6e0ffbc`) — startup avoids unsupported POSIX
+  signal listeners, project notes retain their display path, and platform-aware
+  tests no longer depend on Unix process groups or `/tmp`.
 
 ## [1.1.8] - 2026-09-25
 
