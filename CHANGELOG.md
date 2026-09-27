@@ -8,6 +8,12 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+### Features
+
+- **LongCat 2.5 Preview** — add LongCat's new multimodal coding model to the
+  built-in provider, with image input, 1M context, and 128K max output. Keep
+  LongCat 2.0 available as a text-only option.
+
 ## [1.1.8] - 2026-09-25
 
 9133f588
