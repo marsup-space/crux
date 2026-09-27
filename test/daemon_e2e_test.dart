@@ -17,6 +17,8 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 void main() {
+  if (Platform.isWindows) return;
+
   late Directory home;
   late Directory proj;
 

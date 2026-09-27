@@ -1,5 +1,6 @@
 import 'package:test/test.dart';
 import 'package:nocterm/nocterm.dart' hide isNotEmpty;
+import 'package:path/path.dart' as p;
 import 'package:crux/src/models/slash_command.dart';
 import 'package:crux/src/models/message.dart';
 import 'package:crux/src/components/ui/button.dart';
@@ -856,7 +857,10 @@ void main() {
           isNot(containsText('Read: lib/a.dart guard triggered')),
         );
         expect(tester.terminalState, containsText('Edit:'));
-        expect(tester.terminalState, containsText('Edit: lib/a.dart guard'));
+        expect(
+          tester.terminalState,
+          containsText('Edit: lib${p.separator}a.dart guard'),
+        );
       });
     });
   });

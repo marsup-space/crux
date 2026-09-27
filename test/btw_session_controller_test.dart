@@ -10,6 +10,7 @@
 
 import 'dart:io';
 
+import 'package:drift/native.dart';
 import 'package:test/test.dart';
 
 import 'package:crux/src/components/session_controller.dart';
@@ -24,16 +25,19 @@ import 'package:crux/src/tools/registry.dart';
 
 void main() {
   late Directory tempDir;
+  late CruxDatabase database;
   late ProviderService providerService;
   late SessionStore store;
 
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('crux_btw_sc_');
     providerService = ProviderService(userProvidersDir: tempDir.path);
-    store = SessionStore(CruxDatabase());
+    database = CruxDatabase.forTesting(NativeDatabase.memory());
+    store = SessionStore(database);
   });
 
   tearDown(() async {
+    await database.close();
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
     }

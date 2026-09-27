@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:path/path.dart' as p;
 
 import '../models/message.dart';
@@ -132,6 +134,27 @@ String resolvePath(String filePath, String workingDirectory) {
   if (p.isAbsolute(filePath)) return p.normalize(filePath);
   return p.normalize(p.join(workingDirectory, filePath));
 }
+
+/// Canonical comparison key for paths that may originate from different
+/// platform APIs. Windows treats both path separators and letter casing as
+/// equivalent; ignoring that distinction prevents read-before-write and
+/// plan-mode guards from rejecting safe operations after a path is normalized.
+String pathComparisonKey(String path) {
+  final parts = <String>[];
+  for (final segment in path.replaceAll(r'\', '/').split('/')) {
+    if (segment.isEmpty || segment == '.') continue;
+    if (segment == '..') {
+      if (parts.isNotEmpty && parts.last != '..') parts.removeLast();
+      continue;
+    }
+    parts.add(segment);
+  }
+  final joined = '/${parts.join('/')}';
+  return Platform.isWindows ? joined.toLowerCase() : joined;
+}
+
+bool pathsEqual(String left, String right) =>
+    pathComparisonKey(left) == pathComparisonKey(right);
 
 String relativePath(String absolutePath, String workingDirectory) {
   if (p.equals(absolutePath, workingDirectory)) return '.';

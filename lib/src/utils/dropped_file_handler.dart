@@ -98,9 +98,15 @@ List<DroppedFile> classifyDroppedPaths(
     final joined = p.isAbsolute(original)
         ? original
         : p.absolute(p.normalize(p.join(projectRoot, original)));
-    String resolved;
+    String resolved = joined;
     try {
-      resolved = p.canonicalize(joined);
+      // `canonicalize` lowercases every segment on Windows. That is useful
+      // for identity checks, but it makes a dropped path look unlike the path
+      // the user supplied. Keep the normalized display spelling there while
+      // retaining symlink resolution on POSIX platforms.
+      resolved = Platform.isWindows
+          ? p.normalize(joined)
+          : p.canonicalize(joined);
     } on FileSystemException {
       resolved = joined;
     }
@@ -268,7 +274,8 @@ bool _looksLikePath(String s) {
   return s.startsWith('/') ||
       s.startsWith('./') ||
       s.startsWith('../') ||
-      s.startsWith('~');
+      s.startsWith('~') ||
+      RegExp(r'^[A-Za-z]:[\\/]').hasMatch(s);
 }
 
 // ─── helpers ────────────────────────────────────────────────────────

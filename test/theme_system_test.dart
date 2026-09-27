@@ -145,9 +145,10 @@ void main() {
       () async {
         final valid = await File(p.join(bundledThemes.path, 'dracula.toml'))
             .readAsString();
+        final normalized = valid.replaceAll('\r\n', '\n');
         final warnings = <String>[];
         final theme = ThemeLoader.parse(
-          valid
+          normalized
               .replaceFirst('background = "#282A36"\n', '')
               .replaceFirst('heading = "#BD93F9"\n', ''),
           id: 'sparse',

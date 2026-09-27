@@ -10,7 +10,9 @@ void main() {
 
     setUp(() {
       tracker = FileReadTracker();
-      testFile = '/tmp/test_guard_${DateTime.now().millisecondsSinceEpoch}.txt';
+      testFile =
+          '${Directory.systemTemp.path}${Platform.pathSeparator}'
+          'test_guard_${DateTime.now().microsecondsSinceEpoch}.txt';
     });
 
     tearDown(() {

@@ -3,6 +3,10 @@ import 'dart:io';
 import 'shell_base.dart';
 
 class CmdTool extends ShellBase {
+  CmdTool({this.temporaryDirectory});
+
+  final Directory? temporaryDirectory;
+
   @override
   String get name => 'cmd';
 
@@ -33,7 +37,8 @@ class CmdTool extends ShellBase {
     final collapsed = command.replaceAll('\r\n', '\n').replaceAll('\n', ' ');
     final preamble = codepage != null ? '@chcp $codepage > nul\r\n' : '';
     final tempBat = File(
-      '${Directory.systemTemp.path}/crux_cmd_${DateTime.now().microsecondsSinceEpoch}.bat',
+      '${(temporaryDirectory ?? Directory.systemTemp).path}/'
+      'crux_cmd_${DateTime.now().microsecondsSinceEpoch}.bat',
     );
     tempBat.writeAsStringSync('$preamble$collapsed');
     return ShellInvocation(

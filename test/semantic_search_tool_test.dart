@@ -91,6 +91,8 @@ void main() {
           return;
         }
         final sentinelDir = Directory('$repo/.research');
+        final directoryExisted = sentinelDir.existsSync();
+        sentinelDir.createSync(recursive: true);
         final sentinelFile = File(
           '${sentinelDir.path}/sentinel_xyzzy12345_uniquename.dart',
         );
@@ -114,6 +116,9 @@ class SentinelForSembleTest {
             sentinelFile.writeAsStringSync(priorContent);
           } else if (!existed) {
             if (sentinelFile.existsSync()) sentinelFile.deleteSync();
+            if (!directoryExisted && sentinelDir.existsSync()) {
+              sentinelDir.deleteSync();
+            }
           }
         });
 

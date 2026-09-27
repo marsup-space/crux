@@ -272,7 +272,6 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
     void Function(ShellMonitorNotice notice)? noticeSink,
     String intent = '',
     String platform = '',
-    String shellExecutable = '',
     String callId = '',
   }) async {
     final invocation = _prepareInvocation(
@@ -516,7 +515,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
                 command: checkNumber == 1 ? command : null,
                 intent: checkNumber == 1 ? intent : null,
                 platform: checkNumber == 1 ? platform : null,
-                shell: checkNumber == 1 ? shellExecutable : null,
+                shell: checkNumber == 1 ? invocation.executable : null,
                 stallNotice: stallNotice,
               ),
             });
@@ -846,9 +845,7 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         } catch (_) {}
       }
       for (final path in invocation.cleanupPaths) {
-        try {
-          File(path).deleteSync();
-        } catch (_) {}
+        await _deleteCleanupPath(path);
       }
     }
   }
@@ -1087,7 +1084,6 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
       // verdict. When it is null, _run falls back to classic timeout
       // behaviour. Platform / shell are passed for the monitor's
       // static metadata block (first turn only).
-      final invocation = resolveInvocation(command, encoding: encoding);
       final result = await _run(
         command,
         Duration(milliseconds: timeoutMs),
@@ -1098,7 +1094,6 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
         noticeSink: ctx.shellMonitorNoticeSink,
         intent: intent,
         platform: Platform.operatingSystem,
-        shellExecutable: invocation.executable,
         callId: ctx.callId ?? '',
       );
 
@@ -1334,6 +1329,22 @@ abstract class ShellBase extends ToolDef with IntentionalTool {
     },
     'required': ['command', 'intent'],
   };
+}
+
+/// Windows can retain a batch file handle briefly after cmd.exe has reported
+/// its exit code. Retry cleanup so temporary command files do not accumulate.
+Future<void> _deleteCleanupPath(String path) async {
+  final file = File(path);
+  for (var attempt = 0; attempt < 10; attempt++) {
+    try {
+      await file.delete();
+      return;
+    } catch (_) {
+      if (attempt < 9) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+      }
+    }
+  }
 }
 
 /// Rejection body for the catastrophic tier of the shell high-risk

@@ -170,7 +170,14 @@ void main() {
       expect(await File(filePath).exists(), isTrue);
       final raw = File(filePath).readAsStringSync();
       expect(raw, contains('"entries"'));
-      expect(raw, contains(_canonicalize(dir.path)));
+      // JSON escapes Windows path separators, so inspect the stored value
+      // rather than asserting against its encoded representation.
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final entries = decoded['entries'] as List<dynamic>;
+      expect(
+        (entries.single as Map<String, dynamic>)['path'],
+        _canonicalize(dir.path),
+      );
     });
 
     test('round-trips: what add writes, load reads', () async {

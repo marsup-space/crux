@@ -658,13 +658,17 @@ Future<bool> sendPluginAction(
   final parsed = Uri.tryParse(url);
   if (parsed == null || !parsed.isAbsolute) return false;
   try {
-    final client = HttpClient();
+    // Plugin actions target a local control endpoint. Fail quickly when a
+    // stale status file points at a process that has already exited so the
+    // sidebar is responsive again and the recorded outcome is timely.
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(milliseconds: 500);
     try {
       final request = await client
           .postUrl(parsed)
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 1));
       final response = await request.close().timeout(
-        const Duration(seconds: 5),
+        const Duration(seconds: 1),
       );
       await response.drain<void>();
       return response.statusCode == 200;

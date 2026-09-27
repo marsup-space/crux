@@ -99,7 +99,9 @@ void main() {
     });
   });
 
-  group('SupervisedProducer lifecycle (fake script)', () {
+  group(
+    'SupervisedProducer lifecycle (fake script)',
+    () {
     late Directory tmp;
 
     setUp(() {
@@ -185,5 +187,9 @@ void main() {
       expect(p.restarts, 0);
       await p.kill();
     }, timeout: const Timeout(Duration(seconds: 15)));
-  });
+    },
+    skip: Platform.isWindows
+        ? 'Producer supervision currently relies on POSIX process groups.'
+        : false,
+  );
 }

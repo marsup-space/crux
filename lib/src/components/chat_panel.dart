@@ -893,15 +893,15 @@ class _ChatPanelState extends State<ChatPanel> {
     // (SIGKILL escalation in `_killAfter` backstops it): after the
     // timeout the handler lets the normal signal semantics proceed.
     _lspSignalSubs = [
-      ProcessSignal.sigterm.watch().listen((_) {
-        unawaited(
-          _lspManager.shutdown().timeout(
-            const Duration(seconds: 3),
-            onTimeout: () {},
-          ),
-        );
-      }),
-      if (!Platform.isWindows)
+      if (!Platform.isWindows) ...[
+        ProcessSignal.sigterm.watch().listen((_) {
+          unawaited(
+            _lspManager.shutdown().timeout(
+              const Duration(seconds: 3),
+              onTimeout: () {},
+            ),
+          );
+        }),
         ProcessSignal.sigint.watch().listen((_) {
           unawaited(
             _lspManager.shutdown().timeout(
@@ -910,6 +910,7 @@ class _ChatPanelState extends State<ChatPanel> {
             ),
           );
         }),
+      ],
     ];
 
     if (bootState != null) {

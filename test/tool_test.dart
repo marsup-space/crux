@@ -930,14 +930,16 @@ void main() {
     );
 
     test('cleans up temp .bat file after execution', () async {
-      final tool = CmdTool();
+      final tempDir = await Directory.systemTemp.createTemp('crux_cmd_test_');
+      addTearDown(() => tempDir.delete(recursive: true));
+      final tool = CmdTool(temporaryDirectory: tempDir);
       final ctx = ToolContext(
         sessionId: 1,
         messageId: 1,
         abort: AbortSignal(),
         workingDirectory: Directory.systemTemp.path,
       );
-      final existingTempBatches = Directory(Directory.systemTemp.path)
+      final existingTempBatches = tempDir
           .listSync()
           .where((e) => e.path.contains('crux_cmd_') && e.path.endsWith('.bat'))
           .map((e) => e.path)
@@ -947,7 +949,7 @@ void main() {
         'intent': 'Verify temporary batch cleanup',
       }, ctx);
       await Future.delayed(const Duration(milliseconds: 100));
-      final leaked = Directory(Directory.systemTemp.path)
+      final leaked = tempDir
           .listSync()
           .where((e) => e.path.contains('crux_cmd_') && e.path.endsWith('.bat'))
           .toList();

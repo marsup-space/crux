@@ -188,7 +188,7 @@ class WriteTool extends ToolDef with IntentionalTool {
     final resolved = resolvePath(filePath, workingDirectory);
     final planPath = sessionRuntime?.planDocPath;
     final planApproved = sessionRuntime?.planApproved ?? false;
-    if (planPath != null && !planApproved && resolved != planPath) {
+    if (planPath != null && !planApproved && !pathsEqual(resolved, planPath)) {
       return GuardResult(
         header:
             '[GUARD] Plan mode: only $planPath can be written while plan '
@@ -248,7 +248,7 @@ class WriteTool extends ToolDef with IntentionalTool {
     }
     final planPath = ctx.sessionRuntime?.planDocPath;
     final planApproved = ctx.sessionRuntime?.planApproved ?? false;
-    if (planPath != null && !planApproved && resolved != planPath) {
+    if (planPath != null && !planApproved && !pathsEqual(resolved, planPath)) {
       return ToolResult(
         title: 'Write file: $resolved',
         output:

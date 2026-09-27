@@ -23,6 +23,7 @@
 
 import 'dart:io';
 
+import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:nocterm/nocterm.dart';
 
@@ -43,6 +44,7 @@ import 'package:crux/src/utils/ticker_registry.dart';
 void main() {
   group('ContextBar session switch snap', () {
     late Directory tempDir;
+    late CruxDatabase database;
     late ProviderService providerService;
     late SessionStore store;
     late SessionController sessionController;
@@ -53,7 +55,8 @@ void main() {
       tempDir = await Directory.systemTemp.createTemp('crux_ctxbar_');
       providerService = ProviderService(userProvidersDir: tempDir.path);
       await providerService.initialize();
-      store = SessionStore(CruxDatabase());
+      database = CruxDatabase.forTesting(NativeDatabase.memory());
+      store = SessionStore(database);
       final toolRegistry = ToolRegistry()
         ..registerDefaults(
           FileReadTracker(),
@@ -79,6 +82,7 @@ void main() {
 
     tearDown(() async {
       TickerRegistry.instance.resetForTest();
+      await database.close();
       if (await tempDir.exists()) {
         await tempDir.delete(recursive: true);
       }

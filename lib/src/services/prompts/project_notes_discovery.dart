@@ -141,8 +141,8 @@ String? discoverProjectNotes({required String cwd, required String worktree}) {
 /// If [start] is not under [stopAt], returns just [start] — the
 /// walker doesn't try to escape an unrelated directory tree.
 List<String> _walkUp(String start, {required String stopAt}) {
-  final canonicalStart = p.canonicalize(start);
-  final canonicalStop = p.canonicalize(stopAt);
+  final canonicalStart = _canonicalPath(start);
+  final canonicalStop = _canonicalPath(stopAt);
   final result = <String>[];
 
   String? current = canonicalStart;
@@ -163,6 +163,13 @@ List<String> _walkUp(String start, {required String stopAt}) {
     current = parent;
   }
   return result;
+}
+
+String _canonicalPath(String path) {
+  // Windows resolves an existing path with every component lowercased. The
+  // discovered path is shown in the prompt, so retain the caller's spelling.
+  if (Platform.isWindows) return p.normalize(path);
+  return p.canonicalize(path);
 }
 
 /// True if [child] is the same as [parent] or strictly below it.

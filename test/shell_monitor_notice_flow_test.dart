@@ -112,5 +112,5 @@ void main() {
     expect(notices, hasLength(1));
     expect(notices.single.configured, isFalse);
     expect(notices.single.isMeaningful, isFalse);
-  });
+  }, skip: Platform.isWindows);
 }

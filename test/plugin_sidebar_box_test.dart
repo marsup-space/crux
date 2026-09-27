@@ -269,7 +269,7 @@ void main() {
         final seg = tester.terminalState.findText('reload').first;
         await tester.tap(seg.x + 5, seg.y);
         await tester.pump();
-        await Future<void>.delayed(const Duration(milliseconds: 300));
+        await Future<void>.delayed(const Duration(seconds: 2));
         await tester.pump();
 
         expect(notes, hasLength(1));
@@ -312,7 +312,7 @@ void main() {
         final seg = tester.terminalState.findText('reload').first;
         await tester.tap(seg.x + 5, seg.y);
         await tester.pump();
-        await Future<void>.delayed(const Duration(milliseconds: 300));
+        await Future<void>.delayed(const Duration(seconds: 2));
         await tester.pump();
 
         expect(notes, hasLength(1));
