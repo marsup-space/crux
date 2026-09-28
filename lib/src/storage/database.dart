@@ -662,6 +662,44 @@ UPDATE agents SET project_path = COALESCE(
         }
       }
     },
+    beforeOpen: (details) async {
+      // A development build briefly shipped with an incomplete schema
+      // upgrade: its database version was recorded as current even though
+      // the `agents` roster table had not been created. In that state Drift
+      // correctly skips [onUpgrade], but every `find_agents` or `hire_agent`
+      // call fails with "no such table: agents". Keep this narrow repair on
+      // every open so those databases recover without deleting a user's
+      // sessions or requiring manual SQLite work.
+      final hasAgentsTable = await customSelect(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+        "AND name = 'agents' LIMIT 1",
+      ).get();
+      if (hasAgentsTable.isEmpty) {
+        // MigrationStrategy.beforeOpen does not expose a Migrator, so keep
+        // this DDL aligned with [Agents]. This only ever executes for the
+        // missing-table corruption case; normal installs use Drift's schema
+        // creation and migrations above.
+        await customStatement('''
+CREATE TABLE agents (
+  project_path TEXT NOT NULL DEFAULT '',
+  name TEXT NOT NULL,
+  role TEXT NOT NULL,
+  domain TEXT NOT NULL DEFAULT 'general',
+  model TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'ready',
+  knowledge TEXT NOT NULL DEFAULT '',
+  worklog TEXT NOT NULL DEFAULT '',
+  last_intention TEXT NOT NULL DEFAULT '',
+  run_owner_session_id INTEGER,
+  created_by_session_id INTEGER,
+  last_used_by_session_id INTEGER,
+  created_at INTEGER NOT NULL,
+  last_active_at INTEGER NOT NULL,
+  PRIMARY KEY (project_path, name)
+)
+''');
+      }
+    },
   );
 }
 
