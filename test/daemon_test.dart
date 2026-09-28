@@ -102,91 +102,91 @@ void main() {
   group(
     'SupervisedProducer lifecycle (fake script)',
     () {
-    late Directory tmp;
+      late Directory tmp;
 
-    setUp(() {
-      tmp = Directory.systemTemp.createTempSync('cruxd_unit_');
-    });
+      setUp(() {
+        tmp = Directory.systemTemp.createTempSync('cruxd_unit_');
+      });
 
-    tearDown(() {
-      try {
-        tmp.deleteSync(recursive: true);
-      } catch (_) {}
-    });
+      tearDown(() {
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
 
-    test('spawns via setsid, kills the group, no orphan children', () async {
-      final script = File('${tmp.path}/worker.sh');
-      script.writeAsStringSync('#!/bin/bash\nsleep 30 &\nsleep 30\n');
-      Process.runSync('chmod', ['+x', script.path]);
+      test('spawns via setsid, kills the group, no orphan children', () async {
+        final script = File('${tmp.path}/worker.sh');
+        script.writeAsStringSync('#!/bin/bash\nsleep 30 &\nsleep 30\n');
+        Process.runSync('chmod', ['+x', script.path]);
 
-      final p = SupervisedProducer(
-        ProducerDecl(
-          key: 'test:worker',
-          pluginId: 'worker',
-          command: script.path,
-        ),
-      );
-      await p.start();
-      expect(p.status, 'running');
-      expect(p.pid, isNotNull);
+        final p = SupervisedProducer(
+          ProducerDecl(
+            key: 'test:worker',
+            pluginId: 'worker',
+            command: script.path,
+          ),
+        );
+        await p.start();
+        expect(p.status, 'running');
+        expect(p.pid, isNotNull);
 
-      // The worker's background child must die with the group.
-      final pgid = p.pid!;
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-      await p.kill();
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-      final probe = Process.runSync('/bin/sh', [
-        '-c',
-        'kill -0 -- -$pgid 2>/dev/null; echo rc=\$?',
-      ]);
-      // Group gone (or never had members): kill -0 -- -PGID fails.
-      expect(probe.stdout.toString(), contains('rc=1'));
-    }, timeout: const Timeout(Duration(seconds: 20)));
+        // The worker's background child must die with the group.
+        final pgid = p.pid!;
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        await p.kill();
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        final probe = Process.runSync('/bin/sh', [
+          '-c',
+          'kill -0 -- -$pgid 2>/dev/null; echo rc=\$?',
+        ]);
+        // Group gone (or never had members): kill -0 -- -PGID fails.
+        expect(probe.stdout.toString(), contains('rc=1'));
+      }, timeout: const Timeout(Duration(seconds: 20)));
 
-    test('crash ladder: backoff then dead after maxRestarts', () async {
-      // A command that always fails instantly.
-      final p = SupervisedProducer(
-        const ProducerDecl(
-          key: 'test:crash',
-          pluginId: 'crash',
-          command: 'exit 7',
-        ),
-        backoff: const BackoffPolicy(
-          base: Duration(milliseconds: 10),
-          cap: Duration(milliseconds: 50),
-          maxRestarts: 3,
-          stableAfter: Duration(seconds: 30),
-        ),
-      );
-      await p.start();
-      // Let the crash-and-restart ladder run past maxRestarts.
-      await Future<void>.delayed(const Duration(milliseconds: 800));
-      expect(p.status, anyOf('dead', 'backoff'));
-      // Dead eventually (with the short backoffs here).
-      for (var i = 0; i < 50 && p.status != 'dead'; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 40));
-      }
-      expect(p.status, 'dead');
-    }, timeout: const Timeout(Duration(seconds: 15)));
+      test('crash ladder: backoff then dead after maxRestarts', () async {
+        // A command that always fails instantly.
+        final p = SupervisedProducer(
+          const ProducerDecl(
+            key: 'test:crash',
+            pluginId: 'crash',
+            command: 'exit 7',
+          ),
+          backoff: const BackoffPolicy(
+            base: Duration(milliseconds: 10),
+            cap: Duration(milliseconds: 50),
+            maxRestarts: 3,
+            stableAfter: Duration(seconds: 30),
+          ),
+        );
+        await p.start();
+        // Let the crash-and-restart ladder run past maxRestarts.
+        await Future<void>.delayed(const Duration(milliseconds: 800));
+        expect(p.status, anyOf('dead', 'backoff'));
+        // Dead eventually (with the short backoffs here).
+        for (var i = 0; i < 50 && p.status != 'dead'; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 40));
+        }
+        expect(p.status, 'dead');
+      }, timeout: const Timeout(Duration(seconds: 15)));
 
-    test('restart resets the crash ladder', () async {
-      final p = SupervisedProducer(
-        const ProducerDecl(
-          key: 'test:crash2',
-          pluginId: 'crash2',
-          command: 'sleep 5',
-        ),
-        backoff: const BackoffPolicy(
-          base: Duration(milliseconds: 10),
-          maxRestarts: 0,
-        ),
-      );
-      await p.start();
-      await p.restart();
-      expect(p.status, 'running');
-      expect(p.restarts, 0);
-      await p.kill();
-    }, timeout: const Timeout(Duration(seconds: 15)));
+      test('restart resets the crash ladder', () async {
+        final p = SupervisedProducer(
+          const ProducerDecl(
+            key: 'test:crash2',
+            pluginId: 'crash2',
+            command: 'sleep 5',
+          ),
+          backoff: const BackoffPolicy(
+            base: Duration(milliseconds: 10),
+            maxRestarts: 0,
+          ),
+        );
+        await p.start();
+        await p.restart();
+        expect(p.status, 'running');
+        expect(p.restarts, 0);
+        await p.kill();
+      }, timeout: const Timeout(Duration(seconds: 15)));
     },
     skip: Platform.isWindows
         ? 'Producer supervision currently relies on POSIX process groups.'
