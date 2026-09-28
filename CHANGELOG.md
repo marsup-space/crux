@@ -6,7 +6,15 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
-## [Unreleased]
+## [1.1.10] - 2026-09-28
+
+2cae29a1
+
+### Fixes
+
+- **Recover missing agents table** (`2cae29a1`) — recreate the `agents` roster
+  table on open when a database recorded the current schema version without
+  it, so agent listing and hiring no longer fail with "no such table: agents".
 
 ## [1.1.9] - 2026-09-27
 

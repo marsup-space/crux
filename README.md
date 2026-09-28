@@ -20,13 +20,13 @@ Your model. Your workbench. DeepSeek · Kimi K2.8 Preview · MiniMax · Codex ·
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/marsup-space/crux/v1.1.9/install.sh | bash -s -- --version v1.1.9
+curl -fsSL https://raw.githubusercontent.com/marsup-space/crux/v1.1.10/install.sh | bash -s -- --version v1.1.10
 ```
 
 **Windows (PowerShell)** — download [install.ps1](install.ps1), then run:
 
 ```powershell
-& .\install.ps1 -Version 1.1.9
+& .\install.ps1 -Version 1.1.10
 ```
 
 Prebuilt binaries; no Dart SDK required. Open a new terminal after installation if `crux` is not found.
