@@ -8,6 +8,14 @@ below the version header. Each version has at most two categories:
 
 ## [Unreleased]
 
+## [1.1.11] - 2026-11-12
+
+### Fixes
+
+- **Kimi K3 256K context variant maps to correct upstream model ID** — `k3-256k` now passes through to the upstream `k3-256k` model instead of being remapped to `k3`, matching Kimi Code's documented model IDs where `k3` (1M) consumes ~2× the quota of `k3-256k`.
+- **Kimi K2.8 Preview context window corrected to 1M** — updated from 262144 to 1048576 per Kimi Code docs; K2.8 Preview supports up to 1M context (plan-dependent).
+- **Kimi K2.8/K2.7 multimodal capabilities documented** — both models support image + video input per Kimi Code's model table.
+
 ## [1.1.10] - 2026-09-28
 
 2cae29a1

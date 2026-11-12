@@ -84,9 +84,7 @@ class _SubagentToolbarRowState extends State<SubagentToolbarRow> {
         child: Builder(
           builder: (context) {
             final rowHasFocus = Focus.of(context);
-            return Wrap(
-              spacing: 1,
-              runSpacing: 0,
+            return Row(
               children: [
                 Text(
                   component.prefix,
@@ -98,14 +96,9 @@ class _SubagentToolbarRowState extends State<SubagentToolbarRow> {
                   // rest wait for a slot; animating only `busy` made those
                   // later chips look idle, which appeared as though only
                   // the first chip animated.
-                  //
-                  // The tooltip carries up to six lines (domain, intent,
-                  // model, context, status) plus wrap headroom, so the
-                  // intent line must not silently ellipsize away.
                   Hinted(
                     hint: _hint(component.entries[index]),
                     delay: Duration.zero,
-                    maxLines: 6,
                     child: component.entries[index].status.isInFlight
                         // Keep the animation state attached to this Worker
                         // rather than its current position in the list.

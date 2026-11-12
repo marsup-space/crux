@@ -25,15 +25,13 @@
 #
 # Models
 # ------
-# K3 (1M context) and K3 (256K context) both map to the same
-# upstream `k3` model. The split is purely a UX signal: Kimi
-# grants 1M context to Allegretto+ plans and 256K to Moderato,
-# so users on a lower plan can pick the 256K variant to avoid
-# the server-side context cap. The actual context window Kimi
-# grants is determined by the user's plan tier, not the
-# request — there is no `context_size` field on the wire.
+# K3 (1M context) and K3 (256K context) are exposed as separate
+# upstream model IDs (`k3` and `k3-256k`). The split lets users
+# on lower plans pick the 256K variant to avoid the server-side
+# context cap — `k3` (1M) consumes about 2× the quota of
+# `k3-256k`.
 #
-# `kimi-for-coding` now serves K2.8 Preview (1M context), with
+# `kimi-for-coding` serves K2.8 Preview (1M context), with
 # `low` / `high` / `max` reasoning effort. K2.7 remains available
 # only as `kimi-for-coding-highspeed` (6x speed, 3x cost), with a
 # 256K context window and binary thinking. Allegretto+ is required
@@ -85,9 +83,9 @@ type = "kimi"
 endpoint_url = "https://api.kimi.com/coding/v1"
 
 # === K3 — flagship model ===
-# Exposed twice so users can match the variant to their
-# subscription tier's context grant. Both map to the same
-# upstream `k3` model ID at request time.
+# Two upstream IDs: `k3` (1M context, ~2× quota) and `k3-256k`
+# (256K context, standard quota). Pick the variant that matches
+# your plan tier to avoid server-side context caps.
 #
 # K3 accepts `low` / `high` / `max` on the wire. Crux's
 # internal five-level scale has no direct K3 equivalent for
@@ -128,7 +126,8 @@ normal = "high"
 # === K2.8 Preview — standard Kimi Code ===
 # K2.8 Preview is served through the existing `kimi-for-coding`
 # ID, so existing Crux sessions automatically use it. It supports
-# 1M context and the same three reasoning effort levels as K3.
+# up to 1M context (plan-dependent) and the same three reasoning
+# effort levels as K3. Multimodal: image + video input.
 [[models]]
 id = "kimi-for-coding"
 name = "Kimi K2.8 Preview"
@@ -144,9 +143,10 @@ stream_lerp = true
 normal = "high"
 
 # === K2.7 Code HighSpeed — binary on/off thinking ===
-# K2.7 requires Thinking:ON to invoke K2.7; disabling it routes to
-# K2.8 Preview without thinking. Keep the binary picker so users see
-# the actual protocol shape.
+# K2.7 HighSpeed requires Thinking:ON to invoke K2.7; disabling
+# it routes to K2.8 Preview without thinking. Keep the binary
+# picker so users see the actual protocol shape.
+# Multimodal: image + video input.
 
 [[models]]
 id = "kimi-for-coding-highspeed"

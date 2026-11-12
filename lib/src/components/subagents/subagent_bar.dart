@@ -108,7 +108,6 @@ class _SubagentBarState extends State<SubagentBar> {
             Hinted(
               hint: _agentHint(agent),
               delay: Duration.zero,
-              maxLines: 6,
               // In-flight (busy / queued) chips animate so the user sees
               // the state LIVE — a static glyph made a running Worker look
               // idle. Reuse the GlossyModelButton sweep already proven in

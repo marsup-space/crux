@@ -281,8 +281,9 @@ void main() {
     // The Kimi API is OpenAI Chat Completions-shaped, so the
     // base class does the heavy lifting. KimiProvider's only
     // job is two model-ID-level adjustments:
-    //   - map the two Crux-side K3 IDs (k3-1m, k3-256k) to the
-    //     single upstream `k3` model;
+    //   - map the Crux-side K3 1M ID (`k3-1m`) to the upstream
+    //     `k3` model (`k3-256k` is already a valid upstream ID
+    //     and passes through unchanged);
     //   - keep `reasoning_effort` for K2.8 Preview
     //     (`kimi-for-coding`) but drop it on K2.7 HighSpeed
     //     (`kimi-for-coding-highspeed`), which is binary-thinking.
@@ -299,19 +300,25 @@ void main() {
         body['model'],
         'k3',
         reason:
-            'K3 has one upstream model ID regardless of context '
-            'size — the plan tier decides the server-side cap',
+            'K3 1M context variant maps to upstream `k3`; the 256K '
+            'variant has its own upstream ID `k3-256k`',
       );
     });
 
-    test('remaps k3-256k to upstream "k3" on the wire', () {
+    test('passes k3-256k through unchanged on the wire', () {
       final body = provider.buildRequestBody(
         'k3-256k',
         userMsg,
         thinkingMode: 'enabled',
         reasoningEffort: 'max',
       );
-      expect(body['model'], 'k3');
+      expect(
+        body['model'],
+        'k3-256k',
+        reason:
+            'K3 256K context variant is already a valid upstream ID '
+            'and must not be remapped',
+      );
     });
 
     test('passes K2.8 and K2.7 HighSpeed model IDs through unchanged', () {

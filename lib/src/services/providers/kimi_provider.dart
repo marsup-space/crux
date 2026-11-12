@@ -22,9 +22,10 @@ import 'openai_compatible_provider.dart';
 ///    composite Crux entries (`k3-1m` and `k3-256k`) so the user
 ///    can pick the context size their Kimi Code plan grants them
 ///    (Allegretto+ = up to 1M; Moderato = up to 256K). Kimi's API
-///    only recognizes a single `model: "k3"` ID — the plan tier
-///    decides the server-side context cap. We translate both
-///    Crux-side IDs to `k3` on the wire.
+///    recognizes two separate upstream IDs — `k3` (1M context,
+///    ~2× quota consumption) and `k3-256k` (256K context,
+///    standard quota). We translate `k3-1m` → `k3` on the wire;
+///    `k3-256k` passes through unchanged.
 ///
 /// 2. **K2.7 HighSpeed binary thinking.** Only
 ///    `kimi-for-coding-highspeed` remains on K2.7 and is
@@ -53,9 +54,9 @@ import 'openai_compatible_provider.dart';
 ///    /temperature command having no effect.
 ///
 /// K3 and K2.8 Preview accept `reasoning_effort` of `low`,
-/// `high`, and `max` (defaults: K3 `high`, K2.8 `max`; unknown values 400).
-/// Crux's five-level internal scale is mapped onto K3's
-/// three levels by [mapEffort]: `normal` collapses onto
+/// `high`, and `max` (defaults: K3 `high`, K2.8 `max`; unknown
+/// values 400). Crux's five-level internal scale is mapped onto
+/// K3's three levels by [mapEffort]: `normal` collapses onto
 /// `high` (K3 has no middle tier), and `low` passes through
 /// unchanged — the OpenAI-compatible base class maps
 /// everything to `high`, which would silently discard the
@@ -88,11 +89,11 @@ class KimiProvider extends OpenAICompatibleProvider with CodingPlanProvider {
 
   // ─── Wire format overrides ─────────────────────────────────
 
-  /// Crux-side model IDs that map to the upstream `k3` model.
-  /// K3 is one upstream model; we expose it twice (1M and 256K
-  /// context) so the user can match the variant to their plan's
-  /// granted context window.
-  static const Set<String> _k3CruxIds = {'k3-1m', 'k3-256k'};
+  /// Crux-side model ID that maps to the upstream `k3` model.
+  /// K3 has two upstream IDs: `k3` (1M context) and `k3-256k`
+  /// (256K context). We expose `k3-1m` as a Crux-side alias for
+  /// the 1M variant; `k3-256k` passes through unchanged.
+  static const String _k3OneMegId = 'k3-1m';
 
   /// The K2.7 HighSpeed model is binary-thinking only. The standard
   /// `kimi-for-coding` ID was upgraded server-side to K2.8 Preview.
@@ -136,10 +137,10 @@ class KimiProvider extends OpenAICompatibleProvider with CodingPlanProvider {
     List<Map<String, dynamic>>? tools,
     String? userId,
   }) {
-    // Remap the Crux-side K3 IDs (`k3-1m` / `k3-256k`) to the
-    // single upstream `k3` model. Everything else passes through
-    // unchanged.
-    final upstreamId = _k3CruxIds.contains(modelId) ? 'k3' : modelId;
+    // Remap the Crux-side K3 1M ID (`k3-1m`) to the upstream
+    // `k3` model. The 256K variant (`k3-256k`) is already a
+    // valid upstream ID and passes through unchanged.
+    final upstreamId = modelId == _k3OneMegId ? 'k3' : modelId;
 
     final body = super.buildRequestBody(
       upstreamId,
