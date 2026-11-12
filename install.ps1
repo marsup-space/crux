@@ -1,7 +1,7 @@
-# Native Windows installer. Example: & .\install.ps1 -Version 1.1.10
+# Native Windows installer. Example: & .\install.ps1 -Version 1.1.11
 [CmdletBinding()]
 param(
-    [string]$Version = '1.1.10',
+    [string]$Version = '1.1.11',
     [string]$InstallDirectory = (Join-Path $env:USERPROFILE '.crux\bin'),
     [switch]$NoModifyPath
 )
