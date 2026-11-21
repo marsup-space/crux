@@ -1584,4 +1584,94 @@ void main() {
       );
     });
   });
+
+  group('buildChatLog — call line keeps intent or args, never output', () {
+    test('a tool with intent keeps only its intent', () {
+      final registry = ToolRegistry();
+      registry.register(EditTool());
+
+      final result = buildChatLog(
+        messages: [
+          _user(id: 1, content: 'rename the class'),
+          _toolCall(
+            id: 2,
+            toolName: 'edit',
+            input: {
+              'filePath': 'lib/foo.dart',
+              'oldString': 'class Foo {}',
+              'newString': 'class Bar {}',
+              'intent': 'rename',
+            },
+          ),
+          _toolResult(
+            id: 3,
+            content: 'Edit applied. OUTPUT_SENTINEL_INTENT_9F3',
+          ),
+        ],
+        workingDirectory: '/tmp/proj',
+        toolRegistry: registry,
+      );
+
+      // Intent branch: the call line carries the intent, not the
+      // oldString/newString payload.
+      expect(result.markdown, contains('edit: lib/foo.dart for {rename}'));
+      expect(
+        result.markdown,
+        isNot(contains('class Foo {}')),
+        reason: 'with an intent, the edit args are not replayed',
+      );
+      expect(
+        result.markdown,
+        isNot(contains('class Bar {}')),
+        reason: 'with an intent, the edit args are not replayed',
+      );
+      // Output is never part of the call line.
+      expect(
+        result.markdown,
+        isNot(contains('OUTPUT_SENTINEL_INTENT_9F3')),
+        reason: 'tool output never enters the chat log',
+      );
+    });
+
+    test('a tool without intent keeps its locating input arg', () {
+      final registry = ToolRegistry();
+      registry.register(EditTool());
+
+      final result = buildChatLog(
+        messages: [
+          _user(id: 1, content: 'change the class'),
+          _toolCall(
+            id: 2,
+            toolName: 'edit',
+            input: {
+              'filePath': 'lib/foo.dart',
+              'oldString': 'class Foo {}',
+              'newString': 'class Bar {}',
+              // No `intent` on this call.
+            },
+          ),
+          _toolResult(
+            id: 3,
+            content: 'Edit applied. OUTPUT_SENTINEL_NOINTENT_7B1',
+          ),
+        ],
+        workingDirectory: '/tmp/proj',
+        toolRegistry: registry,
+      );
+
+      // No-intent branch: the locating input arg (filePath) is kept,
+      // without the `for {…}` suffix.
+      expect(result.markdown, contains('edit: lib/foo.dart'));
+      expect(
+        result.markdown,
+        isNot(contains('for {')),
+        reason: 'a call without intent must not invent an intent',
+      );
+      expect(
+        result.markdown,
+        isNot(contains('OUTPUT_SENTINEL_NOINTENT_7B1')),
+        reason: 'tool output never enters the chat log',
+      );
+    });
+  });
 }
