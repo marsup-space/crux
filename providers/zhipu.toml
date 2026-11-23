@@ -20,22 +20,28 @@
 #
 # Models
 # ------
-# Per https://docs.bigmodel.cn/cn/coding-plan/overview, the GLM
-# Coding Plan is open to all tiers (Lite / Pro / Max) and
-# currently serves exactly two models:
+# The GLM Coding Plan is open to all tiers (Lite / Pro / Max)
+# and currently serves three models:
 #
-#   * GLM-5.3        — 1M context, 128K out (flagship, text-only)
+#   * GLM-5.4        — new flagship (2026-11-23), natively
+#                      multimodal (vision input), 1M context,
+#                      +50% weekly-quota headroom vs GLM-5.3
+#   * GLM-5.3        — 1M context, 128K out (previous flagship,
+#                      text-only)
 #   * GLM-5.3-Flash  — 1M context, multimodal (image input),
 #                      always-on thinking, ~1/3 the credit cost
 #                      of GLM-5.3
 #
-# Legacy models are gone from the plan: per the same page,
-# calling GLM-5.2 or GLM-5.1 is auto-redirected to GLM-5.3,
-# and calling GLM-5-Turbo or GLM-4.7 is auto-redirected to
-# GLM-5.3-Flash (GLM-4.5-Air is no longer mentioned at all).
-# Since upstream silently rewrites the model anyway, Crux lists
-# only the two real targets — no point showing IDs the plan no
-# longer serves.
+# GLM-5.4 shipped via the Z.ai announcement (Zixuan Li, Nov 23
+# 2026): available to all Coding Plan users with new vision
+# capabilities and stronger all-round coding performance.
+# Claude Code opts into 1M context with the `glm-5.4[1m]`
+# suffix; on the OpenAI-compatible endpoint Crux uses, the API
+# serves 1M automatically (same convention as GLM-5.3).
+# Zhipu's dedicated GLM-5.4 model page was not yet published at
+# release time, so the entry below mirrors the GLM-5.3 family
+# defaults (2^20 context, 128K max output, thinking +
+# reasoning_effort scale, temperature 0, stream lerp).
 #
 # Model IDs on the wire are lowercase + dot-separated
 # (`glm-5.3`, `glm-5.3-flash`) — every authoritative
@@ -81,7 +87,33 @@
 type = "zhipu"
 endpoint_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 
-# === GLM-5.3 — flagship, 1M context, text-only ===
+# === GLM-5.4 — new flagship, natively multimodal, 1M context ===
+# Announced 2026-11-23 as available to all GLM Coding Plan
+# tiers
+# (https://x.com/ZixuanLi_/status/2124719275864670681):
+# new vision capabilities (image input), stronger all-round
+# coding performance, and weekly-quota users get +50% quota vs
+# GLM-5.3. Wire ID is lowercase `glm-5.4` (the announcement's
+# setup instructions: "In other tools: set the model to
+# glm-5.4"; Claude Code uses `glm-5.4[1m]` for 1M context on
+# the Anthropic-compatible endpoint). Zhipu had not published a
+# dedicated model page (context / max-output specs) at release
+# time, so this entry mirrors the GLM-5.3 family: 2^20
+# context, 128K max output, thinking with the standard effort
+# scale, temperature 0, stream lerp.
+[[models]]
+id = "glm-5.4"
+name = "GLM-5.4"
+context_size = 1048576
+image_support = true
+max_tokens = 131072
+thinking = true
+thinking_budget = 10000
+reasoning_effort = "max"
+temperature = 0
+stream_lerp = true
+
+# === GLM-5.3 — previous flagship, 1M context, text-only ===
 # Per the GLM-5.3 model page
 # (https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3),
 # GLM-5.3 is Zhipu's latest flagship, built on the *same base*
