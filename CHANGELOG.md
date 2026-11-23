@@ -6,6 +6,14 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
+## [1.1.13] - 2026-11-23
+
+498bc243
+
+### Fixes
+
+- **Escape and shortcuts restored on Windows** (`498bc243`) — Crux pushed the kitty keyboard protocol unconditionally, which made Windows Terminal 1.25+ encode Escape / Ctrl-chords as `CSI u` sequences; ConPTY replayed them with a dropped ESC byte, so pressing Escape typed `[27;129u` into the input and most shortcuts were dead. The protocol push is now skipped on Windows (the console-API input path already carries modifiers), and the parsers mask the caps_lock / num_lock modifier bits so lock state can never break key matching.
+
 ## [1.1.12] - 2026-11-23
 
 e00e3860
