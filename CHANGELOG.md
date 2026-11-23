@@ -6,7 +6,13 @@ Changes are grouped under each version, with the commit SHA on the line
 below the version header. Each version has at most two categories:
 **Features** and **Fixes**.
 
-## [Unreleased]
+## [1.1.12] - 2026-11-23
+
+e00e3860
+
+### Features
+
+- **GLM-5.4 multimodal flagship** (`e00e3860`) — add Zhipu's new GLM-5.4 to the built-in provider: natively multimodal (image input), 1M context, 128K max output, always-on thinking with the standard reasoning-effort scale. Available on all GLM Coding Plan tiers, with +50% weekly quota vs GLM-5.3.
 
 ## [1.1.11] - 2026-11-12
 
